@@ -180,3 +180,22 @@ repair, which, being outside the app, is a decision someone has to make consciou
 upgrading to Next 16, which the fixed stack forbids. Both are build-time and
 image-optimisation concerns rather than request-path issues. Revisit if the stack ever
 moves to 16.
+
+**E5 — `last_login_at` is not routed through the audit wrapper.** It is session
+bookkeeping rather than a business record change, and auditing every sign-in would bury
+real changes under noise. The `set-password` CLI *does* write an audit row, because a
+credential change is a security event — but it records only that the password changed,
+never the hash. An audit log holding password hashes is a second copy of the credential
+table with weaker access control.
+
+**E6 — `requireAccess()` is the guard, not `requireUser()`.** Found by testing: a page
+that only calls `requireUser()` proves somebody is signed in, not that they are allowed
+on that screen, so a FLOOR account reached `/dashboard` by typing the URL even though the
+matrix denies it. `src/auth/guard.ts` combines both checks in one call and redirects to
+`/forbidden` on failure, so there is no reason for a page to reach for the weaker helper.
+Middleware cannot do this job — it runs on the edge and only sees the JWT.
+
+**E7 — Auth.js JWT type augmentation must target `@auth/core/jwt`.** `next-auth/jwt` is
+a pure `export * from "@auth/core/jwt"`, so `declare module "next-auth/jwt"` creates a
+NEW interface rather than merging with the real one, and the custom fields silently stay
+`unknown` at every call site.

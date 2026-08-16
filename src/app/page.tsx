@@ -1,12 +1,14 @@
-// Placeholder. Replaced in the app-shell commit with a redirect to /dashboard.
-export default function Home() {
-  return (
-    <main className="mx-auto flex max-w-[1400px] flex-1 flex-col justify-center px-6">
-      <h1 className="page-title">JSS MIS</h1>
-      <p className="text-muted-foreground mt-1">
-        Scaffold is up. Check <code className="text-foreground">/api/health</code> for the
-        database connection.
-      </p>
-    </main>
-  );
+import { redirect } from "next/navigation";
+
+import { currentUser } from "@/auth";
+import { LANDING_ROUTE } from "@/auth/roles";
+
+/**
+ * Root sends each role to its own landing page. FLOOR goes straight to Stage
+ * Update rather than a dashboard it cannot act on (see roles.ts).
+ */
+export default async function Home() {
+  const user = await currentUser();
+  if (!user) redirect("/login");
+  redirect(LANDING_ROUTE[user.role] ?? "/dashboard");
 }
