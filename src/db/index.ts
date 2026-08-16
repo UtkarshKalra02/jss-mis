@@ -4,6 +4,8 @@ import ws from "ws";
 
 import { env } from "@/lib/env";
 
+import * as schema from "./schema";
+
 /**
  * Database connection.
  *
@@ -28,6 +30,6 @@ neonConfig.webSocketConstructor = ws;
 
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 
-export const db = drizzle(pool, { casing: "snake_case" });
+export const db = drizzle(pool, { schema, casing: "snake_case" });
 
 export type Db = typeof db;
