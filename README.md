@@ -42,7 +42,7 @@ ones to read first when returning to it cold:
 | `src/db/audit.ts` | The **only** write path. Every mutation and its `audit_log` row commit in one transaction. Also where OWNER's global deny-write is enforced. |
 | `src/auth/roles.ts` | The single role matrix. Both the sidebar and the server-side guards read it, so navigation and enforcement cannot drift apart. |
 | `src/db/schema/_shared.ts` | The standard column set every table gets. `stage_event` and `audit_log` are deliberate exceptions. |
-| `drizzle/0003_views.sql` | The six derived views. Where `current_stage` and `pending_qty` stop being a convention and become something the database enforces. |
+| `drizzle/0002_derived_views.sql` | The six derived views. Where `current_stage` and `pending_qty` stop being a convention and become something the database enforces. |
 | `src/components/data-table/` | The one grid implementation. Dense tables are the product; every screen is a column definition, not a new table. |
 
 ## Rules that are not up for negotiation

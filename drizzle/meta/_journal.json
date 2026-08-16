@@ -15,6 +15,20 @@
       "when": 1786891925103,
       "tag": "0001_constraint_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786893933380,
+      "tag": "0002_derived_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786893935332,
+      "tag": "0003_seed_reference_data",
+      "breakpoints": true
     }
   ]
 }
