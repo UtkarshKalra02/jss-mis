@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { requireActiveUser } from "@/auth/guard";
 import { allowedResources } from "@/auth/roles";
+import { Wordmark } from "@/components/brand/logo";
 import { SidebarNav } from "@/components/shell/sidebar-nav";
 import { TopBar } from "@/components/shell/top-bar";
 
@@ -35,7 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-full">
       <aside className="bg-muted/25 hidden w-56 shrink-0 flex-col border-r md:flex">
         <div className="flex h-14 items-center border-b px-4">
-          <span className="text-sm font-semibold tracking-tight">JSS MIS</span>
+          <Wordmark size={22} />
         </div>
         <div className="flex-1 overflow-y-auto px-2">
           <SidebarNav allowed={allowed} />

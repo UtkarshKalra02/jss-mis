@@ -258,3 +258,21 @@ blank means no target, zero means the stage should be instantaneous.
 automatically, since a number a human just typed is no longer the seeded placeholder. But
 the box stays editable, because a revised estimate is still an estimate. A2 is about guesses
 never presenting themselves as measurements, and that has to work in both directions.
+
+**E16 — The brand indigo IS the section 7 accent.** The JSS mark's darkest colour
+(`#3B3288`) is close enough to the "deep indigo" section 7 asks for that they are the same
+token rather than two near-identical ones. The cyan and mid-blue exist so the mark renders
+correctly and are deliberately not mapped to anything semantic — section 7 permits one
+accent, and the logo having three colours is not a licence to colour buttons turquoise.
+Dark mode lightens the same hue (`#8279E0`) rather than substituting a different colour.
+
+**E17 — The logo is a redraw, not the original artwork.** `public/jss-logo.svg` was
+reconstructed by hand from a raster image, as vectors so it stays crisp at 20px in the
+sidebar and in print stylesheets later. It is a close approximation, not the real file.
+Every usage points at that one path, so dropping in the genuine vector replaces it
+everywhere with no code change.
+
+**E18 — Theme is light / dark / system, not a two-way switch.** "System" is the honest
+default for a desktop that follows the OS at dusk, and a plain toggle gives no way back to
+it once touched. The toggle is reachable on the login screen too, before sign-in — somebody
+on a night shift should not have to authenticate against a white screen first.

@@ -69,9 +69,19 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
   /* §7: ONE accent — deep indigo. Used for primary actions, active nav,
-     focus rings, and nothing else. */
-  --primary: oklch(0.457 0.213 277);
+     focus rings, and nothing else.
+     This is now the indigo from the JSS mark itself (#3B3288). The brand
+     colour and the section 7 accent turned out to be the same colour, so
+     they are literally the same token rather than two near-identical ones. */
+  --primary: #3b3288;
   --primary-foreground: oklch(0.985 0 0);
+
+  /* The other two brand colours. Deliberately NOT mapped to anything
+     semantic: section 7 allows one accent, and the cyan exists so the mark
+     renders correctly, not so buttons can be turquoise. */
+  --brand-cyan: #00a0de;
+  --brand-blue: #1b5fab;
+  --brand-indigo: #3b3288;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -114,8 +124,14 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.62 0.19 277);
-  --primary-foreground: oklch(0.985 0 0);
+  /* The brand indigo is too dark to read on a dark background, so dark mode
+     uses a lightened version of the SAME hue rather than a different colour. */
+  --primary: #8279e0;
+  --primary-foreground: oklch(0.16 0 0);
+
+  --brand-cyan: #3cbdf0;
+  --brand-blue: #4b8ed6;
+  --brand-indigo: #8279e0;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
