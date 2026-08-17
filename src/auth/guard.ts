@@ -12,6 +12,7 @@ export type ActiveUser = {
   username: string;
   name: string;
   role: Role;
+  mustChangePassword: boolean;
 };
 
 /**
@@ -43,6 +44,7 @@ async function readActiveUser(): Promise<ActiveUser | null> {
       name: appUser.name,
       role: appUser.role,
       isActive: appUser.isActive,
+      mustChangePassword: appUser.mustChangePassword,
     })
     .from(appUser)
     .where(and(eq(appUser.id, session.id), isNull(appUser.deletedAt)))
@@ -52,7 +54,13 @@ async function readActiveUser(): Promise<ActiveUser | null> {
   // token outlived the account it describes.
   if (!row || !row.isActive) return null;
 
-  return { id: row.id, username: row.username, name: row.name, role: row.role };
+  return {
+    id: row.id,
+    username: row.username,
+    name: row.name,
+    role: row.role,
+    mustChangePassword: row.mustChangePassword,
+  };
 }
 
 /**

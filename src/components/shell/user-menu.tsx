@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +50,14 @@ export function UserMenu({
             {username} · {role.replace(/_/g, " ")}
           </span>
         </DropdownMenuLabel>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuItem asChild>
+          <Link href="/change-password" className="cursor-pointer">
+            Change password
+          </Link>
+        </DropdownMenuItem>
 
         <DropdownMenuSeparator />
 

@@ -133,6 +133,25 @@ export const ACCESS: Matrix = {
   },
 };
 
+/** Human-readable role names, and what each one is for. */
+export const ROLE_LABELS: Record<Role, string> = {
+  ADMIN: "Admin",
+  ORDER_DESK: "Order Desk",
+  PLANNER: "Planner",
+  ACCOUNTS: "Accounts",
+  FLOOR: "Floor",
+  OWNER: "Owner",
+};
+
+export const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  ADMIN: "Everything, including users and configuration.",
+  ORDER_DESK: "Enquiries, quotations, POs and designs.",
+  PLANNER: "Job planning, stage updates and dispatch.",
+  ACCOUNTS: "Invoices, receipts, AR ledger and dispatch.",
+  FLOOR: "Stage updates only, on a phone.",
+  OWNER: "Read-only across dashboard, tracker, AR and reports.",
+};
+
 /** Where each role lands after logging in. */
 export const LANDING_ROUTE: Record<Role, string> = {
   ADMIN: "/dashboard",

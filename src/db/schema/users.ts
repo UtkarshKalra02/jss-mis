@@ -41,6 +41,15 @@ export const appUser = pgTable(
      */
     passwordHash: text(),
 
+    /**
+     * True when the current password was set by an ADMIN for somebody else.
+     * The app forces that person to choose their own before they can reach any
+     * screen, so a working password is known only to the person using it —
+     * handing someone a temporary one is unavoidable, leaving it in place is
+     * not. Cleared when they set their own.
+     */
+    mustChangePassword: boolean().notNull().default(false),
+
     isActive: boolean().notNull().default(true),
     lastLoginAt: timestamp({ withTimezone: true }),
 

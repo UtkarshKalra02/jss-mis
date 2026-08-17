@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { requireActiveUser } from "@/auth/guard";
 import { allowedResources } from "@/auth/roles";
 import { SidebarNav } from "@/components/shell/sidebar-nav";
@@ -19,6 +21,14 @@ import { TopBar } from "@/components/shell/top-bar";
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireActiveUser();
+
+  // Somebody is using a password an admin chose for them. Nothing inside the
+  // shell is reachable until they set their own.
+  //
+  // /change-password deliberately lives outside this route group, so this
+  // redirect cannot loop back into itself.
+  if (user.mustChangePassword) redirect("/change-password");
+
   const allowed = allowedResources(user.role);
 
   return (

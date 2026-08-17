@@ -209,3 +209,24 @@ the rest of the day — both fail open, and neither is visible to whoever made t
 `requireAccess()` therefore pays one indexed lookup per guarded page to ask who the user
 is now. Verified end to end: an already-issued, still-valid session cookie is rejected
 immediately after `is_active` is set false.
+
+**E9 — Admin-set passwords are temporary.** When an ADMIN sets a password for somebody
+else, `must_change_password` is set and the shell refuses to render until that person
+chooses their own. Handing someone a password is unavoidable; leaving it in place is not,
+so the password actually in use ends up known only to the person using it. Setting your
+own password — from the panel or the CLI — does not set the flag, because being told to
+immediately change a password you just chose is pointless friction. The CLI takes
+`--force-change` for the case where it is used on someone else's behalf.
+
+**E10 — Lockout guards on user administration.** `/admin/users` is the only way to
+administer the system, and a single click can close it to everyone. You cannot
+deactivate, delete, or demote yourself, and none of those are permitted against the last
+ADMIN **who can actually sign in** — an admin with no password set is not a way back in,
+so `activeAdminCount()` requires a password hash. The pages explain why a control is
+unavailable rather than showing a dead button, and the server actions re-check
+independently, since the page is only the explanation and never the enforcement.
+
+**E11 — Usernames are immutable.** Audit rows and stage events are read by username in
+practice, so renaming an account would quietly rewrite who appears to have done past
+work. To change one, remove the account and add a new one; the partial unique index
+frees the old username for reuse.

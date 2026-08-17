@@ -122,10 +122,18 @@ function closePrompt() {
 }
 
 async function main() {
-  const username = process.argv[2]?.trim();
+  const args = process.argv.slice(2);
+  const username = args.find((a) => !a.startsWith("--"))?.trim();
+
+  // Setting a password FOR somebody else should force them to replace it, so
+  // the one they end up using is known only to them. Off by default because
+  // the common use of this CLI is bootstrapping your own first admin login,
+  // where an immediate forced change is pointless friction. The admin panel
+  // applies the same rule automatically.
+  const forceChange = args.includes("--force-change");
 
   if (!username) {
-    console.error("Usage: npm run set-password -- <username>");
+    console.error("Usage: npm run set-password -- <username> [--force-change]");
     process.exit(1);
   }
 
@@ -181,7 +189,10 @@ async function main() {
   const passwordHash = await hash(first, BCRYPT_ROUNDS);
 
   await db.transaction(async (tx) => {
-    await tx.update(appUser).set({ passwordHash, updatedBy: SYSTEM_USER_ID }).where(eq(appUser.id, user.id));
+    await tx
+      .update(appUser)
+      .set({ passwordHash, mustChangePassword: forceChange, updatedBy: SYSTEM_USER_ID })
+      .where(eq(appUser.id, user.id));
 
     await tx.insert(auditLog).values({
       tableName: "app_user",
@@ -196,6 +207,9 @@ async function main() {
   });
 
   console.log(`\nPassword set for ${user.username}. They can sign in now.`);
+  if (forceChange) {
+    console.log("They will be asked to choose their own password at next sign-in.");
+  }
   process.exit(0);
 }
 
