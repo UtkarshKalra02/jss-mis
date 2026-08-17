@@ -127,8 +127,26 @@ curl https://<your-app>.vercel.app/api/health
 Expect:
 
 ```json
-{ "ok": true, "now": "…", "database": "neondb", "ist_now": "…" }
+{ "ok": true, "now": "…", "database": "neondb", "ist_now": "…",
+  "runtime": { "node": "v22…", "nativeWebSocket": true, "region": "sin1", "commit": "88b672e" } }
 ```
+
+`commit` tells you whether the deployment you are talking to is the one you just
+pushed — worth checking before concluding a fix did not work.
+
+`nativeWebSocket` must be **true**. If it is false the Neon driver has fallen
+back to the bundled `ws` package, which is the configuration that produced
+`b.mask is not a function`; check that Vercel is running Node 22 or later.
+
+If it fails, the public response is deliberately terse, because this route sits
+outside the middleware and the whole internet can call it. For the real error:
+
+```bash
+curl -H "authorization: Bearer <AUTH_SECRET>" https://<your-app>.vercel.app/api/health
+```
+
+That returns the full error `cause` chain — the database driver's own message,
+which is the one that actually says what is wrong.
 
 `ist_now` must read as Indian wall-clock time, not UTC. If it does not, stop and
 work out why — every date comparison in the system assumes Asia/Kolkata, and OTD
