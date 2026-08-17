@@ -244,3 +244,17 @@ arrives before anyone has the GSTIN or the billing address, and a form that refu
 without them gets fed placeholder junk that is worse than a blank. Empty fields are stored
 as NULL rather than empty strings so "not known yet" stays distinguishable, and an unset
 credit limit stays NULL because no limit is not the same as a limit of zero.
+
+**E14 — Stage config saves the whole table at once.** The realistic task is entering
+fourteen measured numbers after somebody has timed the floor, not editing one stage in
+isolation, so all rows post together and commit in one transaction. The change detection is
+extracted into `src/modules/stages/diff.ts` as a pure function so it can be unit tested
+without a session: `target_hours` is `numeric(6,2)`, so the database returns `"6.00"` while
+the form posts `"6"`, and comparing those as strings would mark every stage changed on every
+save and write fourteen meaningless audit rows. Blank and zero are also kept distinct —
+blank means no target, zero means the stage should be instantaneous.
+
+**E15 — The "measured" tick can be turned off again.** Editing a target hour ticks it
+automatically, since a number a human just typed is no longer the seeded placeholder. But
+the box stays editable, because a revised estimate is still an estimate. A2 is about guesses
+never presenting themselves as measurements, and that has to work in both directions.

@@ -18,13 +18,13 @@ const SECTIONS = [
     title: "Stages",
     description:
       "Stage names, colours, sequence, optional flags, and the target hours used for WIP ageing.",
-    ready: false,
+    ready: true,
   },
   {
     href: "/admin/settings",
     title: "Settings",
     description: "The at-risk window and other tunable thresholds.",
-    ready: false,
+    ready: true,
   },
 ];
 
