@@ -5,7 +5,8 @@ headline number: **OTD (On-Time Delivery %)**.
 
 The specification is [`docs/JSS_MIS_v1_SPEC.md`](docs/JSS_MIS_v1_SPEC.md) and it is the
 book of record for what this system does. Decisions taken while building against it are
-logged in [`docs/DECISIONS.md`](docs/DECISIONS.md). Busy remains the book of record for
+logged in [`docs/DECISIONS.md`](docs/DECISIONS.md), and deploying is
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Busy remains the book of record for
 accounts; this system is a visibility layer over it, not a replacement.
 
 ## Running it
