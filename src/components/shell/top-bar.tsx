@@ -26,7 +26,9 @@ export function TopBar({
     <header className="bg-background sticky top-0 z-20 flex h-14 items-center gap-2 border-b px-3 md:px-4">
       <MobileNav allowed={allowed} />
 
-      <span className="text-[13px] font-semibold md:hidden">JSS MIS</span>
+      <span className="shrink-0 text-[13px] font-semibold whitespace-nowrap md:hidden">
+        JSS MIS
+      </span>
 
       {/* Global search (section 7). Inert until the Item Tracker exists in
           Phase 2 — it is here so the shell is the real shape, and disabled so
