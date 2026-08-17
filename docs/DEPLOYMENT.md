@@ -233,3 +233,52 @@ corrupts OTD.
 Server logs are in the Vercel dashboard under the deployment → Functions. The
 audit log is the other place to look: `audit_log` records every write with before
 and after state, and who made it.
+
+---
+
+## Two production-only bugs, and why they were production-only
+
+Both of these worked perfectly in `npm run dev` and failed on the deployment.
+Recorded here because the same class of problem will happen again, and because
+neither error message points at its cause.
+
+### `TypeError: b.mask is not a function` on any database query
+
+`ws` — the WebSocket library the Neon driver used — has an **optional** native
+dependency called `bufferutil` that is not installed. At runtime in plain Node,
+`require('bufferutil')` throws, `ws` catches it, and falls back to pure-JS frame
+masking. That is the normal, supported path.
+
+A **bundler** resolves that `require` to an empty stub instead of letting it
+throw. The try block then succeeds, and `ws` installs a masking function that
+calls `bufferUtil.mask(...)` on an object that has no such method.
+
+`ws` only uses the native path for frames of 48 bytes or more, so small requests
+succeeded and larger queries failed. That is why sign-in worked and
+`/api/health` did not, and why it looked like a database fault.
+
+Fixed by preferring Node's built-in WebSocket (Node 22+, which is what Vercel
+runs) and marking `ws` as an external package so it is not bundled at all.
+
+**The general lesson:** a dependency that probes for an optional native module
+inside a try/catch is not safe to bundle. If you add one, put it in
+`serverExternalPackages`.
+
+### `UntrustedHost` on sign-in
+
+Auth.js refuses requests whose `Host` header it does not trust. It auto-detects
+Vercel, so production happened to be fine — but `next start` locally and any
+preview deployment on its own URL failed, with a login that silently did
+nothing. Now set explicitly with `trustHost: true`.
+
+### How to catch this class of bug before deploying
+
+`npm run dev` does not bundle the server the way a deployment does. Before
+pushing anything that touches a driver, a native module, or auth:
+
+```bash
+npm run build && npm start
+curl http://localhost:3000/api/health
+```
+
+That reproduced both bugs on a laptop in under a minute.

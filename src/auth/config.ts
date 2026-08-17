@@ -28,6 +28,19 @@ import { LANDING_ROUTE, type Role } from "./roles";
  * guarded page so deactivation and role changes take effect at once.
  */
 export const authConfig = {
+  /*
+   * Auth.js refuses to serve requests whose Host header it does not trust,
+   * which is the right default for an app reachable on several hostnames.
+   *
+   * It auto-detects Vercel, so production is fine without this. Everywhere
+   * else — `next start` locally, a preview deployment on its own URL, or any
+   * future self-hosting — it fails with `UntrustedHost` and a login that
+   * silently does nothing. This app sits behind one trusted proxy in every
+   * environment it runs in, so trusting the host is stated explicitly rather
+   * than depending on which platform happens to be detected.
+   */
+  trustHost: true,
+
   pages: {
     signIn: "/login",
     error: "/login",

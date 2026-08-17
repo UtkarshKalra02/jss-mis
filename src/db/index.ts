@@ -26,7 +26,27 @@ import * as schema from "./schema";
  * while Postgres gets the snake_case column names the spec asks for. This must
  * stay in sync with the same setting in drizzle.config.ts.
  */
-neonConfig.webSocketConstructor = ws;
+/*
+ * Node 22 and later ship a global WebSocket, so the `ws` package is only a
+ * fallback for older runtimes. Preferring the built-in is not a micro
+ * optimisation — it works around a real failure in production builds:
+ *
+ * `ws` has an OPTIONAL native dependency, `bufferutil`, which is not installed
+ * here. At runtime in plain Node its `require('bufferutil')` throws, `ws`
+ * catches it and uses its pure-JS masking. But a BUNDLER resolves that require
+ * to an empty stub rather than letting it throw, so the try block succeeds and
+ * `ws` installs a mask function that calls `bufferUtil.mask(...)` — which is
+ * undefined.
+ *
+ * The result is `TypeError: b.mask is not a function`, and only for WebSocket
+ * frames of 48 bytes or more, since `ws` uses its own implementation below that
+ * threshold. Small queries succeed and larger ones fail, which makes it look
+ * like a database problem rather than a bundling one.
+ *
+ * `serverExternalPackages: ["ws"]` in next.config.ts keeps `ws` out of the
+ * bundle so the fallback path is safe too, on the older runtimes that need it.
+ */
+neonConfig.webSocketConstructor = globalThis.WebSocket ?? ws;
 
 const pool = new Pool({ connectionString: env.DATABASE_URL });
 
