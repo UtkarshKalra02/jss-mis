@@ -1,33 +1,51 @@
-import { redirect } from "next/navigation";
-
-import { currentUser } from "@/auth";
-import { SignOutButton } from "@/modules/auth/sign-out";
+import { requireActiveUser } from "@/auth/guard";
+import { allowedResources } from "@/auth/roles";
+import { SidebarNav } from "@/components/shell/sidebar-nav";
+import { TopBar } from "@/components/shell/top-bar";
 
 /**
- * Minimal authenticated wrapper. The real shell — fixed sidebar, top bar with
- * global search, role-aware nav — replaces this in the next commit.
+ * The application shell: fixed left sidebar, top bar, content area capped at
+ * 1400px (section 7).
  *
- * The currentUser() check here is not redundant with middleware. Middleware
- * only inspects the JWT; this reads the session on the server, and every page
- * beneath it can rely on a user being present.
+ * The nav is computed here, on the server, from the role matrix — the browser
+ * never receives entries the user is not allowed to reach. That said, hiding a
+ * link is presentation, not protection: every page still guards itself with
+ * requireAccess().
+ *
+ * requireActiveUser() is not redundant with middleware. Middleware only
+ * inspects the JWT, which is a snapshot from sign-in time; this re-reads the
+ * account so a deactivated user loses the shell immediately rather than when
+ * their token happens to expire.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await currentUser();
-  if (!user) redirect("/login");
+  const user = await requireActiveUser();
+  const allowed = allowedResources(user.role);
 
   return (
-    <div className="flex min-h-full flex-col">
-      <header className="flex h-14 items-center justify-between border-b px-6">
-        <span className="font-semibold">JSS MIS</span>
-        <div className="flex items-center gap-3">
-          <span className="text-muted-foreground text-sm">
-            {user.name} · {user.role}
-          </span>
-          <SignOutButton />
+    <div className="flex min-h-full">
+      <aside className="bg-muted/25 hidden w-56 shrink-0 flex-col border-r md:flex">
+        <div className="flex h-14 items-center border-b px-4">
+          <span className="text-sm font-semibold tracking-tight">JSS MIS</span>
         </div>
-      </header>
+        <div className="flex-1 overflow-y-auto px-2">
+          <SidebarNav allowed={allowed} />
+        </div>
+        <div className="text-muted-foreground/60 border-t px-4 py-2.5 text-[11px]">
+          The Print Zone
+        </div>
+      </aside>
 
-      <main className="mx-auto w-full max-w-[1400px] flex-1 px-6 py-6">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar
+          name={user.name}
+          username={user.username}
+          role={user.role}
+          allowed={allowed}
+        />
+        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 md:px-6">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

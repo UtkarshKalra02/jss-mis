@@ -21,9 +21,11 @@ import { LANDING_ROUTE, type Role } from "./roles";
  *
  * Consequence worth knowing: because middleware only reads the JWT, it can
  * confirm that SOMEBODY is logged in but not what they are currently allowed
- * to do. All real authorization happens in server components and actions,
- * against a freshly-read user. Middleware is a redirect, not a security
- * boundary.
+ * to do — the token's role and account status are a snapshot from sign-in and
+ * do not change for its whole lifetime. Middleware is a redirect, not a
+ * security boundary. Real authorization is requireAccess() in
+ * src/auth/guard.ts, which re-reads the account from the database on every
+ * guarded page so deactivation and role changes take effect at once.
  */
 export const authConfig = {
   pages: {

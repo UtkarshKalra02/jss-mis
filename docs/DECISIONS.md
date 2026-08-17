@@ -199,3 +199,13 @@ Middleware cannot do this job — it runs on the edge and only sees the JWT.
 a pure `export * from "@auth/core/jwt"`, so `declare module "next-auth/jwt"` creates a
 NEW interface rather than merging with the real one, and the custom fields silently stay
 `unknown` at every call site.
+
+**E8 — Guarded pages re-read the account from the database on every request.** Auth.js
+does not support database sessions with the credentials provider, so the session is a JWT
+and the role and account status inside it are a snapshot frozen for the token's whole
+lifetime (eight hours here). Trusting that snapshot means deactivating an account has no
+effect until the token expires, and a role demotion leaves the old permissions live for
+the rest of the day — both fail open, and neither is visible to whoever made the change.
+`requireAccess()` therefore pays one indexed lookup per guarded page to ask who the user
+is now. Verified end to end: an already-issued, still-valid session cookie is rejected
+immediately after `is_active` is set false.
