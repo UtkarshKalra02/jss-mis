@@ -230,3 +230,17 @@ independently, since the page is only the explanation and never the enforcement.
 practice, so renaming an account would quietly rewrite who appears to have done past
 work. To change one, remove the account and add a new one; the partial unique index
 frees the old username for reuse.
+
+**E12 — The grid uses TanStack Table's `/legacy` entrypoint.** v9 ships a new native API
+built on atoms, stores, and granular `Subscribe` components. It is more capable, but it is
+a much larger mental model and almost every example, tutorial, and answer online is written
+against the v8-shaped API — which `/legacy` carries forward on the current major. For a
+codebase maintained by one person, matching the documentation that actually exists is worth
+more than the newer API's ceiling. The choice is confined to
+`src/components/data-table/data-table.tsx`, so migrating later is a change to one file.
+
+**E13 — Only `code` and `name` are required on a client.** A purchase order routinely
+arrives before anyone has the GSTIN or the billing address, and a form that refuses to save
+without them gets fed placeholder junk that is worse than a blank. Empty fields are stored
+as NULL rather than empty strings so "not known yet" stays distinguishable, and an unset
+credit limit stays NULL because no limit is not the same as a limit of zero.

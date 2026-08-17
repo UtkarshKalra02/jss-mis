@@ -1,0 +1,71 @@
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
+
+import { db } from "@/db";
+import { client } from "@/db/schema";
+
+export type ClientRow = {
+  id: string;
+  code: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  gstin: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  paymentTermsDays: number;
+  creditLimit: string | null;
+  clientType: "New" | "Repeat";
+  isActive: boolean;
+};
+
+/** Live clients only — soft-deleted rows never appear (non-negotiable 7). */
+export async function listClients(): Promise<ClientRow[]> {
+  return db
+    .select({
+      id: client.id,
+      code: client.code,
+      name: client.name,
+      city: client.city,
+      state: client.state,
+      gstin: client.gstin,
+      contactName: client.contactName,
+      contactPhone: client.contactPhone,
+      paymentTermsDays: client.paymentTermsDays,
+      creditLimit: client.creditLimit,
+      clientType: client.clientType,
+      isActive: client.isActive,
+    })
+    .from(client)
+    .where(isNull(client.deletedAt))
+    .orderBy(asc(client.name));
+}
+
+export async function getClient(id: string) {
+  const [row] = await db
+    .select()
+    .from(client)
+    .where(and(eq(client.id, id), isNull(client.deletedAt)))
+    .limit(1);
+
+  return row ?? null;
+}
+
+/**
+ * Codes are unique among LIVE clients only. A soft-deleted client releases its
+ * code for reuse, which is what the partial unique index in the schema
+ * enforces — this check just produces a readable message before the database
+ * produces an unreadable one.
+ */
+export async function clientCodeTaken(code: string, excludeId?: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: client.id })
+    .from(client)
+    .where(
+      excludeId
+        ? and(eq(client.code, code), isNull(client.deletedAt), ne(client.id, excludeId))
+        : and(eq(client.code, code), isNull(client.deletedAt)),
+    )
+    .limit(1);
+
+  return Boolean(row);
+}
