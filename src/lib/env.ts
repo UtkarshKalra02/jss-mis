@@ -13,7 +13,9 @@ const envSchema = z.object({
   DATABASE_URL_UNPOOLED: z
     .string()
     .min(1, "DATABASE_URL_UNPOOLED is required (direct Neon URL, for migrations)"),
-  AUTH_SECRET: z.string().min(1, "AUTH_SECRET is required (npx auth secret)"),
+  AUTH_SECRET: z
+    .string()
+    .min(1, "AUTH_SECRET is required (generate with: openssl rand -base64 32)"),
 });
 
 const parsed = envSchema.safeParse({

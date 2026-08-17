@@ -11,31 +11,46 @@ this file is the only record of how production is put together.
 
 ### 1. Separate your development database from production
 
-Right now `.env.local` points at the same Neon database you would deploy against.
-That means **every experiment you run locally edits live data**, and a stray
-`db:migrate` or a test script hits the factory's real records.
+There is currently **one** Neon database, and `.env.local` points at it. If you
+deploy as-is, Vercel points at the same one. So the database Punit enters real
+POs into is also the one your laptop runs migrations and experiments against.
 
-Neon branching makes the fix cheap. In the Neon console:
+A Neon *branch* is a full copy-on-write copy of the database — same data,
+separate from then on, created instantly and costing almost nothing. In the Neon
+console:
 
-1. Create a branch off `main` called `dev`.
-2. Copy the `dev` branch's pooled and direct connection strings.
-3. Put those in your local `.env.local`.
-4. Keep `main` as production, and give its strings to Vercel only.
+1. Open the project → **Branches** → **Create branch**, parent `main`, name it
+   `dev`.
+2. On the `dev` branch, copy both connection strings: the **pooled** one (host
+   contains `-pooler`) and the **direct** one (no `-pooler`).
+3. Put those two into your local `.env.local` as `DATABASE_URL` and
+   `DATABASE_URL_UNPOOLED`.
+4. Leave `main` alone. Its strings go into Vercel in step 5 and nowhere else.
 
-From then on `main` is production and your laptop cannot touch it by accident.
+After this, `main` is production and your laptop physically cannot reach it
+without you pasting a production URL on purpose.
 
-Do this before deploying. Afterwards it means re-seeding users on production,
-which is the next step anyway.
+**How urgent is this?** Today the database holds seven user accounts and the
+fourteen seeded stages — nothing you would mind losing. The risk becomes real
+the moment somebody enters a genuine purchase order, which is Phase 2. Doing it
+now is cheaper than doing it later, because later means moving live data.
 
 ### 2. Generate a separate production AUTH_SECRET
 
 ```bash
-npx auth secret
+openssl rand -base64 32
 ```
 
-Use a **different** value from your local one. They sign session cookies, so a
-shared secret means a local session is valid against production. Keep it out of
-the repo — it goes into Vercel's environment variables and nowhere else.
+`AUTH_SECRET` is the key Auth.js uses to sign session cookies. A cookie signed
+with one secret is only accepted by a server holding the same secret.
+
+Use a **different** value from your local one, and paste it straight into
+Vercel rather than into any file. Sharing the secret would mean a session minted
+by your laptop is accepted by production — an unnecessary bridge between a
+machine you experiment on and the system the factory runs on.
+
+Note: do **not** run `npx auth secret`. That installs Better Auth's CLI, which
+is an unrelated library — this project uses Auth.js.
 
 ### 3. Push to GitHub
 
