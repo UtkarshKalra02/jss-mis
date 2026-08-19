@@ -680,3 +680,50 @@ On the application side, promotion is the moment the goods left, so it is the mo
 DISPATCHED stage events are written (F23's rule, at the new time). Creating a draft writes
 none; marking it dispatched writes them, dated by the challan; reinstating a cancelled
 challan does the same, because that is also a transition into consuming.
+
+**F25 — F4's precedence is a pure function, tested without a database.**
+`src/modules/stage-update/precedence.ts` holds `stageChoicesFor()` and
+`isBackwardMove()`, extracted from the screen for the same reason the stage-config diff was
+(E14): this is the rule most likely to be argued about a year from now, and an argument is
+far easier to settle against a test than against a component.
+`tests/stage-precedence.test.ts` runs in about a tenth of a second with no database, no
+session and no browser.
+
+The function returns TWO lists rather than one filtered list — `route` and `other` — which
+is how F4 and F18 hold together. F4 says the design's route takes precedence over
+`applies_to`; F18 says Stage Update still offers every stage, because Preeti has to move a
+job to READY and DISPATCHED and neither is a route step. So precedence orders the dropdown
+rather than trimming it: the item's own route comes first under a heading that says why it
+is the route, and everything else follows under "Other stages". A test asserts the two
+lists together are always exactly the whole table — a dropdown that hides the stage
+somebody needs at 6pm gets worked around, and the workaround is worse than the wrong order.
+
+`is_optional` filters neither list. It is carried through so the screen can mark a stage as
+one not every job needs, which is guidance rather than a restriction.
+
+**F26 — The direction of a stage move is never validated on the server.** Backward moves
+are allowed (F4), and the confirmation lives at the screen where the person can see what
+they are about to do. Enforcing it in the action would make rework impossible rather than
+deliberate, and rework that the system refuses to record is rework that happens anyway and
+goes unrecorded.
+
+The confirmation dialog's confirm button is a plain submit inside the same form, so the
+click that confirms is the click that submits — the same trap as the duplicate-PO button
+in F20, where a state flag set on click arrives one submit late.
+
+**F27 — The phone view omits everything except the stage, deliberately.** Spec 6.7 asks for
+"card list, large tap targets, single stage dropdown, nothing else", and the omissions are
+the design: no bulk select, no remarks, no event time. Ajay is standing next to a machine
+holding a phone in one hand, updating what just happened, and every field that is not the
+stage is a field he has to get past. The desktop grid has all three, because Preeti is
+catching up on a day at a keyboard and the event time is the difference between WIP ageing
+that means something and WIP ageing that measures typing.
+
+Both layouts are rendered and CSS decides which is visible, rather than measuring the
+viewport in JavaScript — server-rendered markup that does not depend on a measurement
+cannot flash the wrong layout before hydrating.
+
+The desktop event-time field is a `datetime-local`, which carries no timezone. It is typed
+by somebody standing in the factory, so the action parses it as IST explicitly (C10).
+Letting it fall through to the server's local time would silently shift every batch entry
+by five and a half hours.
