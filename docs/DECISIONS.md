@@ -495,3 +495,37 @@ afterwards. Found by checking dark mode: `.dark .stage-pill` out-specifies
 `.stage-pill--none` two classes to one, so the neutral "not started" pill was painted with
 an unset `--stage-colour`, which `color-mix` resolves to fully transparent. An invisible
 pill, in dark mode only — the kind of thing that ships unless somebody actually looks.
+
+**F16 — Approval is an action, not a form field.** Spec 6.5 asks for "approval action with
+timestamp", and the difference from a dropdown matters: `design.approval_status` is the
+gate on whether anything goes to plate, so somebody editing a paper size should not be
+able to approve the artwork on the way past. It sits in its own panel below the form with
+its own buttons, alongside retire and remove, in the same shape the client screen uses.
+
+Moving OFF `Approved` clears `approved_at` and `approved_by`. The database's
+`design_approval_complete` check only constrains the `Approved` case, so nothing else
+would stop a rejected design still displaying the name of the person who approved an
+earlier version of it.
+
+**F17 — Removing a process from a design's route and adding it back RESTORES the row.**
+`design_process` carries a full unique constraint on `(design_id, stage_code)`, not the
+partial one used for natural keys (C5) — correct for a junction row, since there is no
+code to free for reuse. The consequence is that a soft-deleted route row is still visible
+to the constraint, so re-adding lamination to a design that once had it cannot be an
+insert. The write path restores instead. `tests/design-route.test.ts` pins both halves:
+that the naive insert genuinely fails with the constraint name, and that restoring is the
+way through. Without the first assertion the second reads as unnecessary ceremony and gets
+simplified back into a bug.
+
+**F18 — OPEN: the route editor offers every active stage.** The checkboxes are read from
+the `stage` table in sequence order, which is what non-negotiable 5 requires and means a
+stage ADMIN adds appears with no code change. It also means ENQUIRY, COSTING and
+PO_RECEIVED are offered as route steps, which is not wrong exactly — nothing breaks — but
+they are not processes a design "passes through" in the way LAMINATION is.
+
+The fix would be an `is_process` boolean on `stage`, so the editor could offer only real
+production steps while everything else still reads from the table. That is a schema change
+and a judgement about the factory's vocabulary, so it is recorded here rather than decided
+unilaterally. Until then the list is complete and the user deselects what does not apply;
+an empty route means the job follows the default for its job type (F4), which is the
+common case.
