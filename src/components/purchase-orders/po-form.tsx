@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useId, useState } from "react";
 import { useFormStatus } from "react-dom";
 
+import { QuickDesignDialog } from "@/components/designs/quick-design-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -86,6 +87,14 @@ export function PoForm({
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<ItemDraft[]>([blankItem()]);
 
+  // Designs created from the dialog, added here rather than refetched: the
+  // page is a server component and re-rendering it would discard the half-typed
+  // purchase order this form exists to protect.
+  const [extraDesigns, setExtraDesigns] = useState<DesignOption[]>([]);
+
+  // Which row asked for a new design. Null means the dialog is closed.
+  const [newDesignFor, setNewDesignFor] = useState<string | null>(null);
+
   useEffect(() => {
     if (state.ok && state.redirectTo) router.push(state.redirectTo);
   }, [state, router]);
@@ -94,7 +103,11 @@ export function PoForm({
     setItems((rows) => rows.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
 
   // A design belongs to one client, so only that client's are offered.
-  const designsForClient = designs.filter((d) => d.clientId === clientId);
+  const designsForClient = [...designs, ...extraDesigns].filter(
+    (d) => d.clientId === clientId,
+  );
+
+  const selectedClient = clients.find((c) => c.id === clientId);
 
   return (
     <form action={formAction} className="space-y-8">
@@ -220,21 +233,38 @@ export function PoForm({
                   </td>
 
                   <td className="px-2 py-1">
-                    <select
-                      name="designId"
-                      value={row.designId}
-                      onChange={(e) => patch(row.key, "designId", e.target.value)}
-                      className={inputClass}
-                      aria-label={`Design, row ${index + 1}`}
-                      disabled={!clientId}
-                    >
-                      <option value="">— none —</option>
-                      {designsForClient.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.designCode} — {d.jobName}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-1">
+                      <select
+                        name="designId"
+                        value={row.designId}
+                        onChange={(e) => patch(row.key, "designId", e.target.value)}
+                        className={inputClass}
+                        aria-label={`Design, row ${index + 1}`}
+                        disabled={!clientId}
+                      >
+                        <option value="">— none —</option>
+                        {designsForClient.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.designCode} — {d.jobName}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Spec 6.3: search existing OR create. The client has
+                          to be chosen first — a design belongs to one. */}
+                      <button
+                        type="button"
+                        onClick={() => setNewDesignFor(row.key)}
+                        disabled={!clientId}
+                        className="text-muted-foreground hover:text-primary shrink-0 disabled:opacity-30"
+                        aria-label={`Create a design for row ${index + 1}`}
+                        title={
+                          clientId ? "Create a design" : "Choose the client first"
+                        }
+                      >
+                        <Plus className="size-4" />
+                      </button>
+                    </div>
                   </td>
 
                   <td className="px-2 py-1">
@@ -348,6 +378,24 @@ export function PoForm({
           <Plus className="size-4" /> Add item
         </Button>
       </section>
+
+      {/* One dialog, told which row asked for it. Rendered outside the table
+          and portalled to the body by Radix, so its form is never nested
+          inside this one. */}
+      {newDesignFor && selectedClient ? (
+        <QuickDesignDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setNewDesignFor(null);
+          }}
+          clientId={clientId}
+          clientLabel={`${selectedClient.code} — ${selectedClient.name}`}
+          onCreated={(created) => {
+            setExtraDesigns((list) => [...list, created]);
+            patch(newDesignFor, "designId", created.id);
+          }}
+        />
+      ) : null}
 
       {/* Section 7: inline, never a modal. */}
       {state.error ? (

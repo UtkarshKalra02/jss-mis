@@ -68,3 +68,29 @@ export const designSchema = z.object({
 });
 
 export type DesignInput = z.infer<typeof designSchema>;
+
+/**
+ * Creating a design without leaving the PO capture form.
+ *
+ * Deliberately a SUBSET of designSchema, not a variant of it. The point of the
+ * inline create is to unblock somebody mid-order who has a PO in front of them
+ * and a design that is not in the system yet — so it asks for what is on the
+ * purchase order and nothing else. Die and plate status default to NA, the
+ * route is left empty (meaning the job follows the default for its type, F4),
+ * and approval starts Pending.
+ *
+ * Everything omitted here is editable afterwards on the Design master, and the
+ * dialog says so. The alternative — making the full form available in a modal —
+ * would put two ways of creating a design in the app, which is one more than
+ * anybody should have to keep in agreement.
+ */
+export const quickDesignSchema = designSchema.pick({
+  clientId: true,
+  jobName: true,
+  jobSize: true,
+  paperType: true,
+  gsm: true,
+});
+
+export type QuickDesignInput = z.infer<typeof quickDesignSchema>;
+

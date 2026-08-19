@@ -17,7 +17,7 @@ import { design, designProcess, stage } from "@/db/schema";
 import { allocateNumber } from "@/lib/numbering";
 
 import { getDesign } from "./queries";
-import { designSchema } from "./validation";
+import { designSchema, quickDesignSchema } from "./validation";
 
 export type FormState = { ok: boolean; error: string | null; message?: string };
 
@@ -322,3 +322,81 @@ export async function deleteDesignAction(
     return fail(error instanceof Error ? error.message : "Could not remove the design.");
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Inline create, from the PO capture form                                     */
+/* -------------------------------------------------------------------------- */
+
+/** Carries the created row back, so the caller can select it immediately. */
+export type QuickDesignState = FormState & {
+  design?: { id: string; designCode: string; jobName: string; clientId: string };
+};
+
+/**
+ * Creates a design from inside PO capture (spec 6.3: "search existing or
+ * create").
+ *
+ * Same access check, same numbering, same audit wrapper as the full form —
+ * this is a smaller form over the same write path, not a second one. What it
+ * skips is everything the person entering a purchase order does not have in
+ * front of them: die and plate references, the route, artwork, approval.
+ *
+ * Returns the created row rather than just a message, because the caller's
+ * next move is to select it on the item row that prompted the dialog. Making
+ * them find it in a dropdown that has just changed underneath them would
+ * defeat the point.
+ */
+export async function createQuickDesignAction(
+  _prev: QuickDesignState,
+  formData: FormData,
+): Promise<QuickDesignState> {
+  try {
+    const actor = await requireDesignWriter();
+
+    const parsed = quickDesignSchema.safeParse({
+      clientId: formData.get("clientId"),
+      jobName: formData.get("jobName"),
+      jobSize: formData.get("jobSize"),
+      paperType: formData.get("paperType"),
+      gsm: formData.get("gsm"),
+    });
+    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
+    const v = parsed.data;
+
+    const created = await db.transaction(async (tx) => {
+      const designCode = await allocateNumber(tx, "DSN");
+
+      return auditedInsert(
+        actor,
+        design,
+        {
+          designCode,
+          clientId: v.clientId,
+          jobName: v.jobName,
+          jobSize: orNull(v.jobSize),
+          paperType: orNull(v.paperType),
+          gsm: orNull(v.gsm),
+          isActive: true,
+        },
+        tx,
+      );
+    });
+
+    revalidatePath("/designs");
+
+    return {
+      ok: true,
+      error: null,
+      message: `${created.designCode} created.`,
+      design: {
+        id: created.id,
+        designCode: created.designCode,
+        jobName: created.jobName,
+        clientId: created.clientId,
+      },
+    };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Could not create the design.");
+  }
+}
+
