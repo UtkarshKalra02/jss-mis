@@ -303,6 +303,18 @@ Leaving stage events to write directly and relying on `entered_by` was rejected 
 records who, but nothing records *that a write happened* in the one log that is supposed
 to be complete.
 
+The two write paths are mutually exclusive at the type level, and deliberately so:
+`AuditableTable` requires `created_by`/`updated_by`/`deleted_at`, `AppendOnlyTable`
+requires `entered_by`, and no table satisfies both. A business table therefore cannot be
+appended to and a stage event cannot be updated — neither is reachable to write, rather
+than merely discouraged in a comment. `tests/audit.test.ts` pins this with a pair of
+`@ts-expect-error` directives inside a function that is never called, so `npm run
+typecheck` fails the moment either boundary stops holding.
+
+`entered_by` is stamped from the actor rather than accepted from the caller, for the same
+reason `auditedInsert` stamps `created_by`: the person the audit row names and the person
+the event names must not be able to disagree.
+
 **F2 — Dispatch shows every item with `pending_qty > 0`, not only items at READY.**
 Spec 6.8 gates the dispatch screen on `stage = READY`. Applied literally that would hide
 precisely the rows Phase 2 needs, because backfilled historical jobs do not arrive at

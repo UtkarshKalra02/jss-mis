@@ -11,7 +11,7 @@ import { auditLog } from "./schema";
  * THE AUDIT WRAPPER — the only write path in this application.
  *
  * Nothing outside this file may call db.insert / db.update / db.delete on a
- * business table. Everything goes through the four functions below, which
+ * business table. Everything goes through the five functions below, which
  * exist to make three of the non-negotiables true rather than aspirational:
  *
  *   3. Every write is audited.  The mutation and its audit_log row are written
@@ -87,6 +87,24 @@ type AuditableTable = PgTable & {
   deletedAt: PgColumn;
 };
 
+/**
+ * Append-only tables, which cannot satisfy AuditableTable and must not be
+ * asked to (decision C6).
+ *
+ * stage_event is the only one. It has no updated_by, no deleted_at and no
+ * updated_at, because it is never updated and never deleted — the database
+ * raises on both. What it has instead is `entered_by`, which is the append-only
+ * counterpart of created_by, and requiring it in the type is what makes an
+ * unattributed event impossible to write rather than merely discouraged.
+ *
+ * audit_log is also append-only but is deliberately NOT reachable here: it is
+ * written by this file and auditing it would be circular.
+ */
+type AppendOnlyTable = PgTable & {
+  id: PgColumn;
+  enteredBy: PgColumn;
+};
+
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Runner = typeof db | Tx;
 
@@ -146,6 +164,53 @@ export async function auditedInsert<T extends AuditableTable>(
     const [row] = await generic(r)
       .insert(table)
       .values({ ...values, createdBy: actor.id, updatedBy: actor.id })
+      .returning();
+
+    await typed(r).insert(auditLog).values({
+      tableName: getTableName(table),
+      recordId: row!.id as string,
+      action: "INSERT",
+      changedBy: actor.id,
+      before: null,
+      after: redact(row),
+    });
+
+    return row as InferSelectModel<T>;
+  });
+}
+
+/**
+ * Appends a row to an append-only table — in practice, a stage event.
+ *
+ * WHY THIS EXISTS (decision F1). The wrapper's other four functions all
+ * require created_by / updated_by / deleted_at, which stage_event deliberately
+ * does not have. The effect was that the single table Phase 2 exists to write
+ * had no audited write path at all, so non-negotiable 3 and the OWNER
+ * deny-write rule both had a hole exactly where the next six screens land.
+ * Relying on `entered_by` alone would have recorded who, but nothing would
+ * have recorded THAT a write happened in the log that is supposed to be
+ * complete.
+ *
+ * There is no auditedAppendUpdate and no auditedAppendDelete, and there will
+ * not be. Corrections to an append-only table are made by appending a
+ * correcting row; the database raises on any other attempt (migration 0001).
+ *
+ * `entered_by` is stamped from the actor rather than taken from the caller,
+ * for the same reason auditedInsert stamps created_by: the person the audit
+ * row names and the person the event names must not be able to disagree.
+ */
+export async function auditedAppend<T extends AppendOnlyTable>(
+  actor: Actor,
+  table: T,
+  values: InferInsertModel<T>,
+  tx?: Runner,
+): Promise<InferSelectModel<T>> {
+  assertCanWrite(actor);
+
+  return inTransaction(tx, async (r) => {
+    const [row] = await generic(r)
+      .insert(table)
+      .values({ ...values, enteredBy: actor.id })
       .returning();
 
     await typed(r).insert(auditLog).values({
