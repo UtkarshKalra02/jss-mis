@@ -458,5 +458,9 @@ Write migration as a one-off script with a dry-run mode that reports row counts 
 3. Every write goes through the audit wrapper.
 4. Foreign keys enforced at the database level, not just in application code.
 5. No enum values hardcoded in components — read from `stage` table and TypeScript enums generated from the schema.
-6. Committed date is required on every PO item. The system's whole purpose fails without it.
+6. Committed date is required at every human entry point. The system's whole purpose
+   fails without it. It is nullable in the database for ONE reason only: imported
+   historical rows, which genuinely have no commitment recorded and are therefore
+   excluded from OTD entirely — never counted as met, never counted as missed. See
+   decision F8.
 7. Soft delete only.

@@ -146,7 +146,8 @@ at the top of the views migration.
 ## D. Deferred
 
 - **File storage** (`purchase_order.file_url`, `design.artwork_url`) — columns exist and
-  hold plain text. Vercel Blob, decided in Phase 2.
+  hold plain text. Deferred again at the start of Phase 2; see F5. A pasted Drive URL is
+  the Phase 2 answer.
 - **GST is not calculated here.** Busy is the book of record; tax amounts are typed in to
   match what Busy produced, and `invoice_no` is Busy's number, not one this system
   allocates.
@@ -180,6 +181,13 @@ repair, which, being outside the app, is a decision someone has to make consciou
 upgrading to Next 16, which the fixed stack forbids. Both are build-time and
 image-optimisation concerns rather than request-path issues. Revisit if the stack ever
 moves to 16.
+
+Adding `exceljs` in Phase 2 brought one more: a moderate advisory against `uuid` 8.3.2, a
+missing buffer bounds check in v3/v5/v6 when a `buf` argument is supplied. It is not
+reachable here. `exceljs` imports only `v4` and calls it with no arguments, from a single
+file that generates conditional-formatting rule ids
+(`lib/xlsx/xform/sheet/cf-ext/cf-rule-ext-xform.js`). Checked rather than assumed, and
+worth rechecking if exceljs is ever upgraded.
 
 **E5 — `last_login_at` is not routed through the audit wrapper.** It is session
 bookkeeping rather than a business record change, and auditing every sign-in would bury
@@ -276,3 +284,113 @@ everywhere with no code change.
 default for a desktop that follows the OS at dusk, and a plain toggle gives no way back to
 it once touched. The toggle is reachable on the login screen too, before sign-in — somebody
 on a night shift should not have to authenticate against a white screen first.
+
+---
+
+## F. Phase 2 decisions
+
+Settled 18 Aug 2026, before any Phase 2 code was written, in answer to the ambiguities
+raised after reading the shipped Phase 1. The importer requirements these sit alongside
+are in [`BACKLOG.md`](BACKLOG.md).
+
+**F1 — `stage_event` writes go through the audit wrapper, via a new `auditedAppend`.**
+The wrapper's `AuditableTable` type requires `created_by`/`updated_by`/`deleted_at`, which
+`stage_event` deliberately does not have (C6). The effect was that the one table Phase 2
+exists to write had no audited write path at all, so non-negotiable 3 and the OWNER
+deny-write rule (B2) both had a hole exactly where Phase 2 lands. `auditedAppend` closes
+it: insert-only, no update or delete counterpart, same transaction, same OWNER check.
+Leaving stage events to write directly and relying on `entered_by` was rejected — that
+records who, but nothing records *that a write happened* in the one log that is supposed
+to be complete.
+
+**F2 — Dispatch shows every item with `pending_qty > 0`, not only items at READY.**
+Spec 6.8 gates the dispatch screen on `stage = READY`. Applied literally that would hide
+precisely the rows Phase 2 needs, because backfilled historical jobs do not arrive at
+READY — they arrive already delivered. Items not at READY are shown with a warning badge.
+The rule is warn, never block. A gate that is wrong for the current month's real work is
+worse than a badge somebody learns to read.
+
+**F3 — Saving a dispatch writes a `DISPATCHED` stage event at the dispatch date.**
+`event_at` is the dispatch date, not the moment of typing. `stage_event.event_at` already
+means "when it actually happened on the floor" rather than when someone got round to
+entering it, and back-dated challans are routine. Using `now()` would compress months of
+backfilled history into a single afternoon and make every WIP-ageing and lead-time figure
+derived from it meaningless.
+
+**F4 — Stage Update offers stages in one fixed precedence.** Three sources could each
+decide which stages apply, so the order between them is fixed rather than left to whoever
+writes the query:
+
+1. the design's `design_process` route, when the design has one;
+2. otherwise `stage.applies_to` filtered by `po_item.job_type` (B4);
+3. `is_optional` narrows within whichever of those applied.
+
+Moving an item *backwards* is allowed, behind a confirmation warning. Rework is real on a
+shop floor and a system that cannot express it gets worked around. Backward moves are
+logged as ordinary events, because they are ordinary events — `stage_event` is append-only
+and a correction has always been an append (C6).
+
+**F5 — File uploads deferred a second time.** `purchase_order.file_url` and
+`design.artwork_url` stay plain text columns holding a pasted Drive URL. Vercel Blob is a
+new storage dependency, a new failure mode, and a new thing to back up, against a Phase 2
+that is already six screens. Deferring costs nothing that is not recoverable: the columns
+do not change shape when a real uploader arrives.
+
+**F6 — Cancel ships in Phase 2, for both PO and item.** B5 permits exactly two writers to
+`purchase_order.status` and `po_item.status`: the recompute function and an explicit
+Cancel action. Building only the recompute half would leave `'Cancelled'` unreachable and
+the safeguard untestable.
+
+**F7 — A duplicate `po_no` within a client warns, and does not block.** Historical paper
+records repeat and mistype PO numbers, and a hard uniqueness constraint would reject real
+data that genuinely exists. The warning is at the form; there is no database constraint,
+deliberately.
+
+**F8 — `committed_date` is nullable in the database and required at every human entry
+point.** Non-negotiable 6 and the importer requirement in `BACKLOG.md` could not both hold
+as written: the column was `not null`, and a historical job copied out of a paper book
+genuinely has no commitment attached to it. Recording an invented date would be worse than
+recording none, because an invented date is indistinguishable from a real one and would
+quietly become part of OTD. The resolution is narrow and has five parts, all of which are
+required together:
+
+1. The column becomes nullable.
+2. The PO capture form requires it, always. There is no skip button and no exception.
+3. The importer is the only path permitted to write null, and only for rows flagged as
+   historical.
+4. `v_otd` excludes null-committed rows entirely. They must never count as met and never
+   count as missed — an item with no commitment cannot be late, and treating it as on time
+   would inflate the one number this system exists to produce.
+5. Every screen renders a null committed date as "Historical — no commitment recorded",
+   never as a blank cell. A blank reads as missing data somebody should go and fill in; the
+   whole point is that there is nothing to fill in.
+
+Spec section 10 was amended to match, so the non-negotiable and the schema do not disagree.
+This is the only point at which Phase 2 relaxes section 10, and it is written down here
+precisely so that it stays the only one.
+
+**F9 — Number allocation does not write an audit row.** Non-negotiable 3 says every write
+goes through the audit wrapper, and `number_series` is the one table Phase 2 writes
+outside it. The counter bump is bookkeeping rather than a business record change, on the
+same reasoning that keeps `last_login_at` out of the wrapper (E5): auditing it would add
+two rows of noise to every document created, burying the changes somebody actually needs
+to find. Nothing is lost, because the allocated number is a column on the row that
+consumed it, and that insert *is* audited — so "which number was issued, to what, by whom"
+is still answerable from the log.
+
+The safety property C7 asks for is preserved differently. `allocateNumber` takes a
+transaction as a required argument rather than an optional one, so it cannot be called
+outside the transaction that creates the row it numbers. If that row fails to insert, the
+allocation rolls back with it and the number is not burnt. An OWNER attempting a write
+allocates nothing, because the audited insert alongside it throws and takes the whole
+transaction down.
+
+**F10 — The financial year comes from the document's own date, not from today.** A PO
+dated 28 March 2025 is the 2024-25 financial year's PO whether it is entered that week or
+backfilled a year later, and C7 defines the series in terms of the document
+("`PO-2025-0001` is the first PO of April 2025 through March 2026"), not in terms of the
+typist. Allocation therefore takes the date of the thing being numbered and defaults to
+today in IST only when none is given. The consequence is deliberate: the historical import
+writes into old financial years' series, so numbers are chronological within a year but
+not in creation order — which is correct, and is the behaviour anybody reading
+`PO-2024-0007` would assume.
