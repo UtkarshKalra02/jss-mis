@@ -36,6 +36,20 @@
       "when": 1786946957815,
       "tag": "0004_must_change_password",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787120482605,
+      "tag": "0005_committed_date_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787120571673,
+      "tag": "0006_po_status_recompute",
+      "breakpoints": true
     }
   ]
 }

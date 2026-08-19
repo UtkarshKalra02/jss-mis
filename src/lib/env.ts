@@ -16,12 +16,21 @@ const envSchema = z.object({
   AUTH_SECRET: z
     .string()
     .min(1, "AUTH_SECRET is required (generate with: openssl rand -base64 32)"),
+
+  /**
+   * Optional: guards the nightly PO-status recompute endpoint. Optional
+   * because local development has no cron and should not be blocked on a
+   * variable it will never use. The route itself fails CLOSED when this is
+   * absent, so "unset" disables the endpoint rather than opening it.
+   */
+  CRON_SECRET: z.string().min(1).optional(),
 });
 
 const parsed = envSchema.safeParse({
   DATABASE_URL: process.env.DATABASE_URL,
   DATABASE_URL_UNPOOLED: process.env.DATABASE_URL_UNPOOLED,
   AUTH_SECRET: process.env.AUTH_SECRET,
+  CRON_SECRET: process.env.CRON_SECRET,
 });
 
 if (!parsed.success) {

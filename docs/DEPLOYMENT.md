@@ -82,13 +82,31 @@ first, for the reason in the next step.
 
 ### 5. Set the environment variables
 
-Three, all for Production (and Preview, if you want preview deployments to work):
+Four, all for Production (and Preview, if you want preview deployments to work):
 
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | Neon `main`, **pooled** — the host contains `-pooler` |
 | `DATABASE_URL_UNPOOLED` | Neon `main`, **direct** — no `-pooler` |
 | `AUTH_SECRET` | the production secret from step 2 |
+| `CRON_SECRET` | another `openssl rand -base64 32`, for the nightly recompute |
+
+`CRON_SECRET` is the only optional one, and only in the sense that the app boots
+without it. The nightly PO-status recompute (`vercel.json` → `crons`) calls
+`/api/cron/recompute-po-status` with this as a bearer token, and the route
+**refuses every request when the variable is unset** rather than running
+unauthenticated — so a missing `CRON_SECRET` silently disables the safety net
+rather than exposing it. Vercel injects the same value into its own cron
+requests automatically once it is set; you never wire it up by hand.
+
+To check it after deploying:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://<your-app>.vercel.app/api/cron/recompute-po-status
+```
+
+`401` is the healthy answer — the endpoint is live and refusing an unauthenticated
+caller. `503` means `CRON_SECRET` is not set.
 
 **These are needed at BUILD time, not just at runtime.** `src/lib/env.ts`
 validates the environment when the module is first imported, which happens while

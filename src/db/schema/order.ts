@@ -197,10 +197,30 @@ export const poItem = pgTable(
 
     /**
      * THE SINGLE MOST IMPORTANT FIELD (spec section 4.3, non-negotiable 6).
-     * OTD is measured against it. Not nullable, and there is no default —
-     * a guessed commitment is worse than none.
+     * OTD is measured against it, and there is no default — a guessed
+     * commitment is worse than none.
+     *
+     * NULLABLE FOR EXACTLY ONE REASON (decision F8): a historical job copied
+     * out of a paper book genuinely has no commitment recorded against it.
+     * Writing an invented date would be worse than writing none, because an
+     * invented date is indistinguishable from a real one and would quietly
+     * become part of OTD.
+     *
+     * The rules that make that safe, all of which hold together:
+     *
+     *   - The PO capture form requires it. Always, no skip.
+     *   - The importer is the only path permitted to write null.
+     *   - v_otd EXCLUDES these rows. Never counted as met, never as missed —
+     *     an item with no commitment cannot be late.
+     *   - v_po_item_status reports is_overdue and is_at_risk as FALSE for
+     *     them, not null, so no filter accidentally sweeps them up.
+     *   - Screens render them as "Historical — no commitment recorded", never
+     *     as a blank cell. A blank reads as data somebody should go and fill
+     *     in; the whole point is that there is nothing to fill in.
+     *
+     * If you are adding a new entry point, it requires a committed date.
      */
-    committedDate: date().notNull(),
+    committedDate: date(),
     committedDateBasis: committedDateBasisEnum().notNull().default("Manual"),
 
     /** Decides which stages apply. See jobTypeEnum. */

@@ -178,7 +178,19 @@ describe("column constraints", () => {
     });
   });
 
-  it("requires a committed date on every PO item (non-negotiable 6)", async () => {
+  /**
+   * Non-negotiable 6 changed shape in Phase 2 (decision F8) and this test
+   * changed with it. The column USED to reject null. It no longer does,
+   * because a historical job copied out of a paper book genuinely has no
+   * committed date, and inventing one would silently feed OTD.
+   *
+   * What has to hold instead is that a null commitment is inert: it cannot be
+   * overdue, it cannot be at risk, and it never reaches OTD in either
+   * direction. That is what is asserted here. The "required" half of the rule
+   * now lives at the PO capture form, which is not a database constraint and
+   * cannot be tested from this file.
+   */
+  it("accepts a null committed date but keeps it out of OTD and the risk flags (F8)", async () => {
     await inRollback(async (tx) => {
       const s = await scenario(tx);
       const [po] = (
@@ -187,14 +199,37 @@ describe("column constraints", () => {
         )
       ).rows as { id: string }[];
 
-      const result = await expectFailure(tx, (sp) =>
-        sp.execute(
+      const [historical] = (
+        await tx.execute(
           sql`insert into po_item (item_code, purchase_order_id, item_name, ordered_qty, committed_date)
-              values (${uniq("ITM-")}, ${po!.id}, 'No date', 10, null)`,
-        ),
+              values (${uniq("ITM-")}, ${po!.id}, 'Historical job', 10, null) returning id`,
+        )
+      ).rows as { id: string }[];
+
+      // Neither flag may be NULL. A null would vanish from BOTH `WHERE flag`
+      // and `WHERE NOT flag`, which is the failure mode nobody spots.
+      const [flags] = (
+        await tx.execute(
+          sql`select is_overdue, is_at_risk, days_to_committed
+              from v_po_item_status where po_item_id = ${historical!.id}`,
+        )
+      ).rows as { is_overdue: boolean; is_at_risk: boolean; days_to_committed: number | null }[];
+
+      expect(flags!.is_overdue).toBe(false);
+      expect(flags!.is_at_risk).toBe(false);
+      expect(flags!.days_to_committed).toBeNull();
+
+      // Dispatch it in full. It is delivered, so it would ordinarily appear in
+      // v_otd — and it must not, because there was never a promise to measure.
+      await tx.execute(
+        sql`insert into dispatch_line (dispatch_id, po_item_id, qty)
+            values (${s.dispatchA}, ${historical!.id}, 10)`,
       );
-      expect(result.threw).toBe(true);
-      expect(result.message).toContain("committed_date");
+
+      const otd = (
+        await tx.execute(sql`select po_item_id from v_otd where po_item_id = ${historical!.id}`)
+      ).rows;
+      expect(otd).toHaveLength(0);
     });
   });
 });

@@ -15,7 +15,8 @@ export default NextAuth(authConfig).auth;
 
 export const config = {
   matcher: [
-    // Everything except Next internals, the auth endpoints, and static files.
-    "/((?!api/auth|api/health|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Everything except Next internals, the auth endpoints, the cron endpoint
+    // (which carries its own bearer secret and has no session), and static files.
+    "/((?!api/auth|api/health|api/cron|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

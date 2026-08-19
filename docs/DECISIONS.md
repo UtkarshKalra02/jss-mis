@@ -406,3 +406,56 @@ today in IST only when none is given. The consequence is deliberate: the histori
 writes into old financial years' series, so numbers are chronological within a year but
 not in creation order — which is correct, and is the behaviour anybody reading
 `PO-2024-0007` would assume.
+
+**F11 — The status write lock is a database refusal, not a compile error.** B5 promised
+that only the recompute function and the Cancel action may write
+`purchase_order.status` and `po_item.status`. Migration 0006 makes that true with a
+`BEFORE UPDATE` trigger on both columns, keyed on a transaction-local setting
+(`jss.allow_status_write`) that only those two writers turn on. Excluding `status` from
+the TypeScript update types was considered and rejected on the same reasoning that put
+the dispatch quantity ceiling in a trigger rather than in the application: a rule that
+lives only in TypeScript is a rule the import script does not have, and a `psql` session
+does not have at all.
+
+`set_config(..., is_local => true)` is used rather than a session-level `SET`, because it
+reverts on commit or rollback and is therefore safe behind a connection pooler in
+transaction mode — which is exactly what `DATABASE_URL` is. `INSERT` is guarded as well as
+`UPDATE`, or the lock could be sidestepped by creating rows that are born `Closed`; the
+guard permits the `'Open'` default and nothing else.
+
+The recompute half needs no application call site at all. It runs from `AFTER` triggers on
+`dispatch_line`, on `dispatch` (cancelling a whole challan changes every item on it
+without touching a single line row), and on `po_item.ordered_qty`. The spec asks for
+"derived nightly + on write"; doing the on-write half in the application would mean every
+future screen touching a dispatch has to remember to call it, and the screen that forgets
+produces a wrong status that looks exactly like a right one.
+
+Both recompute functions read `dispatched_qty` from `v_po_item_status` rather than
+re-summing `dispatch_line`. That is measurably slower and worth it: the rules about which
+challans consume order quantity then have one definition instead of two that can drift,
+and the symptom of drift would be a status column disagreeing with the pending quantity
+printed beside it.
+
+`Cancelled` is never derived away, in either function. It is a human decision and dispatch
+quantities have no opinion about it.
+
+**F12 — The recompute writes its own audit rows.** It writes `status`, and non-negotiable
+3 says every write is audited, so it inserts an `audit_log` row attributed to the SYSTEM
+user (C4) inside the same transaction as the change. The `audit_log` schema comment
+already anticipated this. Volume is a non-issue because the functions only write when the
+computed value actually differs: a nightly sweep across unchanged rows logs nothing, and
+an item transitions `Open → Closed` about once in its life.
+
+These rows carry only the `status` field in `before`/`after`, not the whole-row snapshot
+that `src/db/audit.ts` writes. The wrapper serialises JavaScript objects and so produces
+camelCase keys, while `to_jsonb()` in SQL would produce snake_case ones; a partial object
+is visibly a delta and cannot be mistaken for a snapshot in the wrong shape.
+
+**F13 — The quantity ceiling is now enforced from both directions.** Migration 0001 stopped
+`SUM(dispatch_line.qty)` exceeding `ordered_qty` by growing the dispatch side. Nothing
+stopped the identical violation being reached from the other side — reducing `ordered_qty`
+below what had already gone out. That path produces no error anywhere. It produces a
+negative `pending_qty`, which surfaces as a minus sign in a column on the Item Tracker and
+an item that quietly drops out of every "still owed" filter. Reducing an over-entered
+order is legitimate, so the guard blocks only the part that is not: the challans have to
+be corrected first, which is where the wrong number actually is.
