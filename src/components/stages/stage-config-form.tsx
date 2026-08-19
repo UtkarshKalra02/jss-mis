@@ -92,6 +92,20 @@ function StageRowFields({ row }: { row: StageRow }) {
         />
       </td>
 
+      {/* F18: does a job physically pass through this stage on the floor?
+          Filters the design route editor only — Stage Update still offers
+          every stage, because a job has to be moved to READY and DISPATCHED
+          and neither is a manufacturing step. */}
+      <td className="px-3 py-2 text-center">
+        <input
+          type="checkbox"
+          name={`isProcess__${row.id}`}
+          defaultChecked={row.isProcess}
+          className="size-4 align-middle"
+          aria-label={`Floor process, ${row.code}`}
+        />
+      </td>
+
       <td className="px-3 py-2">
         <input
           name={`targetHours__${row.id}`}
@@ -165,6 +179,7 @@ export function StageConfigForm({ stages }: { stages: StageRow[] }) {
               <th className="px-3 whitespace-nowrap">Seq</th>
               <th className="px-3 whitespace-nowrap">Applies to</th>
               <th className="px-3 whitespace-nowrap">Optional</th>
+              <th className="px-3 whitespace-nowrap">Floor step</th>
               <th className="px-3 whitespace-nowrap">Target hrs</th>
               <th className="px-3 whitespace-nowrap">Measured</th>
               <th className="px-3 whitespace-nowrap">Colour</th>

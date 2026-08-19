@@ -12,6 +12,7 @@ const stored = (over: Partial<StageRow> = {}): StageRow => ({
   name: "Printing",
   sequence: 70,
   isOptional: false,
+  isProcess: true,
   appliesTo: "All",
   // numeric(6,2) always comes back with decimals, which is the whole point.
   targetHours: "6.00",
@@ -30,6 +31,7 @@ const posted = (over: Partial<StageRowInput> = {}): Map<string, StageRowInput> =
         name: "Printing",
         sequence: 70,
         isOptional: false,
+        isProcess: true,
         appliesTo: "All",
         targetHours: 6,
         targetHoursVerified: false,
@@ -109,5 +111,14 @@ describe("stage config diff", () => {
   it("skips rows the form did not include", () => {
     const other = stored({ id: "22222222-2222-2222-2222-222222222222", code: "UV" });
     expect(computeStageChanges([other], posted())).toEqual([]);
+  });
+
+  // F18. Reclassifying a stage is an ordinary config edit, and has to reach
+  // the diff or the Admin checkbox silently does nothing.
+  it("reports a change when a stage is reclassified as lifecycle rather than floor work", () => {
+    const changes = computeStageChanges([stored()], posted({ isProcess: false }));
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.values).toEqual({ isProcess: false });
   });
 });

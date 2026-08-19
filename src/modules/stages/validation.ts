@@ -16,6 +16,11 @@ export const stageRowSchema = z.object({
     .min(0)
     .max(9999),
   isOptional: z.boolean(),
+  /**
+   * Whether a job physically passes through this stage (F18). Filters the
+   * design route editor; Stage Update ignores it and offers everything.
+   */
+  isProcess: z.boolean(),
   appliesTo: z.enum(["All", "New", "Repeat"]),
   /** Blank means "no target", which is different from a target of zero. */
   targetHours: z.union([

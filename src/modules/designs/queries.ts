@@ -100,6 +100,13 @@ export type RouteStage = {
  * (non-negotiable 5). A stage ADMIN adds appears here immediately, and one
  * that is deactivated stops being offered without breaking the designs that
  * already reference it, because `design_process` keeps its foreign key.
+ *
+ * Filtered to is_process (decision F18). A design's route describes how the
+ * job is MANUFACTURED, so ENQUIRY, COSTING, PO_RECEIVED, APPROVED, READY and
+ * DISPATCHED do not belong on it — they are points in the order's lifecycle.
+ * They remain perfectly valid stage events and Stage Update still offers them;
+ * the distinction is editable in Admin, so the vocabulary can change without a
+ * migration.
  */
 export async function listRouteStages(): Promise<RouteStage[]> {
   return db
@@ -111,7 +118,7 @@ export async function listRouteStages(): Promise<RouteStage[]> {
       colour: stage.colour,
     })
     .from(stage)
-    .where(and(isNull(stage.deletedAt), eq(stage.isActive, true)))
+    .where(and(isNull(stage.deletedAt), eq(stage.isActive, true), eq(stage.isProcess, true)))
     .orderBy(asc(stage.sequence));
 }
 

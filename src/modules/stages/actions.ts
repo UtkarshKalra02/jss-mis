@@ -53,6 +53,7 @@ export async function saveStagesAction(
         name: str(formData, `name__${row.id}`),
         sequence: str(formData, `sequence__${row.id}`),
         isOptional: bool(formData, `isOptional__${row.id}`),
+        isProcess: bool(formData, `isProcess__${row.id}`),
         appliesTo: str(formData, `appliesTo__${row.id}`),
         targetHours: str(formData, `targetHours__${row.id}`),
         targetHoursVerified: bool(formData, `verified__${row.id}`),

@@ -37,6 +37,7 @@ export function computeStageChanges(
     if (next.name !== row.name) values.name = next.name;
     if (next.sequence !== row.sequence) values.sequence = next.sequence;
     if (next.isOptional !== row.isOptional) values.isOptional = next.isOptional;
+    if (next.isProcess !== row.isProcess) values.isProcess = next.isProcess;
     if (next.appliesTo !== row.appliesTo) values.appliesTo = next.appliesTo;
     if (next.isActive !== row.isActive) values.isActive = next.isActive;
 

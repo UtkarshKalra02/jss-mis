@@ -9,6 +9,7 @@ export type StageRow = {
   name: string;
   sequence: number;
   isOptional: boolean;
+  isProcess: boolean;
   appliesTo: "All" | "New" | "Repeat";
   targetHours: string | null;
   targetHoursVerified: boolean;
@@ -24,6 +25,7 @@ export async function listStages(): Promise<StageRow[]> {
       name: stage.name,
       sequence: stage.sequence,
       isOptional: stage.isOptional,
+      isProcess: stage.isProcess,
       appliesTo: stage.appliesTo,
       targetHours: stage.targetHours,
       targetHoursVerified: stage.targetHoursVerified,

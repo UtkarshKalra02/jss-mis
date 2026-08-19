@@ -80,6 +80,26 @@ export const stage = pgTable(
     /** True for LAMINATION, UV, FOILING, PASTING. */
     isOptional: boolean().notNull().default(false),
 
+    /**
+     * Whether a job physically passes through this stage on the factory floor,
+     * as opposed to the stage being a point in the order's lifecycle.
+     *
+     * PRINTING and LAMINATION are things that happen to paper. PO_RECEIVED and
+     * READY are things that happen to an order. Both are legitimate stage
+     * events — Preeti moves a job to READY and to DISPATCHED — but only the
+     * first kind belongs on a DESIGN's route, which is a description of how
+     * this particular job is manufactured.
+     *
+     * So this filters the design route editor and NOTHING ELSE. Stage Update
+     * offers every stage regardless (decision F18).
+     *
+     * Defaults true because a stage somebody adds later is far more likely to
+     * be a new floor process than a new lifecycle point, and because offering
+     * one option too many in the route editor is a smaller error than silently
+     * hiding a real process.
+     */
+    isProcess: boolean().notNull().default(true),
+
     /** Describes the JOB (po_item.job_type), not the client. */
     appliesTo: stageAppliesToEnum().notNull().default("All"),
 

@@ -517,15 +517,26 @@ that the naive insert genuinely fails with the constraint name, and that restori
 way through. Without the first assertion the second reads as unnecessary ceremony and gets
 simplified back into a bug.
 
-**F18 — OPEN: the route editor offers every active stage.** The checkboxes are read from
-the `stage` table in sequence order, which is what non-negotiable 5 requires and means a
-stage ADMIN adds appears with no code change. It also means ENQUIRY, COSTING and
-PO_RECEIVED are offered as route steps, which is not wrong exactly — nothing breaks — but
-they are not processes a design "passes through" in the way LAMINATION is.
+**F18 — `stage.is_process` separates floor work from order lifecycle.** The design route
+editor read every active stage, which non-negotiable 5 requires but meant ENQUIRY,
+COSTING and PO_RECEIVED were offered as manufacturing steps. Nothing broke; they are simply
+not things a design "passes through" the way LAMINATION is.
 
-The fix would be an `is_process` boolean on `stage`, so the editor could offer only real
-production steps while everything else still reads from the table. That is a schema change
-and a judgement about the factory's vocabulary, so it is recorded here rather than decided
-unilaterally. Until then the list is complete and the user deselects what does not apply;
-an empty route means the job follows the default for its job type (F4), which is the
-common case.
+`stage.is_process` now carries that distinction, seeded in migration 0007:
+
+- **true** — DESIGN, MATERIAL_READY, PRINTING, LAMINATION, UV, FOILING, DIE_CUT, PASTING.
+  Things that happen to paper.
+- **false** — ENQUIRY, COSTING, PO_RECEIVED, APPROVED, READY, DISPATCHED. Things that
+  happen to an order.
+
+It filters the design route editor and **nothing else**. Stage Update offers every stage
+regardless, because Preeti has to move a job to READY and to DISPATCHED and neither is a
+route step — the flag describes what a design's route may contain, not what a stage event
+may be.
+
+The column defaults to true, on the grounds that a stage added later is far more likely to
+be a new floor process than a new lifecycle point, and that offering one option too many
+in the route editor is a smaller error than silently hiding a real process. It is editable
+on the Admin stage config screen, so the factory's vocabulary can change without a
+migration — which is the same reasoning that keeps stages in a table rather than an enum
+(C3).
