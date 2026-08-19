@@ -646,21 +646,37 @@ Changing the dispatch DATE is allowed, and the DISPATCHED events already written
 original date. That is not an oversight: a correction to history is an appended row, never
 an edit to an old one, and the timeline showing both is the honest record.
 
-**F22 — OPEN: a Draft challan already consumes order quantity.** `v_po_item_status`
-excludes only `Cancelled` dispatches, so a challan sitting in `Draft` reduces `pending_qty`
-exactly as a dispatched one does. That is Phase 1's behaviour, shipped in migration 0002,
-and `tests/dispatch-entry.test.ts` pins it as observed rather than endorsed.
+**F22 — A Draft challan is typed but not gone, and consumes nothing.** Until migration
+0008 everything that asked "which challans count?" asked it as `status <> 'Cancelled'`, so
+a draft reduced `pending_qty` exactly as a dispatched one did. Starting a draft therefore
+made an item disappear from the list of what a client was still owed, which is the opposite
+of what a draft should mean.
 
-It matters because the dispatch screen lists items by `pending_qty > 0` (F2): an item on a
-draft challan would quietly vanish from the list of what a client is owed, which is the
-opposite of what a draft should mean. Two coherent answers exist and they are a decision
-about what `Draft` is FOR:
+The definition is now a POSITIVE list: goods have left when the challan says
+`'Dispatched'`. Positive rather than `NOT IN ('Draft', 'Cancelled')` because the failure
+modes are not equal. If a status is added later, an exclusion list would silently start
+counting it — over-counting hides work that is still owed, and nothing surfaces it. A
+positive list would silently stop counting it, which shows up as quantity still owed and
+gets noticed.
 
-1. **Draft means "typed but not gone"** — the views exclude it alongside `Cancelled`. The
-   quantity stays owed until somebody marks the challan dispatched. This changes an OTD
-   input, so it is not a change to make quietly.
-2. **Draft means "goods allocated, paperwork unfinished"** — current behaviour is correct
-   and the status is bookkeeping about the document rather than the goods.
+Three things had to move together, and the change is wrong without any of them:
 
-Until this is settled the dispatch form defaults new challans to `Dispatched`, so the
-ambiguity does not bite the backfill. Nothing was changed in the Phase 1 view.
+1. **The views.** `v_po_item_status` and `v_client_summary`'s own `dispatch_value` CTE,
+   which joins `dispatch_line` directly rather than through the spine view. Missing the
+   second would have left a client's dispatched VALUE counting drafts while their pending
+   QUANTITY did not — a disagreement nobody reconciles until it is queried in a meeting.
+2. **The quantity ceiling.** `dispatch_line_guard()` now uses the same definition, so
+   "consumes order quantity" has exactly one. A line on a non-dispatched challan is not
+   checked at all, because it consumes nothing yet.
+3. **A new guard on the transition**, which is the hole this change opens. With drafts not
+   counted, a draft for 1000 and a dispatch for 1000 against an order of 1000 are each
+   individually valid and jointly impossible; promoting the draft would put 2000 against
+   the item. The line-level trigger cannot see it, because promoting a draft touches no
+   line. `dispatch_consumption_guard()` fires on the transition INTO consuming — becoming
+   `'Dispatched'`, or being restored from a soft delete while already `'Dispatched'` — and
+   names the first item that does not fit.
+
+On the application side, promotion is the moment the goods left, so it is the moment the
+DISPATCHED stage events are written (F23's rule, at the new time). Creating a draft writes
+none; marking it dispatched writes them, dated by the challan; reinstating a cancelled
+challan does the same, because that is also a transition into consuming.

@@ -290,13 +290,11 @@ describe("dispatch entry", () => {
     });
   });
 
-  /**
-   * A Draft challan CONSUMES order quantity, because v_po_item_status excludes
-   * only Cancelled. That is Phase 1's behaviour and this test pins it as
-   * observed rather than endorsing it — see the open question in DECISIONS.md
-   * (F22). The dispatch form defaults to 'Dispatched' so it does not bite.
-   */
-  it("counts a Draft challan against the order (current behaviour, F22)", async () => {
+  /* ---------------------------------------------------------------------- */
+  /* F22 — a draft is typed but not gone                                      */
+  /* ---------------------------------------------------------------------- */
+
+  it("leaves the quantity owed while a challan is still a draft", async () => {
     await inRollback(async (tx) => {
       const f = await fixture(tx, 100);
       const ch = await challan(tx, {
@@ -313,11 +311,160 @@ describe("dispatch entry", () => {
       );
 
       const [row] = await tx
-        .select({ pendingQty: vPoItemStatus.pendingQty })
+        .select({ pendingQty: vPoItemStatus.pendingQty, dispatchedQty: vPoItemStatus.dispatchedQty })
         .from(vPoItemStatus)
         .where(eq(vPoItemStatus.poItemId, f.itemId));
 
-      expect(row!.pendingQty).toBe(60);
+      // Still owed in full. Starting a draft must not make an item vanish from
+      // the list of what a client is waiting for.
+      expect(row!.dispatchedQty).toBe(0);
+      expect(row!.pendingQty).toBe(100);
+
+      // And nothing has been delivered, so nothing reached DISPATCHED.
+      expect(await completedItems(tx, [f.itemId])).toEqual([]);
+    });
+  });
+
+  it("consumes the quantity when the draft is marked dispatched", async () => {
+    await inRollback(async (tx) => {
+      const f = await fixture(tx, 100);
+      const ch = await challan(tx, {
+        clientId: f.clientId,
+        dispatchDate: "2026-08-20",
+        status: "Draft",
+      });
+
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatchLine,
+        { dispatchId: ch.id, poItemId: f.itemId, qty: 100 },
+        tx,
+      );
+      await tx.execute(sql`update dispatch set status = 'Dispatched' where id = ${ch.id}`);
+
+      const [row] = await tx
+        .select({ pendingQty: vPoItemStatus.pendingQty, status: vPoItemStatus.status })
+        .from(vPoItemStatus)
+        .where(eq(vPoItemStatus.poItemId, f.itemId));
+
+      expect(row!.pendingQty).toBe(0);
+      // The recompute trigger on `dispatch` closed it without a line moving.
+      expect(row!.status).toBe("Closed");
+
+      // Promotion is the moment the goods left, so it is the moment the event
+      // belongs — which the action writes.
+      expect(await completedItems(tx, [f.itemId])).toEqual([f.itemId]);
+    });
+  });
+
+  /**
+   * The hole excluding drafts opens, and the guard that closes it.
+   *
+   * A draft for the whole order and a dispatch for the whole order are each
+   * individually valid once drafts do not count. Promoting the draft would put
+   * twice the ordered quantity against the item, and the line-level trigger
+   * cannot see it because promoting a draft touches no line.
+   */
+  it("refuses to promote a draft that would take an item over its order", async () => {
+    await inRollback(async (tx) => {
+      const f = await fixture(tx, 100);
+
+      const draft = await challan(tx, {
+        clientId: f.clientId,
+        dispatchDate: "2026-08-20",
+        status: "Draft",
+      });
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatchLine,
+        { dispatchId: draft.id, poItemId: f.itemId, qty: 100 },
+        tx,
+      );
+
+      // Perfectly valid on its own: the draft consumes nothing.
+      const gone = await challan(tx, { clientId: f.clientId, dispatchDate: "2026-08-21" });
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatchLine,
+        { dispatchId: gone.id, poItemId: f.itemId, qty: 100 },
+        tx,
+      );
+
+      const result = await expectFailure(tx, (sp) =>
+        sp.execute(sql`update dispatch set status = 'Dispatched' where id = ${draft.id}`),
+      );
+
+      expect(result.threw).toBe(true);
+      expect(result.message).toContain("would go over its order");
+      expect(result.message).toContain("over by 100");
+    });
+  });
+
+  it("still allows promoting a draft that fits", async () => {
+    await inRollback(async (tx) => {
+      const f = await fixture(tx, 100);
+
+      const draft = await challan(tx, {
+        clientId: f.clientId,
+        dispatchDate: "2026-08-20",
+        status: "Draft",
+      });
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatchLine,
+        { dispatchId: draft.id, poItemId: f.itemId, qty: 60 },
+        tx,
+      );
+
+      const gone = await challan(tx, { clientId: f.clientId, dispatchDate: "2026-08-21" });
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatchLine,
+        { dispatchId: gone.id, poItemId: f.itemId, qty: 40 },
+        tx,
+      );
+
+      await tx.execute(sql`update dispatch set status = 'Dispatched' where id = ${draft.id}`);
+
+      const [row] = await tx
+        .select({ pendingQty: vPoItemStatus.pendingQty })
+        .from(vPoItemStatus)
+        .where(eq(vPoItemStatus.poItemId, f.itemId));
+      expect(row!.pendingQty).toBe(0);
+    });
+  });
+
+  it("does not check a draft line against the order, since it consumes nothing", async () => {
+    // A draft may be typed up for more than is outstanding — it is a plan, and
+    // the check happens when it becomes real.
+    await inRollback(async (tx) => {
+      const f = await fixture(tx, 100);
+      const gone = await challan(tx, { clientId: f.clientId, dispatchDate: "2026-08-19" });
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatchLine,
+        { dispatchId: gone.id, poItemId: f.itemId, qty: 100 },
+        tx,
+      );
+
+      const draft = await challan(tx, {
+        clientId: f.clientId,
+        dispatchDate: "2026-08-20",
+        status: "Draft",
+      });
+
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatchLine,
+        { dispatchId: draft.id, poItemId: f.itemId, qty: 25 },
+        tx,
+      );
+
+      const [row] = await tx
+        .select({ pendingQty: vPoItemStatus.pendingQty })
+        .from(vPoItemStatus)
+        .where(eq(vPoItemStatus.poItemId, f.itemId));
+      expect(row!.pendingQty).toBe(0);
     });
   });
 });

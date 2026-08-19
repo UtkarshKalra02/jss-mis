@@ -1,5 +1,6 @@
 "use server";
 
+import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 import { requireAccess } from "@/auth/guard";
@@ -86,6 +87,22 @@ async function writeDispatchedEvents(
   return completed.length;
 }
 
+/**
+ * A challan only counts once it says 'Dispatched' (decision F22). A draft is
+ * typed but not gone, so it writes no stage events and consumes no quantity.
+ */
+const CONSUMES = "Dispatched";
+
+/** Every po_item on a challan, for the transition case. */
+async function itemIdsOnChallan(tx: Tx, dispatchId: string): Promise<string[]> {
+  const rows = await tx
+    .select({ poItemId: dispatchLine.poItemId })
+    .from(dispatchLine)
+    .where(and(eq(dispatchLine.dispatchId, dispatchId), isNull(dispatchLine.deletedAt)));
+
+  return [...new Set(rows.map((r) => r.poItemId))];
+}
+
 /* -------------------------------------------------------------------------- */
 /* Create                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -168,10 +185,15 @@ export async function createDispatchAction(
         );
       }
 
-      const completed = await writeDispatchedEvents(actor, tx, {
-        poItemIds: v.lines.map((l) => l.poItemId),
-        dispatchDate: v.dispatchDate,
-      });
+      // A draft has not gone out, so nothing reached DISPATCHED and nothing
+      // is delivered yet (F22). The events are written when it is promoted.
+      const completed =
+        v.status === CONSUMES
+          ? await writeDispatchedEvents(actor, tx, {
+              poItemIds: v.lines.map((l) => l.poItemId),
+              dispatchDate: v.dispatchDate,
+            })
+          : 0;
 
       return { head, completed };
     });
@@ -182,9 +204,11 @@ export async function createDispatchAction(
     return ok({
       message:
         `${result.head.challanNo} saved with ${v.lines.length} line${v.lines.length === 1 ? "" : "s"}` +
-        (result.completed > 0
-          ? `. ${result.completed} item${result.completed === 1 ? "" : "s"} now fully delivered.`
-          : "."),
+        (v.status !== CONSUMES
+          ? ` as a ${v.status.toLowerCase()}. Nothing is delivered until it is marked Dispatched.`
+          : result.completed > 0
+            ? `. ${result.completed} item${result.completed === 1 ? "" : "s"} now fully delivered.`
+            : "."),
       redirectTo: `/dispatch/${result.head.id}`,
     });
   } catch (error) {
@@ -231,19 +255,46 @@ export async function updateDispatchHeaderAction(
     if (!parsed.success) return fail(parsed.error.issues[0]!.message);
     const v = parsed.data;
 
-    await auditedUpdate(actor, dispatch, id, {
-      dispatchDate: v.dispatchDate,
-      status: v.status,
-      vehicleNo: orNull(v.vehicleNo),
-      transporter: orNull(v.transporter),
-      ewayBillNo: orNull(v.ewayBillNo),
-      remarks: orNull(v.remarks),
+    const becomingConsuming = v.status === CONSUMES && existing.status !== CONSUMES;
+
+    const completed = await db.transaction(async (tx) => {
+      await auditedUpdate(
+        actor,
+        dispatch,
+        id,
+        {
+          dispatchDate: v.dispatchDate,
+          status: v.status,
+          vehicleNo: orNull(v.vehicleNo),
+          transporter: orNull(v.transporter),
+          ewayBillNo: orNull(v.ewayBillNo),
+          remarks: orNull(v.remarks),
+        },
+        tx,
+      );
+
+      // Promoting a draft is the moment the goods left, so it is the moment
+      // the DISPATCHED events belong (F22). Dated by the challan, as always.
+      if (!becomingConsuming) return 0;
+
+      return writeDispatchedEvents(actor, tx, {
+        poItemIds: await itemIdsOnChallan(tx, id),
+        dispatchDate: v.dispatchDate,
+      });
     });
 
     revalidatePath("/dispatch");
     revalidatePath(`/dispatch/${id}`);
     revalidatePath("/items");
-    return ok({ message: "Saved." });
+
+    return ok({
+      message: becomingConsuming
+        ? `${existing.challanNo} marked dispatched` +
+          (completed > 0
+            ? `. ${completed} item${completed === 1 ? "" : "s"} now fully delivered.`
+            : ".")
+        : "Saved.",
+    });
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Could not save the changes.");
   }
@@ -282,6 +333,9 @@ export async function addDispatchLineAction(
         { dispatchId, poItemId: v.poItemId, qty: v.qty, rate: orNull(v.rate) },
         tx,
       );
+
+      // Nothing has left on a draft, so nothing reached DISPATCHED (F22).
+      if (head.status !== CONSUMES) return;
 
       await writeDispatchedEvents(actor, tx, {
         poItemIds: [v.poItemId],
@@ -349,8 +403,17 @@ export async function setDispatchCancelledAction(
     const existing = await getDispatch(id);
     if (!existing) return fail("That dispatch no longer exists.");
 
-    await auditedUpdate(actor, dispatch, id, {
-      status: cancel ? "Cancelled" : "Dispatched",
+    await db.transaction(async (tx) => {
+      await auditedUpdate(actor, dispatch, id, { status: cancel ? "Cancelled" : CONSUMES }, tx);
+
+      // Reinstating is a transition INTO consuming, so items it completes get
+      // their DISPATCHED event now — the same rule as promoting a draft.
+      if (cancel) return;
+
+      await writeDispatchedEvents(actor, tx, {
+        poItemIds: await itemIdsOnChallan(tx, id),
+        dispatchDate: existing.dispatchDate,
+      });
     });
 
     revalidatePath("/dispatch");

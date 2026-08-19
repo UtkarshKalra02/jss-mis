@@ -57,6 +57,13 @@
       "when": 1787125815084,
       "tag": "0007_stage_is_process",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787141192748,
+      "tag": "0008_draft_does_not_consume",
+      "breakpoints": true
     }
   ]
 }

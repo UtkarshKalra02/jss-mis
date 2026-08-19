@@ -140,6 +140,12 @@ export function DispatchForm({
                 </option>
               ))}
             </select>
+            {/* F22: a draft is typed but not gone. It consumes no order
+                quantity and writes no stage events until it is promoted. */}
+            <p className="text-muted-foreground text-xs">
+              Draft means typed but not gone — the quantity stays owed until you mark it
+              Dispatched.
+            </p>
           </div>
 
           <div className="space-y-2">
