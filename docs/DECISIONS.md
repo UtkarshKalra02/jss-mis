@@ -540,3 +540,48 @@ in the route editor is a smaller error than silently hiding a real process. It i
 on the Admin stage config screen, so the factory's vocabulary can change without a
 migration — which is the same reasoning that keeps stages in a table rather than an enum
 (C3).
+
+**F19 — A PO item and its opening stage event are created together, always.** Spec 6.3
+asks for a `PO_RECEIVED` event per item on save. It is written in the same function that
+inserts the item — `insertPoItem` in `src/modules/purchase-orders/actions.ts` — rather than
+alongside it at each call site, so there is no path that produces an item with no stage
+history. That matters because an item whose `current_stage` is null is indistinguishable
+from one somebody forgot to update, and the Item Tracker exists precisely to answer "where
+is this?" without asking a person.
+
+The event is dated by the **PO date**, not by the clock, on the same reasoning as F3 for
+dispatch: a PO entered three weeks late is three weeks old, and dating it now would make
+every ageing figure derived from it wrong in the flattering direction. `startOfDayIST()`
+in `src/lib/dates.ts` does the conversion, and is the TypeScript counterpart of
+`today_ist()` in the views (C10). A test asserts the resulting UTC instant, because the
+whole point is that a naive parse would land on the wrong day.
+
+**F20 — The PO capture form holds everything in React state.** Not a style preference. The
+duplicate-PO-number question (F7) sends the form back to ask, and an uncontrolled form
+whose fields reset at that moment would discard a ten-line purchase order to query a typo.
+Rows also have to be addable and removable, which needs state regardless.
+
+The confirmation itself rides on the "Save anyway" **button's** own `name`/`value`, not a
+hidden input driven by state. Found while writing it: a click submits before React
+re-renders, so a state-driven hidden input would arrive one submit late — the form would
+ask the same question twice and the second answer would be the one that counted.
+
+Items post as parallel arrays, one entry per field per row. Every row renders every field
+including the empty ones, so array index i is row i throughout; a form that conditionally
+omitted an input would silently shift every subsequent row's data by one.
+
+**F21 — Cancelling a PO cancels its open items with it.** Otherwise the header reads
+Cancelled while its items stay Open, and they go on appearing in the Item Tracker and on
+Stage Update as live work against a dead order — the "stop asking people" failure the
+tracker exists to prevent. Items already `Closed` are left alone: they were delivered, and
+cancelling the order does not unhappen that.
+
+Reinstating sets status back to Open and then runs the recompute rather than assuming Open
+is right, because an item that was fully dispatched before being cancelled belongs at
+Closed. Both directions go through `withStatusWrite` and the audit wrapper, so the Cancel
+action is exactly the second sanctioned status writer B5 named — and nothing else.
+
+Removing an item is separate and is for one entered by mistake. It is refused outright
+once anything has been dispatched against it: soft-deleting then would leave live
+`dispatch_line` rows pointing at a row nothing displays, while the challan still says the
+goods went out.

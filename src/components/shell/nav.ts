@@ -147,4 +147,5 @@ export const BUILT: ReadonlySet<Resource> = new Set<Resource>([
   "admin",
   "client",
   "design",
+  "purchase_order",
 ]);
