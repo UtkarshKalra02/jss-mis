@@ -616,3 +616,51 @@ question rather than an answer — unlike the dashboard tiles, which say which p
 arrive in because their whole layout is the point. Job cards are handled the other way and
 are queried now, appearing only when there are any: they arrive in Phase 4 without changing
 a screen people have already learned.
+
+**F23 — A DISPATCHED stage event is written only when an item is FULLY delivered.** Spec
+6.8 says the event goes in "where fully dispatched", and the distinction is load-bearing: a
+partial delivery leaves the remainder in production, so moving the item to DISPATCHED would
+take it off Stage Update while work continues on it. Partial delivery is the normal case
+here, not the exception.
+
+Which items qualify is read from `v_po_item_status` **after** the lines are written and
+inside the same transaction, never worked out from the form. `pending_qty` is derived
+(non-negotiable 2), so the view is the only thing that knows whether a partial delivery
+from a previous month already covered part of this order.
+
+The event is dated by the **dispatch date** (F3), and is skipped when the item is already
+at DISPATCHED — so editing a challan does not stack duplicate events. An item that was
+reopened by a cancelled challan and then completed again does get a second one, which is
+correct: it happened twice.
+
+Removing a line or cancelling a challan does **not** remove the events they caused.
+`stage_event` is append-only (C6) and the item having reached DISPATCHED is a thing that
+happened; moving it back is a Stage Update, and appears as a further row.
+
+**F24 — Dispatch header editing cannot change the client.** Every line's item belongs to
+the current one and the cross-client trigger (C8) would refuse, so the field is not
+offered. Moving a delivery to another client means entering it as a different challan,
+which is also what actually happened.
+
+Changing the dispatch DATE is allowed, and the DISPATCHED events already written keep their
+original date. That is not an oversight: a correction to history is an appended row, never
+an edit to an old one, and the timeline showing both is the honest record.
+
+**F22 — OPEN: a Draft challan already consumes order quantity.** `v_po_item_status`
+excludes only `Cancelled` dispatches, so a challan sitting in `Draft` reduces `pending_qty`
+exactly as a dispatched one does. That is Phase 1's behaviour, shipped in migration 0002,
+and `tests/dispatch-entry.test.ts` pins it as observed rather than endorsed.
+
+It matters because the dispatch screen lists items by `pending_qty > 0` (F2): an item on a
+draft challan would quietly vanish from the list of what a client is owed, which is the
+opposite of what a draft should mean. Two coherent answers exist and they are a decision
+about what `Draft` is FOR:
+
+1. **Draft means "typed but not gone"** — the views exclude it alongside `Cancelled`. The
+   quantity stays owed until somebody marks the challan dispatched. This changes an OTD
+   input, so it is not a change to make quietly.
+2. **Draft means "goods allocated, paperwork unfinished"** — current behaviour is correct
+   and the status is bookkeeping about the document rather than the goods.
+
+Until this is settled the dispatch form defaults new challans to `Dispatched`, so the
+ambiguity does not bite the backfill. Nothing was changed in the Phase 1 view.
