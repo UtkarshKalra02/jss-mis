@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 import "./globals.css";
 
@@ -33,7 +34,14 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          {children}
+          {/* §7 asks for a toast on save. Mounted once at the root so a
+              screen only has to call toast(), and inline validation stays the
+              channel for errors — §7 is explicit that an error is never a
+              modal, and a toast that disappears is no place for one. */}
+          <Toaster position="bottom-right" />
+        </ThemeProvider>
       </body>
     </html>
   );

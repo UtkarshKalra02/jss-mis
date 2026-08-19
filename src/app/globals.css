@@ -217,4 +217,44 @@
   .data-grid tbody tr:hover {
     @apply bg-muted/50;
   }
+
+  /* §7 stage pill: the stage's own colour at low opacity behind solid text.
+     The colour arrives as --stage-colour, set inline from the `stage` table —
+     never from a map in a component (non-negotiable 5).
+
+     Light mode uses the 12% the spec asks for. Dark mode lifts the tint and
+     lightens the text instead of swapping in a different colour: a 12% wash of
+     a dark slate is invisible on a dark background, and the solid text is
+     unreadable on it. Same approach as the brand indigo in E16. */
+  .stage-pill {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    border-radius: 9999px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+  }
+
+  /* The colour rules are scoped with :not() rather than being overridden
+     afterwards. `.dark .stage-pill` would out-specify `.stage-pill--none`
+     (two classes to one) and paint the "not started" pill with an unset
+     --stage-colour, which color-mix resolves to fully transparent — an
+     invisible pill, in dark mode only. */
+  .stage-pill:not(.stage-pill--none) {
+    background: color-mix(in srgb, var(--stage-colour) 12%, transparent);
+    color: var(--stage-colour);
+  }
+
+  .dark .stage-pill:not(.stage-pill--none) {
+    background: color-mix(in srgb, var(--stage-colour) 22%, transparent);
+    color: color-mix(in oklab, var(--stage-colour), white 45%);
+  }
+
+  /* An item captured but not yet started. Grey is the neutral semantic colour
+     from §7, and deliberately not a stage colour — there is no stage. */
+  .stage-pill--none {
+    @apply bg-muted text-muted-foreground;
+  }
 }

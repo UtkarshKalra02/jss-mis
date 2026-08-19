@@ -115,3 +115,22 @@ export function formatDaysToCommitted(days: number | null | undefined): string {
   const late = Math.abs(days);
   return `${late} day${late === 1 ? "" : "s"} overdue`;
 }
+
+/**
+ * How a missing committed date reads on screen (decision F8, point 5).
+ *
+ * A blank cell says "somebody should go and fill this in". The whole point of
+ * a null commitment is that there is nothing to fill in — the job came out of
+ * a paper book and no date was ever recorded. Saying so explicitly is what
+ * stops the gap looking like an error, and stops anyone "helpfully" inventing
+ * a date that would then feed OTD.
+ *
+ * Exported as a constant as well so screens can match on it for styling
+ * without retyping the sentence.
+ */
+export const NO_COMMITMENT = "Historical \u2014 no commitment recorded";
+
+export function formatCommittedDate(value: Date | string | null | undefined): string {
+  if (!value) return NO_COMMITMENT;
+  return formatDate(value);
+}

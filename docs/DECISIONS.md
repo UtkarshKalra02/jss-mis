@@ -459,3 +459,39 @@ negative `pending_qty`, which surfaces as a minus sign in a column on the Item T
 an item that quietly drops out of every "still owed" filter. Reducing an over-entered
 order is legitimate, so the guard blocks only the part that is not: the challans have to
 be corrected first, which is where the wrong number actually is.
+
+**F14 — The six views are described to TypeScript, and deliberately not in the schema
+barrel.** Until Phase 2 the views existed only in Postgres: correct, tested, and reachable
+from `psql` and nowhere else. That is the state most likely to produce a second definition
+of `pending_qty`, because a screen author who cannot select from `v_po_item_status` will
+rebuild the arithmetic in a query instead — and the moment two definitions exist, one of
+them is wrong (non-negotiable 2).
+
+`src/db/views.ts` declares all six with `.existing()`, which tells drizzle-kit that
+something else owns the definition. The file is kept OUT of `src/db/schema/index.ts`,
+because that barrel is what drizzle-kit reads to decide what it manages; keeping views
+outside it means no future `db:generate` can decide to emit a `DROP VIEW`. Queries do not
+need the barrel — the view object carries its own definition. Verified: `db:generate`
+reports no schema changes with the file present.
+
+All six are described even though Phase 2 reads only the first, on the same reasoning as
+C9. `tests/views.test.ts` selects every declared column from every view, so a column
+renamed in a migration fails a test rather than a screen.
+
+**F15 — The stage pill lightens in dark mode rather than switching colour.** Section 7
+specifies the stage colour at 12% opacity behind solid text, which is a light-mode
+instruction: a 12% wash of a dark slate is invisible on a dark background, and the solid
+text on top of it is unreadable. Dark mode therefore lifts the tint to 22% and lightens
+the text with `color-mix`, keeping the single hex from the `stage` table as the only
+input — the same approach as the brand indigo in E16.
+
+Non-negotiable 5 is what shapes the component: there is no map from stage code to colour
+and no default palette. The colour and the label both arrive from the `stage` table via
+`v_po_item_status`, so recolouring a stage on the Admin screen recolours every pill in the
+app, and a stage added to the table renders correctly the first time it is used.
+
+The tint rules are scoped with `:not(.stage-pill--none)` rather than being overridden
+afterwards. Found by checking dark mode: `.dark .stage-pill` out-specifies
+`.stage-pill--none` two classes to one, so the neutral "not started" pill was painted with
+an unset `--stage-colour`, which `color-mix` resolves to fully transparent. An invisible
+pill, in dark mode only — the kind of thing that ships unless somebody actually looks.

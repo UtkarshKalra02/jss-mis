@@ -67,14 +67,14 @@ export const NAV: NavGroup[] = [
         label: "Enquiries",
         href: "/enquiries",
         icon: MessageSquareQuote,
-        phase: 2,
+        phase: 3,
       },
       {
         resource: "quotation",
         label: "Quotations",
         href: "/quotations",
         icon: FileText,
-        phase: 2,
+        phase: 3,
       },
       {
         resource: "purchase_order",
@@ -110,7 +110,7 @@ export const NAV: NavGroup[] = [
         icon: Workflow,
         phase: 2,
       },
-      { resource: "dispatch", label: "Dispatch", href: "/dispatch", icon: Truck, phase: 3 },
+      { resource: "dispatch", label: "Dispatch", href: "/dispatch", icon: Truck, phase: 2 },
     ],
   },
   {
