@@ -148,4 +148,5 @@ export const BUILT: ReadonlySet<Resource> = new Set<Resource>([
   "client",
   "design",
   "purchase_order",
+  "item_tracker",
 ]);

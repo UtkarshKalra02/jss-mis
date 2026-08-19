@@ -585,3 +585,34 @@ Removing an item is separate and is for one entered by mistake. It is refused ou
 once anything has been dispatched against it: soft-deleting then would leave live
 `dispatch_line` rows pointing at a row nothing displays, while the challan still says the
 goods went out.
+
+**F22 — The Item Tracker's search state lives in the URL.** Query and the "open items only"
+filter are both search parameters, so a search is a link. Preeti can send Punit the exact
+screen she is looking at, the back button does what it appears to do, and the matching
+rules stay in one SQL statement rather than being half-duplicated in the browser. The
+input is debounced at 250ms — short enough to feel immediate at typing speed, long enough
+that "NAT-2026" is one query rather than eight.
+
+"Open items only" defaults ON. The question this screen answers is almost always about work
+in progress, and a tracker that buries eighty live items under two years of delivered ones
+answers it slowly.
+
+**F23 — Search results sort overdue first, then nearest commitment, with NULLS LAST spelled
+out.** Postgres sorts nulls FIRST in ascending order, so without the explicit `NULLS LAST`
+every imported historical row — the ones with no committed date at all (F8) — would sit
+above live work on the screen whose entire purpose is answering "where is this?". It is the
+kind of default that produces a screen nobody trusts and nobody can quite explain.
+
+**F24 — One search box across five fields, not five boxes.** Spec 6.4 lists item code, item
+name, client, PO number and job card number. They are matched together with ILIKE, because
+somebody being asked "where is the Nature carton?" has a fragment rather than a field name,
+and frequently does not know whether the number they were given is ours or the client's.
+Job card number is matched through an `EXISTS` rather than a join, so an item with three
+job cards still returns once.
+
+**F25 — The tracker shows no Invoices panel.** Spec 6.4 lists linked invoices, which are
+Phase 5. An empty panel labelled "Invoices" on a screen that cannot yet have any is a
+question rather than an answer — unlike the dashboard tiles, which say which phase they
+arrive in because their whole layout is the point. Job cards are handled the other way and
+are queried now, appearing only when there are any: they arrive in Phase 4 without changing
+a screen people have already learned.
