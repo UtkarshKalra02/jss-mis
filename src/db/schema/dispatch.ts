@@ -13,6 +13,7 @@ import {
 
 import { baseColumns, MONEY } from "./_shared";
 import { dispatchStatusEnum } from "./enums";
+import { importBatch } from "./imports";
 import { poItem } from "./order";
 import { client } from "./reference";
 
@@ -52,6 +53,9 @@ export const dispatch = pgTable(
 
     status: dispatchStatusEnum().notNull().default("Draft"),
     remarks: text(),
+
+    /** See purchase_order.import_batch_id. */
+    importBatchId: uuid().references(() => importBatch.id),
   },
   (t) => [
     uniqueIndex("dispatch_challan_no_key")
@@ -95,6 +99,9 @@ export const dispatchLine = pgTable(
 
     qty: integer().notNull(),
     rate: numeric(MONEY),
+
+    /** See purchase_order.import_batch_id. */
+    importBatchId: uuid().references(() => importBatch.id),
   },
   (t) => [
     index("dispatch_line_dispatch_idx").on(t.dispatchId),

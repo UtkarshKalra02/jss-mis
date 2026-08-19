@@ -53,6 +53,7 @@ export const RESOURCES = [
   "ar_ledger",
   "reports",
   "client",
+  "import",
   "admin",
 ] as const;
 
@@ -79,6 +80,7 @@ export const ACCESS: Matrix = {
     ar_ledger: "write",
     reports: "write",
     client: "write",
+    import: "write",
     admin: "write",
   },
 
@@ -90,6 +92,18 @@ export const ACCESS: Matrix = {
     design: "write",
     item_tracker: "read",
     client: "read", // A3 — cannot enter a PO without picking a client
+
+    /**
+     * F28. The importer writes purchase orders AND dispatches, so granting it
+     * to ORDER_DESK is a deliberate widening: Punit cannot reach the Dispatch
+     * screen, but can create dispatch rows through a bulk import. That is what
+     * the requirement asks for — "later batch catch-up by a data-entry person"
+     * — and the importer is a far more constrained instrument than the dispatch
+     * screen: it only ever records deliveries that already happened, every row
+     * is previewed before anything is written, and a whole batch can be undone
+     * in one action.
+     */
+    import: "write",
   },
 
   PLANNER: {

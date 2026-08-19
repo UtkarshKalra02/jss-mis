@@ -727,3 +727,63 @@ The desktop event-time field is a `datetime-local`, which carries no timezone. I
 by somebody standing in the factory, so the action parses it as IST explicitly (C10).
 Letting it fall through to the server's local time would silently shift every batch entry
 by five and a half hours.
+
+**F28 — The importer is its own resource, granted to ADMIN and ORDER_DESK.** It writes
+purchase orders AND dispatches, so granting it to ORDER_DESK is a deliberate widening:
+Punit cannot reach the Dispatch screen but can create dispatch rows through a bulk import.
+That is what the requirement asks for — "later batch catch-up by a data-entry person" — and
+the importer is a far more constrained instrument than the dispatch screen. It only records
+deliveries that already happened, every row is previewed before anything is written, and a
+whole batch can be reversed in one action.
+
+**F29 — Validation is a pure function, and it is the whole safety of the feature.**
+`src/modules/imports/validate.ts` takes strings and lookups and returns a verdict per row.
+No database, no file parsing, no session — so the rules that decide what reaches the
+database are tested directly rather than through an upload. Three of them are worth
+restating:
+
+- **An unmatched client is refused, never created.** Auto-creating from a spreadsheet is how
+  "Nature Packaging", "Nature packaging Pvt Ltd" and "NAure Packaging" become three
+  customers nobody notices until a report is split three ways.
+- **An error stops its own row and nothing else.** Forty jobs with two bad dates import
+  thirty-eight.
+- **Dates are read day-first.** Not cosmetic: `03/04/2026` is a different day under each
+  convention and both parse silently, so guessing would put a job three weeks out with
+  nothing to show for it. A blank committed date is accepted and flagged (F8); a committed
+  date that is present but unreadable is refused, because importing it as blank would hide
+  a typo.
+
+Rows sharing a client and PO number become items on ONE purchase order, and rows sharing a
+client and challan number go on ONE challan. Rows with no challan number get one each,
+since merging every un-numbered delivery in a file into a single challan is not what
+happened.
+
+**F30 — The confirm step re-validates everything server-side.** The preview travels to the
+browser and the raw rows come back with it, which is a convenience and not a trust
+boundary: only rows the second pass accepts are written, so nothing can be posted in that
+the validator would have refused. The lookups are re-read too, because the database may have
+changed since the preview was produced.
+
+The parser and the template are two readings of one format, kept in a single `COLUMNS`
+array. When they drift the failure is unpleasant in a specific way — the template teaches
+somebody to fill in a file the importer cannot read, and the error arrives as "PO date is
+blank" on a spreadsheet where the PO date is plainly filled in — so a round-trip test
+builds the template, writes rows into it and parses them back.
+
+One thing that only showed up in that round trip: a date cell with no date format reads
+back as the raw Excel serial (`46117`), and `46117` is a perfectly plausible quantity. Only
+knowing which COLUMN a value came from makes it a date, so `COLUMNS` marks the date fields
+and the parser converts serials in those columns alone.
+
+**F31 — Undo is a soft delete, and cannot be anything else.** `stage_event` is append-only,
+enforced by a trigger, so the PO_RECEIVED and DISPATCHED events a batch wrote cannot be
+removed. Soft-deleting the `po_item` rows takes them out of `v_po_item_status` and every
+view built on it, leaving those events attached to rows nothing displays. That is the right
+outcome rather than a workaround: what was entered and then withdrawn is exactly what an
+audit trail is for.
+
+Only rows CARRYING the batch id are touched, which is what makes attaching safe. An order
+the batch added an item to but did not create keeps its null `import_batch_id` and survives
+with everything else on it. Dedupe keys are built from live rows only, so an undone batch
+stops blocking a re-import — undo exists so a bad spreadsheet can be fixed and run again.
+

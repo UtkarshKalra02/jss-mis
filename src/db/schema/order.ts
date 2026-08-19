@@ -24,6 +24,7 @@ import {
   priorityEnum,
   purchaseOrderStatusEnum,
 } from "./enums";
+import { importBatch } from "./imports";
 import { enquiry } from "./pre-order";
 import { client, stage } from "./reference";
 import { appUser } from "./users";
@@ -143,6 +144,13 @@ export const purchaseOrder = pgTable(
     fileUrl: text(),
 
     /**
+     * Set when this row came from the historical importer rather than from a
+     * person at the PO capture screen. Null for everything typed by hand.
+     * Undoing a batch soft-deletes exactly the rows carrying its id.
+     */
+    importBatchId: uuid().references(() => importBatch.id),
+
+    /**
      * DERIVED, but stored (decision B5). Recomputed on write and nightly from
      * the item rows underneath it. Only the recompute function and the
      * explicit Cancel action may write this column — never a form. It is a
@@ -232,6 +240,9 @@ export const poItem = pgTable(
     status: poItemStatusEnum().notNull().default("Open"),
 
     remarks: text(),
+
+    /** See purchase_order.import_batch_id. */
+    importBatchId: uuid().references(() => importBatch.id),
   },
   (t) => [
     uniqueIndex("po_item_code_key")

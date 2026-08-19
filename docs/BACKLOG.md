@@ -7,9 +7,11 @@ out rather than deleted — the requirement is the thing the decision has to ans
 
 ---
 
-## Excel/CSV importer (Phase 2)
+## ~~Excel/CSV importer (Phase 2)~~ — BUILT
 
-Captured verbatim, 18 Aug 2026.
+Captured verbatim, 18 Aug 2026. Built in chunk 10; see decisions F28–F31 in
+[`DECISIONS.md`](DECISIONS.md). The requirement is kept in full below, struck through in the
+heading rather than deleted, because it is what the decisions answer to.
 
 > Purpose: bulk entry of ~40 historical completed jobs from paper books,
 > and later batch catch-up by a data-entry person. NOT the primary entry

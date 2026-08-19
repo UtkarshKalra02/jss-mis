@@ -4,6 +4,7 @@ import {
   Building2,
   CalendarDays,
   ClipboardList,
+  FileSpreadsheet,
   FileText,
   LayoutDashboard,
   MessageSquareQuote,
@@ -131,6 +132,13 @@ export const NAV: NavGroup[] = [
     heading: "Setup",
     items: [
       { resource: "client", label: "Clients", href: "/clients", icon: Building2, phase: 1 },
+      {
+        resource: "import",
+        label: "Import",
+        href: "/import",
+        icon: FileSpreadsheet,
+        phase: 2,
+      },
       { resource: "admin", label: "Admin", href: "/admin", icon: Settings, phase: 1 },
     ],
   },
