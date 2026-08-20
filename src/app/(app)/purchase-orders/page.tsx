@@ -13,6 +13,7 @@ export const metadata: Metadata = { title: "Purchase orders · JSS MIS" };
 export default async function PurchaseOrdersPage() {
   const user = await requireAccess("purchase_order");
   const canWrite = can(user.role, "purchase_order", "write");
+  const canImport = can(user.role, "import", "write");
 
   const orders = await listPurchaseOrders();
 
@@ -21,9 +22,16 @@ export default async function PurchaseOrdersPage() {
       <div className="flex items-baseline justify-between">
         <h1 className="page-title">Purchase orders</h1>
         {canWrite ? (
-          <Button asChild size="sm">
-            <Link href="/purchase-orders/new">Capture PO</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            {canImport ? (
+              <Button asChild size="sm" variant="outline">
+                <Link href="/purchase-orders/import">Import from Excel</Link>
+              </Button>
+            ) : null}
+            <Button asChild size="sm">
+              <Link href="/purchase-orders/new">Capture PO</Link>
+            </Button>
+          </div>
         ) : null}
       </div>
       <p className="text-muted-foreground mt-1 text-[13px]">

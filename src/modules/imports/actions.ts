@@ -131,7 +131,7 @@ export async function confirmImportAction(
       writeImportBatch(actor, tx, { filename, result }),
     );
 
-    revalidatePath("/import");
+    revalidatePath("/purchase-orders/import");
     revalidatePath("/purchase-orders");
     revalidatePath("/items");
     revalidatePath("/dispatch");
@@ -186,7 +186,7 @@ export async function undoImportAction(
 
     const removed = await db.transaction((tx) => undoImportBatch(actor, tx, batchId));
 
-    revalidatePath("/import");
+    revalidatePath("/purchase-orders/import");
     revalidatePath("/purchase-orders");
     revalidatePath("/items");
     revalidatePath("/dispatch");

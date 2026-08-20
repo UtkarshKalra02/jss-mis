@@ -22,7 +22,12 @@ export default async function NewPurchaseOrderPage() {
       >
         ← Purchase orders
       </Link>
-      <h1 className="page-title mt-2">Capture purchase order</h1>
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
+        <h1 className="page-title">Capture purchase order</h1>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/purchase-orders/import">Have a spreadsheet? Import instead</Link>
+        </Button>
+      </div>
       <p className="text-muted-foreground mt-1 text-[13px]">
         Numbers are allocated on save. Every item gets a PO_RECEIVED stage event dated by the
         PO, so a PO entered late reads as late rather than as new.

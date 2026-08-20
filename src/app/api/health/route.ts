@@ -50,11 +50,73 @@ function isTrusted(request: NextRequest): boolean {
 }
 
 /**
+ * What the CODE currently expects the schema to contain.
+ *
+ * A deploy that ships ahead of its migrations is the single most confusing
+ * failure this app has: the build is green, the tests pass, most screens work,
+ * and one screen 500s because it selects a column that is not there yet. From
+ * the outside it reads as "add design is broken" rather than as "production is
+ * two migrations behind", and there is nothing on any screen to tell them
+ * apart.
+ *
+ * Each entry names the migration that introduced it, so the answer to a failure
+ * is the command to fix it rather than a puzzle.
+ */
+const SCHEMA_EXPECTATIONS: { what: string; sql: ReturnType<typeof sql>; since: string }[] = [
+  {
+    what: "stage.is_process",
+    since: "0007_stage_is_process",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'stage' and column_name = 'is_process'`,
+  },
+  {
+    what: "po_item.committed_date is nullable",
+    since: "0005_committed_date_nullable",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'po_item' and column_name = 'committed_date'
+               and is_nullable = 'YES'`,
+  },
+  {
+    what: "recompute_for_po_item()",
+    since: "0006_po_status_recompute",
+    sql: sql`select 1 from pg_proc where proname = 'recompute_for_po_item'`,
+  },
+  {
+    what: "dispatch_consumption_guard()",
+    since: "0008_draft_does_not_consume",
+    sql: sql`select 1 from pg_proc where proname = 'dispatch_consumption_guard'`,
+  },
+  {
+    what: "import_batch",
+    since: "0009_import_batch",
+    sql: sql`select 1 from information_schema.tables where table_name = 'import_batch'`,
+  },
+];
+
+async function checkSchema() {
+  const missing: { what: string; since: string }[] = [];
+
+  for (const check of SCHEMA_EXPECTATIONS) {
+    try {
+      const result = await db.execute(check.sql);
+      if (result.rows.length === 0) missing.push({ what: check.what, since: check.since });
+    } catch {
+      missing.push({ what: check.what, since: check.since });
+    }
+  }
+
+  return missing;
+}
+
+/**
  * Liveness probe, and the first thing to check after a deploy.
  *
  * `nativeWebSocket` is the field worth reading: when it is false the Neon
  * driver has fallen back to the bundled `ws` package, which is the exact
  * configuration that produced `b.mask is not a function` in production.
+ *
+ * `schema.upToDate` is the second: false means this database is behind the
+ * code that is talking to it.
  */
 export async function GET(request: NextRequest) {
   const trusted = isTrusted(request);
@@ -79,9 +141,26 @@ export async function GET(request: NextRequest) {
                 'YYYY-MM-DD HH24:MI:SS')             as ist_now
     `);
 
+    // Which migrations this database is missing is not a secret — it is a
+    // statement about our own deploy, names no credential, and is the first
+    // thing anybody needs after pushing.
+    const missing = await checkSchema();
+
     // The success case carries no secrets, so it stays public — `ist_now` in
     // particular needs to be checkable without ceremony after every deploy.
-    return NextResponse.json({ ok: true, ...result.rows[0], runtime: runtimeInfo });
+    return NextResponse.json({
+      ok: missing.length === 0,
+      ...result.rows[0],
+      runtime: runtimeInfo,
+      schema:
+        missing.length === 0
+          ? { upToDate: true }
+          : {
+              upToDate: false,
+              missing,
+              hint: "Run `npm run db:migrate` against this database. Screens that use these will 500 until you do.",
+            },
+    });
   } catch (error) {
     if (!trusted) {
       return NextResponse.json(

@@ -84,6 +84,13 @@ export const NAV: NavGroup[] = [
         icon: ClipboardList,
         phase: 2,
       },
+      {
+        resource: "import",
+        label: "Import from Excel",
+        href: "/purchase-orders/import",
+        icon: FileSpreadsheet,
+        phase: 2,
+      },
       { resource: "design", label: "Designs", href: "/designs", icon: PenTool, phase: 2 },
       {
         resource: "item_tracker",
@@ -132,13 +139,6 @@ export const NAV: NavGroup[] = [
     heading: "Setup",
     items: [
       { resource: "client", label: "Clients", href: "/clients", icon: Building2, phase: 1 },
-      {
-        resource: "import",
-        label: "Import",
-        href: "/import",
-        icon: FileSpreadsheet,
-        phase: 2,
-      },
       { resource: "admin", label: "Admin", href: "/admin", icon: Settings, phase: 1 },
     ],
   },
@@ -158,4 +158,5 @@ export const BUILT: ReadonlySet<Resource> = new Set<Resource>([
   "purchase_order",
   "item_tracker",
   "dispatch",
+  "import",
 ]);
