@@ -2,12 +2,23 @@ import Image from "next/image";
 
 import { cn } from "@/lib/utils";
 
+/** Intrinsic size of public/jss-logo.png, so `size` means the mark's height. */
+const MARK_W = 338;
+const MARK_H = 342;
+
 /**
- * The JSS mark.
+ * The JSS mark — the real artwork, cropped from the company logo.
  *
- * Points at /jss-logo.svg, so replacing that one file with the original
- * artwork updates every usage — sidebar, mobile header, login, and any future
- * print stylesheet.
+ * Points at /jss-logo.png, so replacing that one file updates every usage:
+ * sidebar, mobile header, login, and any future print stylesheet.
+ *
+ * TWO THINGS WERE DONE TO THE SOURCE FILE, both deliberate:
+ *
+ *   - The "the print zone" text block was cropped off. The Wordmark below
+ *     already renders that as live text, so keeping it would print the name
+ *     twice — and at 24px in the sidebar the baked-in lettering is a smear.
+ *   - The white background was removed. Left in, it sits as a bright white
+ *     box against the dark-mode sidebar.
  *
  * `priority` is set because this is above the fold on the login screen, which
  * is the first thing anybody sees.
@@ -15,12 +26,12 @@ import { cn } from "@/lib/utils";
 export function Logo({ size = 24, className }: { size?: number; className?: string }) {
   return (
     <Image
-      src="/jss-logo.svg"
+      src="/jss-logo.png"
       alt=""
       width={size}
-      height={Math.round((size * 448) / 512)}
+      height={Math.round((size * MARK_H) / MARK_W)}
       priority
-      className={cn("shrink-0 select-none", className)}
+      className={cn("brand-mark shrink-0 select-none", className)}
     />
   );
 }

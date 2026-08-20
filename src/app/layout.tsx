@@ -17,7 +17,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "JSS MIS",
   description: "Order tracking for JSS The Print Zone",
-  icons: { icon: "/jss-logo.svg" },
+  icons: { icon: "/jss-logo.png" },
 };
 
 export default function RootLayout({

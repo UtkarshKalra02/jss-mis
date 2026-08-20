@@ -257,4 +257,18 @@
   .stage-pill--none {
     @apply bg-muted text-muted-foreground;
   }
+
+  /* The JSS mark.
+
+     The artwork's third sail is a dark indigo — fine on white, nearly swallowed
+     by the near-black dark-mode background. Lifting brightness rescues it
+     without shifting the hues, which is the same thing E16 does for the brand
+     indigo and the stage pill: dark mode lightens the SAME colour rather than
+     substituting a different one.
+
+     Brightness only. Adding saturation as well pushes the lightest sail toward
+     cyan, which reads as a different logo. */
+  .dark .brand-mark {
+    filter: brightness(1.45);
+  }
 }
