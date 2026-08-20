@@ -67,7 +67,12 @@ export async function previewImportAction(
       result: validateRows(rows, { clients, existingKeys }),
     };
   } catch (error) {
+    // A parse error is a statement about the FILE and is shown as-is. Anything
+    // else is a statement about US, and belongs in the log with its stack
+    // rather than being paraphrased at somebody who cannot act on it.
     if (error instanceof ImportParseError) return { ok: false, error: error.message };
+
+    console.error("[import] preview failed", error);
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Could not read that file.",
@@ -141,6 +146,7 @@ export async function confirmImportAction(
         ".",
     };
   } catch (error) {
+    console.error("[import] confirm failed", error);
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Could not import that file.",

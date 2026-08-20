@@ -19,9 +19,22 @@ import { allocateNumber } from "@/lib/numbering";
 import { getDesign } from "./queries";
 import { designSchema, quickDesignSchema } from "./validation";
 
-export type FormState = { ok: boolean; error: string | null; message?: string };
+export type FormState = {
+  ok: boolean;
+  error: string | null;
+  message?: string;
+  /** Where the screen should go next. Set on create, so a successful save
+   *  leaves the empty form instead of inviting a second click on a form still
+   *  full of the design that was just created. */
+  redirectTo?: string;
+};
 
-const ok = (message?: string): FormState => ({ ok: true, error: null, message });
+const ok = (message?: string, redirectTo?: string): FormState => ({
+  ok: true,
+  error: null,
+  message,
+  redirectTo,
+});
 const fail = (error: string): FormState => ({ ok: false, error });
 
 /** Spec 6.5: the Design Master belongs to ORDER_DESK (and ADMIN). */
@@ -162,7 +175,7 @@ export async function createDesignAction(
     });
 
     revalidatePath("/designs");
-    return ok(`${created.designCode} — ${created.jobName} added.`);
+    return ok(`${created.designCode} — ${created.jobName} added.`, `/designs/${created.id}`);
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Could not add the design.");
   }

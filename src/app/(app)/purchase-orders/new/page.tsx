@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { requireAccess } from "@/auth/guard";
 import { PoForm } from "@/components/purchase-orders/po-form";
+import { Button } from "@/components/ui/button";
 import { listClientOptions } from "@/modules/designs/queries";
 import { listDesignOptions } from "@/modules/purchase-orders/queries";
 
@@ -28,7 +29,19 @@ export default async function NewPurchaseOrderPage() {
       </p>
 
       <div className="mt-8">
-        <PoForm clients={clients} designs={designs} />
+        {clients.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-6">
+            <h2 className="text-sm font-medium">Add a client first</h2>
+            <p className="text-muted-foreground mt-1 text-[13px]">
+              A purchase order comes from a client, and there are none yet.
+            </p>
+            <Button asChild size="sm" className="mt-3">
+              <Link href="/clients/new">Add a client</Link>
+            </Button>
+          </div>
+        ) : (
+          <PoForm clients={clients} designs={designs} />
+        )}
       </div>
     </div>
   );

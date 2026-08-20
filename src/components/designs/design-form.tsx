@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 
 import { StagePill } from "@/components/stages/stage-pill";
@@ -102,10 +103,17 @@ export function DesignForm({
   stages: RouteStage[];
   selectedProcesses: string[];
 }) {
+  const router = useRouter();
   const [state, formAction] = useActionState(
     mode === "create" ? createDesignAction : updateDesignAction,
     initialState,
   );
+
+  // A created design opens on its own page, where die, plate, route and
+  // approval are waiting to be filled in.
+  useEffect(() => {
+    if (state.ok && state.redirectTo) router.push(state.redirectTo);
+  }, [state, router]);
 
   const selected = new Set(selectedProcesses);
 

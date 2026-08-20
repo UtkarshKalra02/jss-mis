@@ -25,7 +25,17 @@ const nextConfig: NextConfig = {
    * braces rather than the primary fix. It matters on any runtime older than
    * Node 22, where `ws` is still the one doing the work.
    */
-  serverExternalPackages: ["ws"],
+  /*
+   * Keep `exceljs` out of the bundle too.
+   *
+   * It is a large CommonJS package that reaches for Node built-ins and does
+   * dynamic requires on its way to reading a zip. Bundlers resolve those
+   * eagerly and can produce a build that compiles cleanly and then fails at
+   * runtime — which is exactly the shape of failure the importer would hit,
+   * and it would surface as "that file could not be read" rather than as
+   * anything pointing at the real cause.
+   */
+  serverExternalPackages: ["ws", "exceljs"],
 };
 
 export default nextConfig;

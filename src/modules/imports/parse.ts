@@ -24,9 +24,17 @@ export async function parseWorkbook(buffer: ArrayBuffer): Promise<RawRow[]> {
 
   try {
     await workbook.xlsx.load(buffer);
-  } catch {
+  } catch (cause) {
+    // The underlying error is LOGGED, not swallowed. This catch used to report
+    // everything as "not a spreadsheet", which is right for a corrupt upload
+    // and badly wrong for anything else — a library that failed to load, a
+    // memory limit, a bundling problem. Somebody then spends an afternoon
+    // re-saving a file that was fine all along.
+    console.error("[import] workbook.xlsx.load failed", cause);
+
     throw new ImportParseError(
-      "That file could not be read as a spreadsheet. Save it as .xlsx and try again.",
+      "That file could not be read as a spreadsheet. Save it as .xlsx and try again. " +
+        "If it opens fine in Excel, the problem is at our end and the server log has the detail.",
     );
   }
 
