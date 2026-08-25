@@ -126,11 +126,37 @@ The build does **not** run migrations. Applying schema changes automatically on
 every deploy means a rollback of the code cannot roll back the database, and a
 failed migration takes the site down with no obvious cause.
 
-Run them yourself, from your laptop, pointed at production. With Neon branching
-set up, that means temporarily using the production direct URL:
+Run them yourself, from your laptop, pointed at production. `drizzle.config.ts`
+reads `DOTENV_CONFIG_PATH`, so point it at the production env file rather than
+pasting a URL:
 
 ```bash
-DATABASE_URL_UNPOOLED='<neon main direct url>' npm run db:migrate
+DOTENV_CONFIG_PATH=.env.production.local npm run db:migrate
+```
+
+Prefer this to `DATABASE_URL_UNPOOLED='<url>' npm run db:migrate`, which also
+works. Pasting the URL puts a production credential into shell history and into
+whatever is scrolled back in the terminal, and it is one fumbled paste away from
+migrating nothing at all.
+
+**Read the first line it prints before it does anything:**
+
+```
+drizzle-kit target: ep-<something>.c-4.ap-southeast-1.aws.neon.tech
+```
+
+That host must be the **main** branch, not `dev`. The line exists for one
+reason: the two URLs differ by a few characters that nobody reads carefully, and
+running migrations against the wrong one is silent — dev accepts them happily
+and production stays behind. Checking it takes a second and is the only place
+the mistake is cheap.
+
+To see which database a command *would* hit without applying anything, run
+`drizzle-kit check` with the same variable. It validates the migration files
+locally, prints the same target line, and writes nothing:
+
+```bash
+DOTENV_CONFIG_PATH=.env.production.local npx drizzle-kit check
 ```
 
 Expect to see the five migrations apply: core schema, constraint triggers,
@@ -227,13 +253,23 @@ Vercel builds and deploys `main` automatically.
 deploy that needs it, not after:
 
 ```bash
-DATABASE_URL_UNPOOLED='<neon main direct url>' npm run db:migrate
+DOTENV_CONFIG_PATH=.env.production.local npm run db:migrate
 ```
+
+Check the `drizzle-kit target:` line names the main branch, as in step 6.
 
 Additive migrations — a new table, a new nullable column — are safe to apply
 ahead of the code that uses them. Destructive ones are not, and this project has
 no destructive migrations by design: soft delete only, and columns are added
 rather than repurposed.
+
+**A plain `npm run db:migrate` migrates DEV**, because `drizzle.config.ts` falls
+back to `.env.local`. That is the right default for everyday work and the wrong
+one on the day you ship. The failure is quiet in the worst way: the command
+succeeds, prints migrations applied, and production is untouched — so "I ran the
+migration" and "the migration is applied" stop being the same sentence. If you
+only remember one thing here, remember that the command has to name the
+environment, every time.
 
 Before pushing, the same three checks CI would run:
 
@@ -251,6 +287,23 @@ they cannot touch production.
 
 **Every page 500s right after the first deploy.** The migrations have not been
 applied. Step 6.
+
+**One screen 500s after a deploy, and the rest are fine.** Production is behind
+the schema by one migration, and only the pages touching the new columns fail.
+`Application error: a server-side exception has occurred` with a digest and
+nothing else is what this looks like from the browser; the Vercel function log
+has the real message, which is usually `column "x" does not exist`.
+
+It is the same cause as the previous entry and it hides better, because most of
+the site works. The screens that break are the ones that `select()` whole rows
+or name the new column; a query listing only old columns keeps working, so the
+feature can look half-alive.
+
+To see how far behind production is, compare the timestamps in its
+`drizzle.__drizzle_migrations` table against the `when` values in
+`drizzle/meta/_journal.json` — same numbers, milliseconds since the epoch. Then
+apply the missing ones as in step 6. No redeploy is needed: additive columns
+come into existence and the running code picks them up.
 
 **The build fails with "Invalid environment".** One of the three variables is
 missing or empty in Vercel. Step 5.
