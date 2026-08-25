@@ -6,7 +6,13 @@ import { appUser, client, dispatch, importBatch, poItem, purchaseOrder } from "@
 
 import { dedupeKey, type ClientLookup } from "./validate";
 
-/** Every live client, for name and code matching. Never created by the import. */
+/**
+ * Every live client, for name and code matching.
+ *
+ * Since F32 the importer may CREATE a client, but only where nothing in this
+ * list resembles the typed name — so this list is what decides both whether a
+ * row matches and whether creating is safe.
+ */
 export async function listClientsForImport(): Promise<ClientLookup[]> {
   return db
     .select({ id: client.id, code: client.code, name: client.name })
@@ -42,6 +48,24 @@ export async function existingDedupeKeys(): Promise<Set<string>> {
       .filter((r) => r.poNo !== null)
       .map((r) => dedupeKey(r.clientId, r.poNo!, r.itemName)),
   );
+}
+
+/**
+ * Codes already in use by a live client, lowercased.
+ *
+ * Read inside the write transaction, because a code generated for an
+ * auto-created client (F32) has to be unique against what is in the database at
+ * the moment of writing, not against what was on screen when the preview was
+ * produced. `client_code_key` is a partial unique index over live rows (C5), so
+ * a soft-deleted client's code is genuinely free and is not counted here.
+ */
+export async function liveClientCodes(tx: Tx): Promise<Set<string>> {
+  const rows = await tx
+    .select({ code: client.code })
+    .from(client)
+    .where(isNull(client.deletedAt));
+
+  return new Set(rows.map((r) => r.code.toLowerCase()));
 }
 
 /**

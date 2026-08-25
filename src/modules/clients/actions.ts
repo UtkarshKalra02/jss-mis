@@ -159,6 +159,45 @@ export async function setClientActiveAction(
   }
 }
 
+/**
+ * Marks an auto-created client as checked (decision F32).
+ *
+ * The importer can now create a client where nothing on file resembled the name
+ * in the spreadsheet. What it creates is a name and a generated code and
+ * nothing else — no GSTIN, no address, no payment terms beyond the default —
+ * so it is a record somebody has to finish, and the client list can filter to
+ * exactly those. This is how one leaves that list.
+ *
+ * It does NOT clear import_batch_id. That is the fact of where the row came
+ * from and stays true forever; it is also what the batch's undo keys on, and
+ * clearing it would quietly take the client out of an undo that is still
+ * offered on the Import History screen.
+ */
+export async function markClientReviewedAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireClientWriter();
+    const id = String(formData.get("id") ?? "");
+
+    const existing = await getClient(id);
+    if (!existing) return fail("That client no longer exists.");
+    if (!existing.importBatchId) return fail("That client was not created by an import.");
+
+    await auditedUpdate(actor, client, id, {
+      importReviewedAt: new Date(),
+      importReviewedBy: actor.id,
+    });
+
+    revalidatePath("/clients");
+    revalidatePath(`/clients/${id}`);
+    return ok(`${existing.name} marked as checked.`);
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Could not mark it as checked.");
+  }
+}
+
 export async function deleteClientAction(
   _prev: FormState,
   formData: FormData,

@@ -26,21 +26,23 @@ export default async function ImportPage() {
       <h1 className="page-title">Import historical jobs</h1>
       <p className="text-muted-foreground mt-1 text-[13px]">
         One row per job. Every row is checked and shown to you before anything is written,
-        and a whole import can be undone in one action.
+        and a whole import can be undone in one action — including any clients it created.
       </p>
 
-      {/* With no clients, every single row would be refused with "no client
-          matches" — which reads as a broken importer rather than as a missing
-          prerequisite. The importer never creates clients (F29), so say that
-          before the file is uploaded rather than forty times afterwards. */}
+      {/* With nothing on file to match against, every client in the file is
+          new by definition and the import would create the whole customer list
+          from a spreadsheet — each with a generated code and nothing else.
+          Since F32 that WORKS, which is precisely why it is worth saying
+          beforehand rather than discovering afterwards. */}
       {clients.length === 0 ? (
         <div className="mt-6 rounded-lg border border-dashed p-6">
-          <h2 className="text-sm font-medium">Add your clients first</h2>
+          <h2 className="text-sm font-medium">There are no clients on file yet</h2>
           <p className="text-muted-foreground mt-1 text-[13px]">
-            Every row is matched to an existing client by name or code, and the importer
-            never creates one — three spellings of a customer is a mess nobody notices
-            until a report is split three ways. With no clients on file, every row in your
-            spreadsheet will be refused.
+            Rows are matched to existing clients by name or code, and a name that resembles
+            nothing on file is created automatically. With an empty client list that means
+            every customer in your spreadsheet gets created from it, each with a generated
+            code and no GSTIN or address. That is a legitimate way to start, but adding the
+            ones you already know first gives them proper records to match against.
           </p>
           <Button asChild size="sm" className="mt-3">
             <Link href="/clients/new">Add a client</Link>

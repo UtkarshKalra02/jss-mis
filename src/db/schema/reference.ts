@@ -5,13 +5,17 @@ import {
   numeric,
   pgTable,
   text,
+  timestamp,
   uniqueIndex,
+  uuid,
   unique,
   index,
 } from "drizzle-orm/pg-core";
 
 import { baseColumns, MONEY } from "./_shared";
 import { clientTypeEnum, stageAppliesToEnum } from "./enums";
+import { importBatch } from "./imports";
+import { appUser } from "./users";
 
 /* -------------------------------------------------------------------------- */
 /* client                                                                      */
@@ -46,12 +50,36 @@ export const client = pgTable(
     clientType: clientTypeEnum().notNull().default("New"),
 
     isActive: boolean().notNull().default(true),
+
+    /**
+     * Set when the importer created this client itself, rather than matching
+     * it to one somebody entered (decision F32).
+     *
+     * It carries two jobs. It marks the row for review — a client conjured
+     * from a spreadsheet has a generated code, no GSTIN and no address, and
+     * somebody has to go and finish it. And it puts the row inside the batch's
+     * undo: reversing an import removes the clients that import invented,
+     * which is the only thing that makes auto-creation safe to offer.
+     */
+    importBatchId: uuid().references(() => importBatch.id),
+
+    /**
+     * Set when a human has looked at an auto-created client and accepted it.
+     *
+     * Null on an imported client is what the "created by import, unreviewed"
+     * filter on the client list looks for. It stays null on every client
+     * entered by hand, where there is nothing to review — the filter is
+     * meaningless without an import batch id alongside it.
+     */
+    importReviewedAt: timestamp({ withTimezone: true }),
+    importReviewedBy: uuid().references(() => appUser.id),
   },
   (t) => [
     uniqueIndex("client_code_key")
       .on(t.code)
       .where(sql`${t.deletedAt} is null`),
     index("client_name_idx").on(t.name),
+    index("client_import_batch_idx").on(t.importBatchId),
   ],
 );
 

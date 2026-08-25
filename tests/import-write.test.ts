@@ -3,9 +3,14 @@ import { describe, expect, it } from "vitest";
 
 import type { Tx } from "@/db/audit";
 import { SYSTEM_ACTOR } from "@/db/audit";
-import { poItem, purchaseOrder, stageEvent } from "@/db/schema";
+import { client, poItem, purchaseOrder, stageEvent } from "@/db/schema";
 import { vOtd, vPoItemStatus } from "@/db/views";
-import { validateRows, type ClientLookup, type RawRow } from "@/modules/imports/validate";
+import {
+  validateRows,
+  type ClientDecisions,
+  type ClientLookup,
+  type RawRow,
+} from "@/modules/imports/validate";
 import { undoImportBatch, writeImportBatch } from "@/modules/imports/write";
 
 import { inRollback, uniq } from "./helpers";
@@ -46,11 +51,25 @@ const rawRow = (over: Partial<RawRow>): RawRow => ({
 });
 
 /** Validate then write, the way the confirm action does. */
-async function importRows(tx: Tx, rows: RawRow[], clients: ClientLookup[], existing: string[] = []) {
-  const result = validateRows(rows, { clients, existingKeys: new Set(existing) });
+async function importRows(
+  tx: Tx,
+  rows: RawRow[],
+  clients: ClientLookup[],
+  existing: string[] = [],
+  decisions: ClientDecisions = {},
+) {
+  const result = validateRows(rows, { clients, existingKeys: new Set(existing), decisions });
   expect(result.summary.error).toBe(0);
 
   return writeImportBatch(SYSTEM_ACTOR, tx, { filename: "historical.xlsx", result });
+}
+
+/** Live clients this batch created. */
+async function clientsFromBatch(tx: Tx, batchId: string) {
+  return tx
+    .select({ id: client.id, code: client.code, name: client.name })
+    .from(client)
+    .where(and(eq(client.importBatchId, batchId), isNull(client.deletedAt)));
 }
 
 async function statusOf(tx: Tx, itemCode: string) {
@@ -221,6 +240,113 @@ describe("import write", () => {
   });
 });
 
+describe("import write — clients (F32)", () => {
+  it("creates a client nothing on file resembles, named exactly as typed", async () => {
+    await inRollback(async (tx) => {
+      const other = await makeClient(tx, uniq("Aarav Cartons "));
+      const typed = `ZeNith Graphics ${uniq("")}`;
+
+      const counts = await importRows(tx, [rawRow({ clientName: typed })], [other]);
+
+      expect(counts.clientsCreated).toBe(1);
+
+      const created = await clientsFromBatch(tx, counts.batchId);
+      expect(created).toHaveLength(1);
+      // Casing preserved. Normalising is for comparing, never for storing.
+      expect(created[0]!.name).toBe(typed);
+      expect(created[0]!.code).toMatch(/^[A-Z0-9-]{2,12}$/);
+    });
+  });
+
+  it("puts two spellings of one new client on ONE client row", async () => {
+    // Requirement 5, end to end.
+    await inRollback(async (tx) => {
+      const other = await makeClient(tx, uniq("Aarav Cartons "));
+      const stem = uniq("Zenith");
+
+      const counts = await importRows(
+        tx,
+        [
+          rawRow({ rowNumber: 4, clientName: `${stem} Graphics`, poNo: "Z-1" }),
+          rawRow({
+            rowNumber: 5,
+            clientName: `${stem.toUpperCase()} GRAPHICS PVT LTD`,
+            poNo: "Z-2",
+          }),
+        ],
+        [other],
+      );
+
+      expect(counts.clientsCreated).toBe(1);
+      expect(await clientsFromBatch(tx, counts.batchId)).toHaveLength(1);
+
+      // Both orders point at the same one.
+      const orders = await tx
+        .select({ clientId: purchaseOrder.clientId })
+        .from(purchaseOrder)
+        .where(eq(purchaseOrder.importBatchId, counts.batchId));
+
+      expect(orders).toHaveLength(2);
+      expect(new Set(orders.map((o) => o.clientId)).size).toBe(1);
+    });
+  });
+
+  it("gives two genuinely different new clients different codes", async () => {
+    // Both reduce to the same three letters, and the unique index is real: a
+    // collision here would abort the whole import rather than misfile a row.
+    await inRollback(async (tx) => {
+      const other = await makeClient(tx, uniq("Aarav Cartons "));
+      const stem = uniq("Zen");
+
+      const counts = await importRows(
+        tx,
+        [
+          // Distinct challan numbers: challan_no is unique across the whole
+          // table, not per client, and these are two different customers.
+          rawRow({ rowNumber: 4, clientName: `${stem}ith Graphics`, poNo: "Z-1", challanNo: uniq("C") }),
+          rawRow({ rowNumber: 5, clientName: `${stem}obia Trading House`, poNo: "Z-2", challanNo: uniq("C") }),
+        ],
+        [other],
+      );
+
+      const created = await clientsFromBatch(tx, counts.batchId);
+      expect(created).toHaveLength(2);
+      expect(new Set(created.map((c) => c.code)).size).toBe(2);
+    });
+  });
+
+  it("uses the existing client when the review is decided that way", async () => {
+    await inRollback(async (tx) => {
+      const nat = await makeClient(tx, "Nature Packaging");
+
+      const first = validateRows([rawRow({ clientName: "Nture Packging" })], {
+        clients: [nat],
+        existingKeys: new Set(),
+      });
+      expect(first.rows[0]!.status).toBe("review");
+
+      const counts = await importRows(
+        tx,
+        [rawRow({ clientName: "Nture Packging" })],
+        [nat],
+        [],
+        { [first.rows[0]!.review!.key]: nat.id },
+      );
+
+      // Nothing invented; the order went to the client that already existed.
+      expect(counts.clientsCreated).toBe(0);
+      expect(await clientsFromBatch(tx, counts.batchId)).toHaveLength(0);
+
+      const [order] = await tx
+        .select({ clientId: purchaseOrder.clientId })
+        .from(purchaseOrder)
+        .where(eq(purchaseOrder.importBatchId, counts.batchId));
+
+      expect(order!.clientId).toBe(nat.id);
+    });
+  });
+});
+
 describe("import undo", () => {
   it("removes the batch's rows from every view, keeping the stage events", async () => {
     await inRollback(async (tx) => {
@@ -282,6 +408,43 @@ describe("import undo", () => {
         .from(poItem)
         .where(and(eq(poItem.purchaseOrderId, orders[0]!.id), isNull(poItem.deletedAt)));
       expect(surviving).toHaveLength(1);
+    });
+  });
+
+  it("removes a client the batch created, and keeps one it only matched", async () => {
+    await inRollback(async (tx) => {
+      const existing = await makeClient(tx, uniq("Aarav Cartons "));
+
+      const counts = await importRows(
+        tx,
+        [
+          rawRow({ rowNumber: 4, clientName: existing.name, poNo: "E-1", challanNo: uniq("C") }),
+          rawRow({
+            rowNumber: 5,
+            clientName: `Zenith Graphics ${uniq("")}`,
+            poNo: "Z-1",
+            challanNo: uniq("C"),
+          }),
+        ],
+        [existing],
+      );
+
+      expect(counts.clientsCreated).toBe(1);
+
+      const removed = await undoImportBatch(SYSTEM_ACTOR, tx, counts.batchId);
+      expect(removed.clients).toBe(1);
+
+      // The invented one is gone from the client list...
+      expect(await clientsFromBatch(tx, counts.batchId)).toHaveLength(0);
+
+      // ...and the one that was already there survives, exactly as a
+      // hand-typed purchase order does.
+      const survivor = await tx
+        .select({ id: client.id })
+        .from(client)
+        .where(and(eq(client.id, existing.id), isNull(client.deletedAt)));
+
+      expect(survivor).toHaveLength(1);
     });
   });
 

@@ -8,14 +8,34 @@ import type { Actor } from "@/db/audit";
 
 import { ImportParseError, parseWorkbook } from "./parse";
 import { existingDedupeKeys, getImportBatch, listClientsForImport } from "./queries";
-import { importableRows, validateRows, type RawRow, type ValidationResult } from "./validate";
+import {
+  importableRows,
+  validateRows,
+  type ClientDecisions,
+  type ClientLookup,
+  type RawRow,
+} from "./validate";
 import { undoImportBatch, writeImportBatch } from "./write";
 
+/**
+ * What "check the file" produces: the INPUTS to validation, not its verdict.
+ *
+ * The screen runs validateRows() itself, because a review decision (F32)
+ * changes the answer for every row sharing that client name and the counts
+ * above the grid have to follow. Returning the verdict instead would mean a
+ * round trip per click, or a second implementation of the rules in the
+ * browser — and the moment two implementations exist, one of them is wrong.
+ *
+ * Nothing here is trusted on the way back: confirm re-validates server-side
+ * against freshly read lookups (F30).
+ */
 export type PreviewState = {
   ok: boolean;
   error: string | null;
   filename?: string;
-  result?: ValidationResult;
+  rows?: RawRow[];
+  clients?: ClientLookup[];
+  existingKeys?: string[];
 };
 
 export type ConfirmState = {
@@ -23,6 +43,33 @@ export type ConfirmState = {
   error: string | null;
   message?: string;
 };
+
+/**
+ * Review answers as they arrive from the form: normalised client name to
+ * either a client id or "new".
+ *
+ * Parsed defensively — this comes back through the browser, and a malformed
+ * one must produce an import with unanswered rows left out rather than an
+ * exception on a screen somebody cannot act on. Every value is re-checked
+ * inside validateRows anyway: a decision naming a client that no longer exists
+ * falls back to review, which stops the row.
+ */
+function parseDecisions(raw: FormDataEntryValue | null): ClientDecisions {
+  if (typeof raw !== "string" || raw.length === 0) return {};
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return {};
+
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        ([, value]) => typeof value === "string",
+      ),
+    ) as ClientDecisions;
+  } catch {
+    return {};
+  }
+}
 
 /** Decision F28: ADMIN and ORDER_DESK. */
 async function requireImporter(): Promise<Actor> {
@@ -64,7 +111,9 @@ export async function previewImportAction(
       ok: true,
       error: null,
       filename: file.name,
-      result: validateRows(rows, { clients, existingKeys }),
+      rows,
+      clients,
+      existingKeys: [...existingKeys],
     };
   } catch (error) {
     // A parse error is a statement about the FILE and is shown as-is. Anything
@@ -120,7 +169,8 @@ export async function confirmImportAction(
       existingDedupeKeys(),
     ]);
 
-    const result = validateRows(rows, { clients, existingKeys });
+    const decisions = parseDecisions(formData.get("decisions"));
+    const result = validateRows(rows, { clients, existingKeys, decisions });
     const toWrite = importableRows(result);
 
     if (toWrite.length === 0) {
@@ -135,14 +185,24 @@ export async function confirmImportAction(
     revalidatePath("/purchase-orders");
     revalidatePath("/items");
     revalidatePath("/dispatch");
+    revalidatePath("/clients");
 
+    // Rows whose client is still in doubt are not written (F32), so an import
+    // can legitimately land with some rows left behind. The message says so,
+    // rather than reporting a clean success over a file two-thirds imported.
     return {
       ok: true,
       error: null,
       message:
         `Imported ${counts.imported} job${counts.imported === 1 ? "" : "s"}` +
         (counts.completed > 0 ? `, ${counts.completed} fully delivered` : "") +
+        (counts.clientsCreated > 0
+          ? `. ${counts.clientsCreated} new client${counts.clientsCreated === 1 ? "" : "s"} created — check them on the Clients screen`
+          : "") +
         (counts.skipped > 0 ? `. ${counts.skipped} skipped as already present` : "") +
+        (result.summary.review > 0
+          ? `. ${result.summary.review} row${result.summary.review === 1 ? " was" : "s were"} left out, still waiting on a client decision`
+          : "") +
         ".",
     };
   } catch (error) {
@@ -190,11 +250,17 @@ export async function undoImportAction(
     revalidatePath("/purchase-orders");
     revalidatePath("/items");
     revalidatePath("/dispatch");
+    revalidatePath("/clients");
 
     return {
       ok: true,
       error: null,
-      message: `Undone. ${removed.items} item${removed.items === 1 ? "" : "s"}, ${removed.orders} purchase order${removed.orders === 1 ? "" : "s"} and ${removed.challans} challan${removed.challans === 1 ? "" : "s"} removed.`,
+      message:
+        `Undone. ${removed.items} item${removed.items === 1 ? "" : "s"}, ${removed.orders} purchase order${removed.orders === 1 ? "" : "s"} and ${removed.challans} challan${removed.challans === 1 ? "" : "s"} removed` +
+        (removed.clients > 0
+          ? `, along with ${removed.clients} client${removed.clients === 1 ? "" : "s"} this import created`
+          : "") +
+        ".",
     };
   } catch (error) {
     return {

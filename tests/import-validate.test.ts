@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  clientsToCreate,
   dedupeKey,
   importableRows,
   parseDate,
   validateRows,
+  CREATE_NEW,
+  type ClientDecisions,
   type ClientLookup,
   type RawRow,
 } from "@/modules/imports/validate";
@@ -38,8 +41,8 @@ const row = (over: Partial<RawRow> = {}): RawRow => ({
   ...over,
 });
 
-const validate = (rows: RawRow[], existing: string[] = []) =>
-  validateRows(rows, { clients: CLIENTS, existingKeys: new Set(existing) });
+const validate = (rows: RawRow[], existing: string[] = [], decisions: ClientDecisions = {}) =>
+  validateRows(rows, { clients: CLIENTS, existingKeys: new Set(existing), decisions });
 
 describe("parseDate", () => {
   it("reads DD/MM/YYYY, day first", () => {
@@ -79,14 +82,164 @@ describe("validateRows — clients", () => {
     expect(result.rows[0]!.parsed!.clientId).toBe(MUL.id);
   });
 
-  it("REFUSES an unknown client instead of creating one", () => {
-    // Auto-creating is how "Nature Packaging", "Nature packaging Pvt Ltd" and
-    // "NAure Packaging" become three customers nobody notices.
+  it("matches a name that differs only by a legal suffix", () => {
+    // The requirement's own example, at the level the importer actually runs.
+    const result = validate([row({ clientName: "NATURE PACKAGING PVT. LTD." })]);
+
+    expect(result.rows[0]!.status).toBe("ok");
+    expect(result.rows[0]!.parsed!.clientId).toBe(NAT.id);
+    expect(result.summary.clients).toMatchObject({ matched: 1, toCreate: 0, needsReview: 0 });
+  });
+});
+
+describe("validateRows — creating clients (F32)", () => {
+  it("creates a client nothing on file resembles", () => {
+    const result = validate([row({ clientName: "Zenith Graphics" })]);
+
+    expect(result.rows[0]!.status).toBe("warning");
+    expect(result.rows[0]!.reasons.join(" ")).toContain("will be created");
+    expect(result.rows[0]!.parsed!.clientId).toBeNull();
+    expect(result.summary.clients).toMatchObject({ toCreate: 1, needsReview: 0 });
+  });
+
+  it("stores the name as typed, casing and all", () => {
+    // Normalising is for comparing. What the person wrote is what goes in.
+    const result = validate([row({ clientName: "  ZeNith   Graphics  " })]);
+
+    expect(result.rows[0]!.parsed!.clientName).toBe("ZeNith   Graphics");
+    expect(clientsToCreate(result)[0]!.name).toBe("ZeNith   Graphics");
+  });
+
+  it("resolves two rows normalising to the same name to ONE client", () => {
+    // Requirement 5. Two spellings, one customer, one row in the master.
+    const result = validate([
+      row({ rowNumber: 2, clientName: "Zenith Graphics", poNo: "Z-1" }),
+      row({ rowNumber: 3, clientName: "ZENITH GRAPHICS PVT LTD", poNo: "Z-2" }),
+    ]);
+
+    expect(result.rows[0]!.parsed!.newClientKey).toBe(result.rows[1]!.parsed!.newClientKey);
+    expect(clientsToCreate(result)).toHaveLength(1);
+    expect(result.summary.clients.toCreate).toBe(1);
+  });
+
+  it("does not create a client whose only row is a skipped duplicate", () => {
+    const first = validate([row({ clientName: "Zenith Graphics" })]);
+    const key = dedupeKey(
+      first.rows[0]!.parsed!.clientToken,
+      first.rows[0]!.parsed!.poNo,
+      first.rows[0]!.parsed!.itemName,
+    );
+
+    const second = validate([row({ clientName: "Zenith Graphics" })], [key]);
+
+    expect(second.summary.duplicate).toBe(1);
+    expect(clientsToCreate(second)).toHaveLength(0);
+    // And the row does not claim both things at once.
+    expect(second.rows[0]!.reasons.join(" ")).not.toContain("will be created");
+  });
+});
+
+describe("validateRows — near matches go to review (F32)", () => {
+  it("neither creates nor assumes when a name is close to an existing client", () => {
+    // The whole point of the change: auto-create must not be able to produce a
+    // duplicate. "Nture Packging" is a typo, not a new customer.
     const result = validate([row({ clientName: "Nture Packging" })]);
 
+    expect(result.rows[0]!.status).toBe("review");
+    expect(result.rows[0]!.parsed).toBeUndefined();
+    expect(result.rows[0]!.review!.candidates[0]!.name).toBe(NAT.name);
+    expect(result.summary.clients).toMatchObject({ toCreate: 0, needsReview: 1 });
+  });
+
+  it("leaves an undecided row out of the import, and lets the rest through", () => {
+    // Same rule as a bad date: one row's problem stops that row only.
+    const result = validate([
+      row({ rowNumber: 2, clientName: "Nture Packging", poNo: "A-1" }),
+      row({ rowNumber: 3, clientName: "Multipack Industries", poNo: "A-2" }),
+    ]);
+
+    expect(result.summary.review).toBe(1);
+    expect(importableRows(result).map((r) => r.rowNumber)).toEqual([3]);
+  });
+
+  it("uses the existing client once that decision is made", () => {
+    const first = validate([row({ clientName: "Nture Packging" })]);
+    const key = first.rows[0]!.review!.key;
+
+    const decided = validate([row({ clientName: "Nture Packging" })], [], { [key]: NAT.id });
+
+    expect(decided.rows[0]!.status).toBe("ok");
+    expect(decided.rows[0]!.parsed!.clientId).toBe(NAT.id);
+    expect(decided.summary.clients).toMatchObject({ matched: 1, needsReview: 0 });
+  });
+
+  it("creates it instead once THAT decision is made", () => {
+    const first = validate([row({ clientName: "Nture Packging" })]);
+    const key = first.rows[0]!.review!.key;
+
+    const decided = validate([row({ clientName: "Nture Packging" })], [], {
+      [key]: CREATE_NEW,
+    });
+
+    expect(decided.rows[0]!.parsed!.clientId).toBeNull();
+    expect(clientsToCreate(decided)[0]!.name).toBe("Nture Packging");
+  });
+
+  it("falls back to review when the decision names a client that has gone", () => {
+    // The preview travelled through the browser and the database may have
+    // moved on (F30). Ignoring the stale answer would import the row against
+    // nothing; honouring it is impossible.
+    const first = validate([row({ clientName: "Nture Packging" })]);
+    const key = first.rows[0]!.review!.key;
+
+    const stale = validate([row({ clientName: "Nture Packging" })], [], {
+      [key]: "99999999-9999-9999-9999-999999999999",
+    });
+
+    expect(stale.rows[0]!.status).toBe("review");
+  });
+
+  it("answers every row spelling the client the same way, from one decision", () => {
+    // Requirement 5 again, through the review path: one answer, one client.
+    const first = validate([row({ clientName: "Nture Packging" })]);
+    const key = first.rows[0]!.review!.key;
+
+    const decided = validate(
+      [
+        row({ rowNumber: 2, clientName: "Nture Packging", poNo: "A-1" }),
+        row({ rowNumber: 3, clientName: "NTURE PACKGING PVT LTD", poNo: "A-2" }),
+      ],
+      [],
+      { [key]: CREATE_NEW },
+    );
+
+    expect(decided.rows[0]!.parsed!.newClientKey).toBe(decided.rows[1]!.parsed!.newClientKey);
+    expect(clientsToCreate(decided)).toHaveLength(1);
+  });
+
+  it("groups the rows waiting on one answer together", () => {
+    const result = validate([
+      row({ rowNumber: 2, clientName: "Nture Packging", poNo: "A-1" }),
+      row({ rowNumber: 3, clientName: "Nture Packging", poNo: "A-2" }),
+    ]);
+
+    expect(result.reviews).toHaveLength(1);
+    expect(result.reviews[0]!.rowNumbers).toEqual([2, 3]);
+  });
+
+  it("refuses a name that matches two clients equally well", () => {
+    const twins = [
+      { id: "a", code: "ACM", name: "Acme Packaging" },
+      { id: "b", code: "ACP", name: "Acme Packaging Pvt Ltd" },
+    ];
+
+    const result = validateRows([row({ clientName: "Acme Packaging" })], {
+      clients: twins,
+      existingKeys: new Set(),
+    });
+
     expect(result.rows[0]!.status).toBe("error");
-    expect(result.rows[0]!.reasons[0]).toContain("never creates clients");
-    expect(result.summary.unknownClients).toEqual(["Nture Packging"]);
+    expect(result.rows[0]!.reasons.join(" ")).toContain("client CODE");
   });
 });
 
@@ -106,9 +259,9 @@ describe("validateRows — errors block one row only", () => {
 
   it("reports every problem on a row, not just the first", () => {
     const result = validate([
-      row({ poDate: "nope", orderedQty: "-5", clientName: "Who?" }),
+      row({ poDate: "nope", orderedQty: "-5", itemName: "", clientName: "" }),
     ]);
-    expect(result.rows[0]!.reasons.length).toBeGreaterThanOrEqual(3);
+    expect(result.rows[0]!.reasons.length).toBeGreaterThanOrEqual(4);
   });
 
   it("refuses a dispatched quantity larger than the order", () => {
@@ -169,7 +322,7 @@ describe("validateRows — duplicates", () => {
     // Somebody will do this. It has to be safe.
     const first = validate([row({ rowNumber: 2 }), row({ rowNumber: 3, itemName: "Insert" })]);
     const keys = importableRows(first).map((r) =>
-      dedupeKey(r.parsed!.clientId, r.parsed!.poNo, r.parsed!.itemName),
+      dedupeKey(r.parsed!.clientToken, r.parsed!.poNo, r.parsed!.itemName),
     );
 
     const second = validate([row({ rowNumber: 2 }), row({ rowNumber: 3, itemName: "Insert" })], keys);

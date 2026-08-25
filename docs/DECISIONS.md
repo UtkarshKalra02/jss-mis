@@ -742,9 +742,13 @@ No database, no file parsing, no session — so the rules that decide what reach
 database are tested directly rather than through an upload. Three of them are worth
 restating:
 
-- **An unmatched client is refused, never created.** Auto-creating from a spreadsheet is how
-  "Nature Packaging", "Nature packaging Pvt Ltd" and "NAure Packaging" become three
-  customers nobody notices until a report is split three ways.
+- ~~**An unmatched client is refused, never created.** Auto-creating from a spreadsheet is
+  how "Nature Packaging", "Nature packaging Pvt Ltd" and "NAure Packaging" become three
+  customers nobody notices until a report is split three ways.~~ **Superseded by F32**,
+  which keeps the reasoning and changes the rule: creation is allowed where nothing on
+  file resembles the name, and a name that resembles one goes to a human instead of being
+  refused outright. The three-spellings failure is still the thing being prevented — it is
+  now prevented by the near-match check rather than by refusing everything.
 - **An error stops its own row and nothing else.** Forty jobs with two bad dates import
   thirty-eight.
 - **Dates are read day-first.** Not cosmetic: `03/04/2026` is a different day under each
@@ -787,3 +791,100 @@ the batch added an item to but did not create keeps its null `import_batch_id` a
 with everything else on it. Dedupe keys are built from live rows only, so an undone batch
 stops blocking a re-import — undo exists so a bad spreadsheet can be fixed and run again.
 
+**F32 — The importer matches clients tolerantly, creates them where there is no doubt, and
+refuses to decide where there is.** Amends F29's first bullet, which refused every
+unmatched name outright. That rule was safe and unusable: the paper book says
+"NATUREEXPERT AYURVEDIC PVT LTD", the client list says "Natureexpert Ayurvedic", and forty
+rows were refused over a difference nobody would call a difference.
+
+The replacement has three outcomes and the third is the whole point.
+
+1. **Normalise both sides before comparing.** Lowercase, collapse internal whitespace,
+   trim, strip trailing punctuation, and strip legal suffixes from the end — pvt, pvt.,
+   private, ltd, ltd., limited, llp, & co, and co, co., inc — repeatedly, so "pvt ltd"
+   comes off in two passes. A company does not become a different customer on the day
+   somebody stops typing "Pvt Ltd" after its name. A name that is *nothing but* a suffix
+   keeps it, because stripping "Ltd" to an empty string would make it match every other
+   name stripped to empty. Codes are matched exactly and are **not** suffix-stripped: a
+   code is an identifier, not a name, and is tried first.
+
+2. **Exact after normalising → use the existing client, silently.** No note on the row.
+
+3. **Nothing resembling it → create it.** Stored with the name **as typed in the sheet**,
+   casing preserved — normalising is for comparing, never for storing. The row carries
+   `import_batch_id`, which does two jobs: it puts the client inside that batch's undo, and
+   it is what the "created by import, unreviewed" filter on the client list selects. The
+   `code` is generated (first three letters of the first word, numbered on collision:
+   NAT, then NAT2), which is a placeholder that wants attention — and attention is exactly
+   what that filter exists to send.
+
+4. **Similar but not identical → decide nothing.** The row is flagged in the validation
+   preview with both names side by side and a per-row choice: use the existing client, or
+   create a new one. Undecided rows are excluded from the import as firmly as refused ones,
+   whether or not anybody looked at the screen. Without this, auto-creation *is* the
+   three-spellings failure F29 was written to prevent.
+
+**The similarity measure is trigram Jaccard — `|A ∩ B| / |A ∪ B|` over word-padded
+character trigrams, the same thing Postgres `pg_trgm.similarity()` computes. The threshold
+is 0.45.**
+
+Trigrams rather than Levenshtein because they ignore word order and degrade gracefully
+with length difference, and because matching pg_trgm's definition means this can move into
+SQL later without the numbers shifting under the threshold. It runs in TypeScript for now
+so F29's "validation is a pure function" property survives.
+
+0.45 was calibrated against realistic client names rather than picked. Genuine variants
+score from about 0.48 up — "Naturexpert Ayurvedic" against "Natureexpert Ayurvedic" is
+0.88, "Aarav Carton" against "Aarav Cartons" 0.80, "Amrit Pharmaceuticals" against "Amrit
+Pharma" 0.52, "Perfect Print Solutions" against "Perfect Prints LLP" 0.48. Unrelated names
+score below about 0.12 — "Zenith Graphics" against "Ganesh Packaging" is 0.03. Nothing in
+that sample lands in between, so the threshold sits in open space rather than on a cliff
+and being slightly wrong either way changes no answer. It errs LOW deliberately: a name
+sent to review that did not need it costs one click, and a name created that should have
+matched costs a duplicate customer and a report split in two.
+
+**A token-containment rule ignores the threshold entirely.** If one normalised name's words
+are wholly contained in the other's, it goes to review whatever it scores. "Bharat Box"
+against "Bharat Box Makers" scores 0.59 and "Ganesh Packaging" against "Ganesh Packaging
+Industries" 0.61 — dragged down by the length difference however identical the shared part
+is — and a name that is entirely a subset of another is the most likely duplicate shape
+there is.
+
+**A fifth outcome had to be invented: ambiguity.** If two live clients normalise to the
+same string — "Acme Packaging" and "Acme Packaging Pvt Ltd" both on file — the row is
+REFUSED with an instruction to use the client code, not resolved to whichever came back
+first. Picking one is a coin toss that attaches real orders to the wrong customer and says
+nothing about it. It is rare by construction, since the near-match rule is what stops such
+a pair being created in the first place.
+
+**Decisions are keyed by the normalised NAME, not by row.** That is what makes requirement
+5 — two rows in one file normalising to the same name resolve to ONE client — a property
+rather than a promise: there is one place to record the answer, so two spellings cannot
+become two clients. The control is still rendered on every affected row, so the choice is
+made where the row is; setting it on one row settles all of them.
+
+**The preview screen runs `validateRows` itself, in the browser.** A decision changes the
+verdict for every row sharing that name and the counts above the grid have to follow, which
+otherwise means a round trip per click or a second copy of the rules in the component — and
+the moment two copies exist, one is wrong. The upload action therefore returns the INPUTS
+(rows, client list, dedupe keys) rather than a verdict. F30 is untouched and is what makes
+this safe: confirm re-runs the same function on the server against freshly re-read lookups,
+and only what that pass accepts is written. A decision naming a client that has since been
+deleted falls back to review and stops its row.
+
+**Undo removes the clients a batch created**, and only those. One it merely matched against
+carries a null `import_batch_id` and survives — the same rule that protects a hand-typed
+purchase order the batch attached an item to (F31). Clients are soft-deleted last, after
+everything pointing at them has gone. Without this, auto-creation would be a one-way door
+and "a whole batch can be reversed in one action" would quietly stop being true.
+
+**`client.import_reviewed_at` / `import_reviewed_by` are separate from the batch id**, and
+are what makes the filter mean something. The batch id is where the row came from and stays
+true forever; reviewing is a thing that happened afterwards. Marking a client checked does
+not clear the batch id, because that would silently take it out of an undo the Import
+History screen is still offering.
+
+**There is no design lookup to normalise.** The requirement asks for the same treatment on
+design lookup by name; the importer's file format has no design column and the write path
+never touches `design`, so there is nothing to apply it to. Recorded here so the absence
+reads as checked rather than missed.

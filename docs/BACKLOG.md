@@ -13,6 +13,13 @@ Captured verbatim, 18 Aug 2026. Built in chunk 10; see decisions F28–F31 in
 [`DECISIONS.md`](DECISIONS.md). The requirement is kept in full below, struck through in the
 heading rather than deleted, because it is what the decisions answer to.
 
+**One line of it was amended on 25 Aug 2026 and no longer describes what is built.** The
+"unmatched names are REJECTED — never auto-create" validation was refusing whole files over
+"NATUREEXPERT AYURVEDIC PVT LTD" versus "Natureexpert Ayurvedic". Matching is now tolerant,
+creation is allowed where nothing on file resembles the name, and a name that resembles one
+goes to a per-row decision instead of being refused. The original wording is left in place
+below, because the amendment is only legible against what it replaced. See **F32**.
+
 > Purpose: bulk entry of ~40 historical completed jobs from paper books,
 > and later batch catch-up by a data-entry person. NOT the primary entry
 > path — the forms are.

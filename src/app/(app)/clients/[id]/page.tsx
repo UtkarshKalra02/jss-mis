@@ -4,7 +4,11 @@ import { notFound } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
-import { ClientActiveToggle, RemoveClientCard } from "@/components/clients/client-controls";
+import {
+  ClientActiveToggle,
+  ImportedClientCard,
+  RemoveClientCard,
+} from "@/components/clients/client-controls";
 import { ClientForm } from "@/components/clients/client-form";
 import { formatINR } from "@/lib/format";
 import { getClient } from "@/modules/clients/queries";
@@ -45,6 +49,10 @@ export default async function ClientDetailPage({
 
       {canWrite ? (
         <div className="mt-8 space-y-6">
+          {record.importBatchId && !record.importReviewedAt ? (
+            <ImportedClientCard clientId={record.id} clientName={record.name} />
+          ) : null}
+
           <section className="rounded-lg border p-4">
             <ClientForm mode="edit" client={record} />
           </section>

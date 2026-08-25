@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull, ne } from "drizzle-orm";
 
 import { db } from "@/db";
 import { client } from "@/db/schema";
@@ -16,10 +16,23 @@ export type ClientRow = {
   creditLimit: string | null;
   clientType: "New" | "Repeat";
   isActive: boolean;
+  /** Non-null when the importer created this client itself (F32). */
+  importBatchId: string | null;
+  /** Null on an imported client means nobody has checked it yet. */
+  importReviewedAt: Date | null;
 };
 
-/** Live clients only — soft-deleted rows never appear (non-negotiable 7). */
-export async function listClients(): Promise<ClientRow[]> {
+/**
+ * Live clients only — soft-deleted rows never appear (non-negotiable 7).
+ *
+ * @param importedUnreviewed narrows to clients the importer created and nobody
+ *   has checked since (F32). Those rows have a generated code and no GSTIN or
+ *   address, so they are records waiting to be finished; without a way to list
+ *   them they would sit unfinished among two hundred real ones.
+ */
+export async function listClients(
+  options: { importedUnreviewed?: boolean } = {},
+): Promise<ClientRow[]> {
   return db
     .select({
       id: client.id,
@@ -34,10 +47,36 @@ export async function listClients(): Promise<ClientRow[]> {
       creditLimit: client.creditLimit,
       clientType: client.clientType,
       isActive: client.isActive,
+      importBatchId: client.importBatchId,
+      importReviewedAt: client.importReviewedAt,
     })
     .from(client)
-    .where(isNull(client.deletedAt))
+    .where(
+      options.importedUnreviewed
+        ? and(
+            isNull(client.deletedAt),
+            isNotNull(client.importBatchId),
+            isNull(client.importReviewedAt),
+          )
+        : isNull(client.deletedAt),
+    )
     .orderBy(asc(client.name));
+}
+
+/** How many auto-created clients are still waiting to be checked. */
+export async function unreviewedImportedClientCount(): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(client)
+    .where(
+      and(
+        isNull(client.deletedAt),
+        isNotNull(client.importBatchId),
+        isNull(client.importReviewedAt),
+      ),
+    );
+
+  return row?.n ?? 0;
 }
 
 export async function getClient(id: string) {

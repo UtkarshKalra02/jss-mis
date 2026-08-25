@@ -38,6 +38,12 @@ export const clientColumns: LegacyColumnDef<ClientRow>[] = [
         {!row.original.isActive ? (
           <span className="text-muted-foreground ml-2 text-[11px]">(inactive)</span>
         ) : null}
+        {/* F32. Visible on the WHOLE list, not only under the filter: an
+            auto-created client has a generated code and no GSTIN, and somebody
+            reading it in passing should know that before they trust it. */}
+        {row.original.importBatchId && !row.original.importReviewedAt ? (
+          <span className="text-at-risk ml-2 text-[11px]">(from import, unchecked)</span>
+        ) : null}
       </span>
     ),
   },
