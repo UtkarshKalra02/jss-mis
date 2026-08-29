@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { SYSTEM_ACTOR, auditedInsert, auditedUpdate, type Tx } from "@/db/audit";
 import { appUser, delegationTask } from "@/db/schema";
 import { vDelegationScorecard, vDelegationStatus } from "@/db/views";
+import { taskCountsFor } from "@/modules/delegation/queries";
 
 import { expectFailure, inRollback, uniq } from "./helpers";
 
@@ -386,6 +387,86 @@ describe("v_delegation_scorecard", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]!.from_id).toBe(from);
       expect(rows[0]!.to_id).toBe(to);
+    });
+  });
+});
+
+describe("the dashboard's task counts", () => {
+  it("counts what is still owed, and how much of it is late", async () => {
+    await inRollback(async (tx) => {
+      const me = await makeUser(tx, "Counts Me");
+      const boss = await makeUser(tx, "Counts Boss");
+      const given = await istDays(tx, -30);
+
+      // Two overdue, one due later, one blocked and overdue.
+      await makeTask(tx, {
+        assignedTo: me, assignedBy: boss, dateGiven: given,
+        expectedDate: await istDays(tx, -5), status: "Not Started",
+      });
+      await makeTask(tx, {
+        assignedTo: me, assignedBy: boss, dateGiven: given,
+        expectedDate: await istDays(tx, -1), status: "In Progress",
+      });
+      await makeTask(tx, {
+        assignedTo: me, assignedBy: boss, dateGiven: given,
+        expectedDate: await istDays(tx, 7), status: "In Progress",
+      });
+      await makeTask(tx, {
+        assignedTo: me, assignedBy: boss, dateGiven: given,
+        expectedDate: await istDays(tx, -2), status: "Blocked",
+        blockerNote: "Waiting on the client",
+      });
+
+      const counts = await taskCountsFor(me, tx);
+      expect(counts.pending).toBe(4);
+      expect(counts.overdue).toBe(3);
+    });
+  });
+
+  it("excludes finished and withdrawn work from BOTH numbers", async () => {
+    await inRollback(async (tx) => {
+      const me = await makeUser(tx, "Counts Finished");
+      const boss = await makeUser(tx, "Counts Finished Boss");
+      const given = await istDays(tx, -30);
+
+      await makeTask(tx, {
+        assignedTo: me, assignedBy: boss, dateGiven: given,
+        expectedDate: await istDays(tx, -10), status: "Done",
+        completedAt: await istDays(tx, -3),
+      });
+      await makeTask(tx, {
+        assignedTo: me, assignedBy: boss, dateGiven: given,
+        expectedDate: await istDays(tx, -10), status: "Cancelled",
+      });
+
+      // A task finished late is not still owed, and a withdrawn one never was.
+      const counts = await taskCountsFor(me, tx);
+      expect(counts).toEqual({ pending: 0, overdue: 0 });
+    });
+  });
+
+  it("keeps overdue a strict subset of pending", async () => {
+    // Both come from one query for exactly this reason: two queries against a
+    // moving clock can straddle midnight IST and report more overdue than
+    // pending, which nobody reports and everybody stops trusting.
+    await inRollback(async (tx) => {
+      const me = await makeUser(tx, "Counts Subset");
+      const boss = await makeUser(tx, "Counts Subset Boss");
+
+      await makeTask(tx, {
+        assignedTo: me, assignedBy: boss, dateGiven: await istDays(tx, -30),
+        expectedDate: await istDays(tx, -4), status: "Not Started",
+      });
+
+      const counts = await taskCountsFor(me, tx);
+      expect(counts.overdue).toBeLessThanOrEqual(counts.pending);
+    });
+  });
+
+  it("counts nothing for somebody with no tasks", async () => {
+    await inRollback(async (tx) => {
+      const me = await makeUser(tx, "Counts Empty");
+      expect(await taskCountsFor(me, tx)).toEqual({ pending: 0, overdue: 0 });
     });
   });
 });

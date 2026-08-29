@@ -1042,8 +1042,26 @@ through it, and every control on the screen is a thing to click by accident whil
 people watch. It is ordered worst-score-first so the conversation starts where it needs to
 rather than wherever the alphabet puts it.
 
-**G9 — The dashboard card appears only when there is something to say.** "You have N overdue
-tasks" is rendered when N > 0 and not at all otherwise. A permanent "0 overdue tasks" tile
-trains people to stop reading that corner of the screen, which is the opposite of what it is
-for. It is deliberately not a `MetricCard` with a phase placeholder: this module is built,
-so the number is real.
+**G9 — The dashboard tile counts what is PENDING, with overdue underneath it.**
+
+The first version showed overdue only, and appeared only when the count was above zero. The
+reasoning was sound for an exception metric — a permanent "0 overdue tasks" trains people to
+stop reading that corner of the screen — and it was the wrong metric. On any day when
+nothing happened to be late, the module vanished from the dashboard entirely, so the one
+screen everybody lands on said nothing at all about work they had been asked to do.
+
+The tile now shows **pending** — Not Started, In Progress or Blocked — and is shown even at
+zero, because pending is a WORKLOAD figure like "items in production" rather than an
+exception. Nothing outstanding is a genuine and useful answer; an absent tile is not. The
+overdue count rides underneath in red rather than colouring the number, because five pending
+of which two are late is not five late tasks. The whole tile is the link, and it opens My
+Tasks, which already defaults to exactly these.
+
+Both numbers come from **one** query (`taskCountsFor`). Two separate counts against a moving
+clock can straddle midnight IST and report more overdue than pending — a nonsense nobody
+reports and everybody quietly stops trusting.
+
+It is deliberately not a `MetricCard` with a phase placeholder: this module is built, so the
+number is real. `MetricCard` grew an `href` for it, which spec 6.1 wants for the overdue and
+at-risk tiles too when Phase 3 fills them in — and it refuses to link while a tile is still
+a placeholder, since a link to an empty screen is worse than no link.

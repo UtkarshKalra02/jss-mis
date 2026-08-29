@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
 import { MetricCard } from "@/components/shell/metric-card";
-import { cn } from "@/lib/utils";
-import { overdueCountFor } from "@/modules/delegation/queries";
+import { taskCountsFor } from "@/modules/delegation/queries";
 
 export const metadata: Metadata = { title: "Dashboard · JSS MIS" };
 
@@ -29,7 +27,8 @@ export default async function DashboardPage() {
 
   // Real data, not a Phase placeholder — the delegation module is built, so
   // this tile either says a number or says zero, and both are true statements.
-  const overdueTasks = can(user.role, "delegation") ? await overdueCountFor(user.id) : 0;
+  const showTasks = can(user.role, "delegation");
+  const tasks = showTasks ? await taskCountsFor(user.id) : { pending: 0, overdue: 0 };
 
   return (
     <div>
@@ -59,6 +58,36 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Delegation (BMP week 9), and the only tile on this page carrying a
+            REAL number — the module behind it is built, so it says a count
+            rather than a phase. Shown even at zero, unlike the overdue-only
+            card it replaces: pending tasks are a workload figure like "items in
+            production", where nothing owed is a genuine and useful answer. An
+            exception metric is what should stay hidden at zero; a workload one
+            reads as broken when it disappears.
+
+            Overdue rides underneath in red rather than colouring the number,
+            because five pending of which two are late is not five late tasks.
+            The whole tile links to My Tasks, which opens on exactly these. */}
+        {showTasks ? (
+          <MetricCard
+            label="My pending tasks"
+            value={String(tasks.pending)}
+            href="/delegation"
+            sub={
+              tasks.overdue > 0 ? (
+                <span className="text-overdue font-medium">
+                  {tasks.overdue} overdue
+                </span>
+              ) : tasks.pending > 0 ? (
+                "None overdue"
+              ) : (
+                "Nothing outstanding"
+              )
+            }
+          />
+        ) : null}
+
         <MetricCard label="Dispatched this month" pendingPhase={3} />
         <MetricCard label="Items in production" pendingPhase={2} />
 
@@ -71,29 +100,6 @@ export default async function DashboardPage() {
 
         {showEnquiries ? <MetricCard label="Open enquiries" pendingPhase={2} /> : null}
       </div>
-
-      {/* Delegation (BMP week 9). Placed above WIP because it is about the
-          person reading the screen rather than about the factory, and because a
-          commitment somebody has already missed outranks a chart. Rendered only
-          when there is something to say: a permanent "0 overdue tasks" tile
-          trains people to stop reading it, which is the opposite of the point. */}
-      {can(user.role, "delegation") && overdueTasks > 0 ? (
-        <Link
-          href="/delegation"
-          className={cn(
-            "border-overdue/40 mt-3 flex items-baseline gap-3 rounded-lg border px-4 py-3.5",
-            "hover:bg-overdue/5 transition-colors",
-          )}
-        >
-          <span className="text-overdue text-2xl font-semibold tabular-nums">
-            {overdueTasks}
-          </span>
-          <span className="text-[13px]">
-            overdue {overdueTasks === 1 ? "task is" : "tasks are"} assigned to you.{" "}
-            <span className="text-primary">Open my tasks →</span>
-          </span>
-        </Link>
-      ) : null}
 
       <div className="mt-3 rounded-lg border px-4 py-3.5">
         <p className="text-muted-foreground text-[12px] font-medium">WIP by stage</p>

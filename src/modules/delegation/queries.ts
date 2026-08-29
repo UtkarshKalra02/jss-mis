@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, ne, sql } from "drizzle-orm";
 
-import { SYSTEM_USER_ID } from "@/db/audit";
+import { SYSTEM_USER_ID, type Tx } from "@/db/audit";
 import { db } from "@/db";
 import { appUser, delegationTask } from "@/db/schema";
 import { vDelegationScorecard, vDelegationStatus } from "@/db/views";
@@ -14,6 +14,9 @@ import { vDelegationScorecard, vDelegationStatus } from "@/db/views";
  * subtraction" is exactly how the task list and the meeting scorecard end up
  * disagreeing out loud.
  */
+
+/** Either the pool or an open transaction — see taskCountsFor. */
+type Runner = typeof db | Tx;
 
 export type TaskRow = typeof vDelegationStatus.$inferSelect;
 
@@ -85,14 +88,40 @@ export async function getTaskRecord(id: string) {
   return row ?? null;
 }
 
-/** How many of this person's open tasks are late right now. For the dashboard. */
-export async function overdueCountFor(userId: string): Promise<number> {
-  const rows = await db
-    .select({ id: vDelegationStatus.delegationTaskId })
-    .from(vDelegationStatus)
-    .where(and(eq(vDelegationStatus.assignedTo, userId), eq(vDelegationStatus.isOverdue, true)));
+export type TaskCounts = {
+  /** Not Started, In Progress or Blocked — everything still owed. */
+  pending: number;
+  /** The subset of those that are already past their date. */
+  overdue: number;
+};
 
-  return rows.length;
+/**
+ * The two numbers the dashboard tile needs, in ONE query.
+ *
+ * Both come from v_delegation_status rather than being counted separately,
+ * because `overdue` has to be a strict subset of `pending` — two queries
+ * against a moving clock can straddle midnight IST and report three overdue out
+ * of two pending, which is the kind of nonsense nobody reports and everybody
+ * stops trusting.
+ *
+ * Takes an optional runner so it can be exercised inside a rolled-back
+ * transaction, the same way findPurchaseOrder does.
+ */
+export async function taskCountsFor(userId: string, runner: Runner = db): Promise<TaskCounts> {
+  const [row] = await runner
+    .select({
+      pending: count(),
+      overdue: sql<number>`count(*) filter (where ${vDelegationStatus.isOverdue})::int`,
+    })
+    .from(vDelegationStatus)
+    .where(
+      and(
+        eq(vDelegationStatus.assignedTo, userId),
+        sql`${vDelegationStatus.status} not in ('Done', 'Cancelled')`,
+      ),
+    );
+
+  return { pending: row?.pending ?? 0, overdue: row?.overdue ?? 0 };
 }
 
 export type ScorecardRow = typeof vDelegationScorecard.$inferSelect;
