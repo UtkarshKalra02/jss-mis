@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
 import { MetricCard } from "@/components/shell/metric-card";
+import { cn } from "@/lib/utils";
+import { overdueCountFor } from "@/modules/delegation/queries";
 
 export const metadata: Metadata = { title: "Dashboard · JSS MIS" };
 
@@ -23,6 +26,10 @@ export default async function DashboardPage() {
 
   const showAr = can(user.role, "ar_ledger");
   const showEnquiries = can(user.role, "enquiry");
+
+  // Real data, not a Phase placeholder — the delegation module is built, so
+  // this tile either says a number or says zero, and both are true statements.
+  const overdueTasks = can(user.role, "delegation") ? await overdueCountFor(user.id) : 0;
 
   return (
     <div>
@@ -64,6 +71,29 @@ export default async function DashboardPage() {
 
         {showEnquiries ? <MetricCard label="Open enquiries" pendingPhase={2} /> : null}
       </div>
+
+      {/* Delegation (BMP week 9). Placed above WIP because it is about the
+          person reading the screen rather than about the factory, and because a
+          commitment somebody has already missed outranks a chart. Rendered only
+          when there is something to say: a permanent "0 overdue tasks" tile
+          trains people to stop reading it, which is the opposite of the point. */}
+      {can(user.role, "delegation") && overdueTasks > 0 ? (
+        <Link
+          href="/delegation"
+          className={cn(
+            "border-overdue/40 mt-3 flex items-baseline gap-3 rounded-lg border px-4 py-3.5",
+            "hover:bg-overdue/5 transition-colors",
+          )}
+        >
+          <span className="text-overdue text-2xl font-semibold tabular-nums">
+            {overdueTasks}
+          </span>
+          <span className="text-[13px]">
+            overdue {overdueTasks === 1 ? "task is" : "tasks are"} assigned to you.{" "}
+            <span className="text-primary">Open my tasks →</span>
+          </span>
+        </Link>
+      ) : null}
 
       <div className="mt-3 rounded-lg border px-4 py-3.5">
         <p className="text-muted-foreground text-[12px] font-medium">WIP by stage</p>

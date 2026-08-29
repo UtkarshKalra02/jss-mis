@@ -3,6 +3,7 @@ import {
   Banknote,
   Building2,
   CalendarDays,
+  ClipboardCheck,
   ClipboardList,
   FileSpreadsheet,
   FileText,
@@ -13,6 +14,7 @@ import {
   Receipt,
   Scale,
   Settings,
+  Target,
   Truck,
   Workflow,
   type LucideIcon,
@@ -130,6 +132,32 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    /**
+     * BMP week 9, not spec section 6. This is the first module in the system
+     * that the v1 spec does not describe at all — see section G of
+     * DECISIONS.md. It is marked phase 1 because it is built and reachable now,
+     * and `phase` here means "when does this screen exist", not "which spec
+     * phase owns it".
+     */
+    heading: "Accountability",
+    items: [
+      {
+        resource: "delegation",
+        label: "My Tasks",
+        href: "/delegation",
+        icon: ClipboardCheck,
+        phase: 1,
+      },
+      {
+        resource: "delegation_scorecard",
+        label: "Scorecard",
+        href: "/delegation/scorecard",
+        icon: Target,
+        phase: 1,
+      },
+    ],
+  },
+  {
     heading: "Insight",
     items: [
       { resource: "reports", label: "Reports", href: "/reports", icon: BarChart3, phase: 6 },
@@ -159,4 +187,6 @@ export const BUILT: ReadonlySet<Resource> = new Set<Resource>([
   "item_tracker",
   "dispatch",
   "import",
+  "delegation",
+  "delegation_scorecard",
 ]);

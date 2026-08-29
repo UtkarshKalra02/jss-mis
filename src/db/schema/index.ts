@@ -7,7 +7,7 @@
  *
  * Order below follows the dependency graph, which is acyclic by construction:
  *   enums -> users -> _shared -> imports -> reference -> pre-order -> order
- *         -> production -> dispatch -> accounts -> audit
+ *         -> production -> dispatch -> accounts -> delegation -> audit
  */
 
 export * from "./enums";
@@ -20,4 +20,5 @@ export * from "./order";
 export * from "./production";
 export * from "./dispatch";
 export * from "./accounts";
+export * from "./delegation";
 export * from "./audit";

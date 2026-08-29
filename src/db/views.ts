@@ -2,6 +2,8 @@ import { boolean, date, integer, numeric, pgView, text, timestamp, uuid } from "
 
 import {
   clientTypeEnum,
+  delegationLevelEnum,
+  delegationStatusEnum,
   invoiceStatusEnum,
   jobTypeEnum,
   poItemStatusEnum,
@@ -9,7 +11,11 @@ import {
 } from "./schema/enums";
 
 /**
- * The six derived views from spec section 5, described to TypeScript.
+ * The derived views, described to TypeScript.
+ *
+ * Six of them are spec section 5. The last two belong to the Delegation module
+ * (BMP week 9), which is not in the v1 spec at all — see section G of
+ * DECISIONS.md.
  *
  * Every one is declared `.existing()`, which tells drizzle-kit that something
  * else owns the definition — in this case the hand-written migrations 0002 and
@@ -246,9 +252,91 @@ export const vEnquiryFunnel = pgView("v_enquiry_funnel", {
   quoteToWinPct: numeric("quote_to_win_pct"),
 }).existing();
 
+/* -------------------------------------------------------------------------- */
+/* v_delegation_status — one row per live delegated task                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A delegated task with its lateness computed (migration 0012).
+ *
+ * days_late and is_overdue live here and nowhere else, on the same reasoning as
+ * pending_qty (non-negotiable 2). "Late" has one definition, so the task list
+ * and the meeting scorecard cannot disagree in front of everybody.
+ */
+export const vDelegationStatus = pgView("v_delegation_status", {
+  delegationTaskId: uuid("delegation_task_id").notNull(),
+
+  assignedTo: uuid("assigned_to").notNull(),
+  assignedToName: text("assigned_to_name").notNull(),
+  assignedToUsername: text("assigned_to_username").notNull(),
+  assignedBy: uuid("assigned_by").notNull(),
+  assignedByName: text("assigned_by_name").notNull(),
+
+  task: text("task").notNull(),
+  level: delegationLevelEnum("level").notNull(),
+  dateGiven: date("date_given").notNull(),
+  expectedDate: date("expected_date").notNull(),
+  status: delegationStatusEnum("status").notNull(),
+  completedAt: date("completed_at"),
+  blockerNote: text("blocker_note"),
+
+  /** Zero when on time, when cancelled, and when not yet due. Never negative. */
+  daysLate: integer("days_late").notNull(),
+
+  /**
+   * Late right now AND still open. A task finished late is not overdue — it is
+   * finished. notNull because a null boolean vanishes from both `WHERE flag`
+   * and `WHERE NOT flag`, taking the row out of every filter at once.
+   */
+  isOverdue: boolean("is_overdue").notNull(),
+
+  /** Negative until due, so "in 3 days" and "3 days late" are one number. */
+  daysPastDue: integer("days_past_due").notNull(),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}).existing();
+
+/* -------------------------------------------------------------------------- */
+/* v_delegation_scorecard — the executive meeting screen                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Per-person delegation performance (migration 0012).
+ *
+ * Built on v_delegation_status, not on the table, so there is one definition of
+ * late. `assigned` excludes cancelled tasks, which is only safe because the
+ * assignee cannot cancel their own (decision G3).
+ */
+export const vDelegationScorecard = pgView("v_delegation_scorecard", {
+  appUserId: uuid("app_user_id").notNull(),
+  name: text("name").notNull(),
+  username: text("username").notNull(),
+
+  /** Everything not cancelled. The denominator of the score. */
+  assigned: integer("assigned").notNull(),
+  done: integer("done").notNull(),
+  onTime: integer("on_time").notNull(),
+  late: integer("late").notNull(),
+  open: integer("open").notNull(),
+  overdueNow: integer("overdue_now").notNull(),
+
+  /**
+   * on_time / assigned, as a whole percent. NULL when there is nothing to
+   * score — "no score yet" and "scored zero" are different statements, and on a
+   * screen read aloud in a meeting the difference is somebody's reputation.
+   */
+  scorePct: integer("score_pct"),
+
+  /** Average lateness of the tasks that were late. Zero when none were. */
+  avgDaysLate: numeric("avg_days_late").notNull(),
+}).existing();
+
 export type PoItemStatusRow = typeof vPoItemStatus.$inferSelect;
 export type OtdRow = typeof vOtd.$inferSelect;
 export type WipAgeingRow = typeof vWipAgeing.$inferSelect;
 export type ArAgeingRow = typeof vArAgeing.$inferSelect;
 export type ClientSummaryRow = typeof vClientSummary.$inferSelect;
 export type EnquiryFunnelRow = typeof vEnquiryFunnel.$inferSelect;
+export type DelegationStatusRow = typeof vDelegationStatus.$inferSelect;
+export type DelegationScorecardRow = typeof vDelegationScorecard.$inferSelect;

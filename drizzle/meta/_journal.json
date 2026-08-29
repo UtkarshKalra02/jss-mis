@@ -78,6 +78,20 @@
       "when": 1787659229092,
       "tag": "0010_client_created_by_import",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788005967724,
+      "tag": "0011_delegation_task",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788005987661,
+      "tag": "0012_delegation_views",
+      "breakpoints": true
     }
   ]
 }

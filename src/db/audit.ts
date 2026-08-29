@@ -23,7 +23,10 @@ import { auditLog } from "./schema";
  *
  *   B2. OWNER is read-only.     Checked here, at the choke point, rather than
  *      per screen — so a future page that forgets its guard still cannot let
- *      an OWNER write anything.
+ *      an OWNER write anything. There is exactly ONE documented exception,
+ *      decision G2, and it is declared below rather than in the module that
+ *      benefits from it: a rule enforced in one file and excepted in another
+ *      is a rule that quietly stops being true.
  *
  * If you find yourself wanting to bypass this for a bulk operation, pass a
  * transaction in instead (every function takes an optional `tx`), so the whole
@@ -47,6 +50,78 @@ export class ReadOnlyRoleError extends Error {
     super(`${role} is a read-only role and cannot modify data.`);
     this.name = "ReadOnlyRoleError";
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* The ONE exception to B2 (decision G2)                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE SINGLE NARROW EXCEPTION TO "OWNER NEVER WRITES".
+ *
+ * Amit is OWNER and belongs on the delegation scorecard, which means he has to
+ * be able to mark his own tasks done. A scorecard read aloud in a meeting that
+ * omits the most senior person in the room is a political instrument rather
+ * than a factual one.
+ *
+ * WHY IT LIVES HERE and not in the delegation module: B2 is enforced at this
+ * choke point, so its exception has to be visible at the same choke point.
+ * Enforcing a rule in one file and excepting it in another is how the rule
+ * quietly stops being true.
+ *
+ * WHY THIS IS NARROWER THAN A SECOND ACCOUNT. Giving Amit a second non-OWNER
+ * login looks more conservative because it leaves this file alone, but it
+ * grants an entire role's write surface to buy that appearance — and it breaks
+ * one-person-one-identity in the audit log, which E11 already established this
+ * system depends on.
+ *
+ * THE EXACT BOUNDARY, all four conditions required together:
+ *
+ *   1. the table is delegation_task and nothing else;
+ *   2. the operation is UPDATE — auditedInsert, auditedAppend,
+ *      auditedSoftDelete and auditedRestore all still refuse an OWNER
+ *      outright, so he can neither create a task, delete one, nor restore one;
+ *   3. the row's STORED assigned_to is the actor. Read from the database
+ *      inside the transaction, never claimed by the caller;
+ *   4. every field being written is in SELF_WRITABLE_FIELDS.
+ *
+ * What condition 4 buys is the point of the whole module: expected_date, task
+ * and assigned_to are not on the list, so the one person who cannot be
+ * overruled also cannot move his own deadline, reword his own task, or hand it
+ * to somebody else. The score means something precisely because of that.
+ *
+ * tests/delegation-owner.test.ts pins every one of these in both directions.
+ * The exception is narrow in FACT only for as long as those tests pass —
+ * widening this list is a two-word edit that looks innocuous a year from now.
+ */
+const OWNER_SELF_WRITE_TABLE = "delegation_task";
+
+const SELF_WRITABLE_FIELDS: ReadonlySet<string> = new Set([
+  "status",
+  "completedAt",
+  "blockerNote",
+]);
+
+/**
+ * Whether this exact update is the sanctioned exception.
+ *
+ * `before` is the row as the DATABASE currently holds it, read inside the same
+ * transaction. Ownership is therefore verified rather than asserted: a caller
+ * cannot smuggle `assignedTo` in with the values and have it believed, because
+ * the value checked here was never supplied by the caller at all.
+ */
+function isOwnerSelfWrite(
+  actor: Actor,
+  table: PgTable,
+  values: Record<string, unknown>,
+  before: Record<string, unknown>,
+): boolean {
+  if (getTableName(table) !== OWNER_SELF_WRITE_TABLE) return false;
+  if (before.assignedTo !== actor.id) return false;
+
+  // Every field, not merely one of them. A single disallowed key refuses the
+  // whole update rather than silently dropping it.
+  return Object.keys(values).every((field) => SELF_WRITABLE_FIELDS.has(field));
 }
 
 export class RecordNotFoundError extends Error {
@@ -233,12 +308,24 @@ export async function auditedUpdate<T extends AuditableTable>(
   values: Partial<InferInsertModel<T>>,
   tx?: Runner,
 ): Promise<InferSelectModel<T>> {
-  assertCanWrite(actor);
+  // NOT assertCanWrite() here. This is the one function carrying the G2
+  // exception, and deciding it needs the stored row — so an OWNER is checked
+  // below, once `before` has been read, and every other role is checked now.
+  if (actor.role !== "OWNER") assertCanWrite(actor);
 
   return inTransaction(tx, async (r) => {
     const [before] = await generic(r).select().from(table).where(eq(table.id, id));
 
     if (!before) throw new RecordNotFoundError(getTableName(table), id);
+
+    // An OWNER gets exactly one thing: their own delegation task's status,
+    // completion date and blocker note (G2). Everything else, on every table,
+    // still throws — including expected_date on the very row they are allowed
+    // to touch, which is what stops the one person nobody overrules from
+    // moving his own deadline.
+    if (actor.role === "OWNER" && !isOwnerSelfWrite(actor, table, values, before)) {
+      throw new ReadOnlyRoleError(actor.role);
+    }
 
     const [after] = await generic(r)
       .update(table)

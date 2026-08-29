@@ -76,3 +76,50 @@ withdrawn is exactly what an audit trail is for.
 **A new dependency is needed to write .xlsx.** The template has a locked header row, which
 means generating a real workbook, not a CSV with a different extension. The stack is fixed
 but says nothing about file parsing; this needs explicit approval before it is added.
+
+
+---
+
+## ~~Delegation module (BMP Week 9)~~ — BUILT
+
+Captured 25 Aug 2026. Built the same day; see decisions **G1–G9** in
+[`DECISIONS.md`](DECISIONS.md). The first module in the system that the v1 spec does not
+describe at all — it comes from the Business Mastery Program and is orthogonal to the six
+build phases rather than jumping ahead of them.
+
+> A weekly accountability layer for ONE-TIME tasks. It is NOT a to-do list and
+> NOT for recurring work.
+>
+> - `delegation_task`: assigned_to, assigned_by, task, level L2/L3/L4,
+>   date_given, expected_date (NOT NULL — a task without a date is not
+>   delegated), status, completed_at, blocker_note.
+> - DELIBERATELY NO recurrence field. Recurring work belongs on a checklist.
+> - Derived, never stored: days_late, is_overdue, and a per-person scorecard.
+> - My Tasks: the assignee may ONLY change status, completed_at and
+>   blocker_note. Done requires completed_at; Blocked requires blocker_note.
+>   Enforced server-side, not just in the form.
+> - Delegate: task text and expected_date editable ONLY by assigned_by or
+>   ADMIN. The assignee cannot move their own goalposts.
+> - Scorecard: the Executive Meeting screen. Large, legible, no interaction.
+> - Dashboard card: "You have N overdue tasks".
+> - Reassignment must leave an audit trail showing both people. Scores must not
+>   be launderable by moving a late task.
+> - Roles: everyone gets My Tasks. ADMIN delegates to anyone, non-admins only
+>   to themselves. Scorecard = ADMIN and OWNER.
+
+### Two holes the requirement did not cover
+
+Not new requirements — things the requirements force, found while building and settled
+rather than left.
+
+**Cancelling was a laundering route.** The assignee may change `status`, and `Cancelled` is
+a status. Excluding cancelled tasks from the score would then let anybody cancel what they
+were about to miss and reach 100%; including them would punish somebody for work genuinely
+withdrawn from them. Resolved as G3: only the delegator or ADMIN may cancel, and cancelled
+tasks are then safely excluded. The two halves only hold together.
+
+**The OWNER conflict was real and is now a documented exception to B2, not a softening of
+it.** Decision G2: OWNER may UPDATE `status`, `completed_at` and `blocker_note` on
+`delegation_task` rows already assigned to him, and nothing else anywhere. A second account
+was rejected as the *wider* grant despite looking safer. Eleven tests, eight negative, pin
+the boundary.

@@ -888,3 +888,162 @@ History screen is still offering.
 design lookup by name; the importer's file format has no design column and the write path
 never touches `design`, so there is nothing to apply it to. Recorded here so the absence
 reads as checked rather than missed.
+
+
+---
+
+## G. Delegation (BMP Week 9)
+
+The first module in this system that the **v1 spec does not describe at all**. It comes
+from the Business Mastery Program rather than from `JSS_MIS_v1_SPEC.md`, and it is
+orthogonal to the six build phases rather than jumping ahead of them — nothing in Phases
+2–6 is pulled forward by it. Settled 25 Aug 2026, before any code was written.
+
+Its whole output is one number per person: what fraction of the one-time tasks they were
+given were finished on time. Every decision below exists to stop that number being
+gameable, because a score that can be tidied is worse than no score — it is a false
+assurance read aloud in a meeting.
+
+**G1 — Delegation is for ONE-TIME tasks, and everyone is on it.** `delegation` is granted
+to every role including FLOOR and OWNER. Accountability that skips the people at either end
+of the org chart is not accountability. ADMIN may delegate to anyone; everybody else may
+delegate only to themselves, which makes the module usable as a personal commitment log
+without letting the org chart be rewritten from a form.
+
+`delegation_scorecard` is ADMIN and OWNER only. It is a screen about people, and the people
+on it should not have to discover their own number from over a colleague's shoulder.
+
+**G2 — OWNER may write ONE table, three columns, on his own rows. This is a documented
+exception to B2, not a softening of it.**
+
+B2 makes OWNER globally deny-write, enforced inside the audit wrapper so that a future
+screen which forgets its guard still cannot let an OWNER write. Amit is OWNER and belongs
+on the delegation scorecard, which requires him to mark his own tasks done. Three options
+were on the table and the reasoning matters more than the choice:
+
+| Option | Verdict |
+|---|---|
+| **(a) Narrow exception in the wrapper** | **Taken.** |
+| (b) A second, non-OWNER account for him | Rejected — see below. |
+| (c) He stays on paper | Rejected: a scorecard read aloud in a meeting that omits the most senior person in the room is a political instrument, not a factual one. |
+
+**(b) looks like the conservative option and is not.** Leaving the wrapper untouched feels
+safer, but a second account carries a whole ROLE's write surface — every table that role can
+touch — to buy that appearance, where (a) grants three columns on rows already assigned to
+him. It also breaks one-person-one-identity in the audit log, which E11 established this
+system depends on: audit rows are read by username, and two accounts for one human means the
+log and the scorecard both attribute his work to two people, or need a "these are the same
+person" mapping that has to be maintained and can silently go wrong.
+
+The exception is declared in `src/db/audit.ts`, beside B2 rather than inside the delegation
+module, because a rule enforced in one file and excepted in another is a rule that quietly
+stops being true. All four conditions are required together:
+
+1. the table is `delegation_task` and nothing else;
+2. the operation is UPDATE — `auditedInsert`, `auditedAppend`, `auditedSoftDelete` and
+   `auditedRestore` all still refuse an OWNER outright;
+3. the row's **stored** `assigned_to` is the actor, read from the database inside the
+   transaction and never claimed by the caller;
+4. every field written is in `SELF_WRITABLE_FIELDS` — `status`, `completed_at`,
+   `blocker_note`. Not one of them: all of them, so a forbidden field cannot ride along
+   beside an allowed one.
+
+Condition 4 is the point of the whole module. `expected_date`, `task` and `assigned_to` are
+not on the list, so the one person nobody can overrule still cannot move his own deadline,
+reword his own task, or hand it to somebody else.
+
+**Narrower than requested, in one respect.** The option as put was "may write rows where
+`assigned_to` = self", which would include INSERT. It is UPDATE only, so Amit cannot create
+a task for himself even though other non-admins can self-delegate. His tasks come from the
+meeting rather than from himself, which is right for an accountability instrument; widening
+it later is a one-line change.
+
+**What this costs, written down because it is real.** B2 stops being a sentence anybody can
+hold in their head: "OWNER never writes" becomes "OWNER never writes except one table, three
+columns, own rows, update only". `audit.ts` — deliberately generic — now knows the name of a
+business table. `audit_log` will contain rows authored by an OWNER, which surprises anyone
+who internalised the old invariant. And a year from now, adding a field to
+`SELF_WRITABLE_FIELDS` is a two-word edit that will look innocuous.
+
+Only the last has a real mitigation, and it is `tests/delegation-owner.test.ts`: eleven
+tests, eight of them negative, pinning every edge of the boundary. The exception is narrow
+in FACT only for as long as those pass.
+
+**G3 — Cancelling is not something the assignee can do, and cancelled tasks leave the
+score.** These two rules hold together or not at all, and neither was in the original
+requirement.
+
+The requirement said the assignee may change `status`, and `Cancelled` is a status. If
+cancelled tasks are excluded from the scorecard denominator, an assignee cancels whatever
+they are about to miss and scores 100% — silently and completely. If cancelled tasks stay in
+the denominator, a task genuinely withdrawn by the person who set it punishes the assignee
+forever.
+
+So: only `assigned_by` or ADMIN may cancel, and cancelled tasks are then safely excluded
+from `assigned`. Cancelling is not progress on a task; it is withdrawal of the task, which
+is the delegator's to decide. This is the same principle the module already rests on —
+the person doing the work does not move the goalposts — applied to the case of removing
+the goalpost entirely.
+
+Removal (soft delete) is closed the same way and for the same reason, and neither is
+available once a task is `Done`.
+
+**G4 — Reassignment is the delegator's, never the assignee's, and never on a finished
+task.** Changing `assigned_to` moves a task's whole history onto somebody else, so:
+
+- the assignee may never do it, or anybody could shed a task they were about to miss;
+- a `Done` task may not be reassigned by anyone, because its result is already scored and
+  moving it would rewrite something that has been read out.
+
+The audit trail requirement is met by the wrapper's existing whole-row before/after
+snapshots, which name both people; `reassignmentsFor()` reads exactly those rows back so the
+task screen shows the move as a sentence rather than as two JSON blobs to diff.
+
+**The residual risk is stated rather than designed away.** A delegator CAN still move a late
+open task off somebody. Refusing that would be worked around by cancel-and-recreate, which
+loses the history entirely — so the protection is "the person being measured cannot do it",
+and the audit row is what makes the rest visible. That is weaker than airtight and is
+recorded here as such.
+
+**G5 — There is deliberately no recurrence field, and this is a constraint against future
+requests.** Recurring work belongs on a checklist, which is a different instrument. A
+repeating task here either scores once — making the repetition pointless — or scores every
+occurrence, drowning genuine one-time commitments under routine ticks. Either way the number
+stops meaning what the meeting thinks it means.
+
+Utkarsh asked explicitly to be pushed back on and shown this line if he later requests
+recurrence. Treat it the way the section 10 non-negotiables are treated: a constraint set
+against a future self, to be raised rather than quietly accommodated. He can still overrule
+it; the point is that it is a decision rather than a drift.
+
+**G6 — `days_late` freezes when a task is finished.** The view reads `completed_at` first,
+so a completed task's lateness is a fact about the past and stops moving. Reading the clock
+instead would make a job delivered two days late grow later every morning.
+
+That ordering is why `delegation_completed_at_only_when_done` exists as a CHECK constraint:
+a completion date left behind on a task moved back to In Progress would be read by the first
+branch and freeze the task's lateness at a value that is no longer true. Moving off `Done`
+therefore clears the date, and forgetting is an error rather than a quietly wrong score.
+
+Early is not negative-late — `GREATEST(0, ...)` — because rewarding earliness pushes people
+to pad their dates, which is the failure mode that makes an on-time percentage meaningless.
+
+**G7 — The score is on-time over ASSIGNED, and is NULL rather than zero when there is
+nothing to score.** Dividing by `done` would give somebody who completed one task on time
+and abandoned nine a perfect 100%; finishing nothing has to score nothing.
+
+`NULL` matters because this screen is read aloud. "No score yet" and "scored zero" are
+different statements about a person, and the screen renders the null as an em dash rather
+than as 0%.
+
+**G8 — The scorecard has no interaction at all.** No filters, no sorting controls, no row
+actions, and type larger than anywhere else in the app. Somebody projects it and talks
+through it, and every control on the screen is a thing to click by accident while eight
+people watch. It is ordered worst-score-first so the conversation starts where it needs to
+rather than wherever the alphabet puts it.
+
+**G9 — The dashboard card appears only when there is something to say.** "You have N overdue
+tasks" is rendered when N > 0 and not at all otherwise. A permanent "0 overdue tasks" tile
+trains people to stop reading that corner of the screen, which is the opposite of what it is
+for. It is deliberately not a `MetricCard` with a phase placeholder: this module is built,
+so the number is real.

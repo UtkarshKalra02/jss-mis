@@ -133,6 +133,31 @@ export const receiptModeEnum = pgEnum("receipt_mode", [
 ]);
 
 /**
+ * How far a task has been delegated, from the BMP week 12 ladder.
+ *
+ * L2 "do it and report back", L3 "recommend, then act", L4 "act, report
+ * routinely". Recorded on the task rather than on the person, because the same
+ * person is delegated to at different levels depending on the work.
+ */
+export const delegationLevelEnum = pgEnum("delegation_level", ["L2", "L3", "L4"]);
+
+/**
+ * A delegated task's state.
+ *
+ * 'Cancelled' is deliberately NOT reachable by the person the task is assigned
+ * to (decision G3). Cancelling is not progress on a task, it is withdrawal of
+ * the task — and if the assignee could do it, cancelling the ones they were
+ * about to miss would be the easiest way to score 100%.
+ */
+export const delegationStatusEnum = pgEnum("delegation_status", [
+  "Not Started",
+  "In Progress",
+  "Done",
+  "Blocked",
+  "Cancelled",
+]);
+
+/**
  * Audit actions. There is no HARD_DELETE and there never will be —
  * non-negotiable 7.
  */

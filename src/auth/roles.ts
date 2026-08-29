@@ -16,10 +16,15 @@
  * Client master access follows decision A3: ADMIN writes, the three desk roles
  * read, OWNER and FLOOR get nothing.
  *
- * OWNER is read-only EVERYWHERE (decision B2). That is visible here — no OWNER
- * entry is ever "write" — but it is not enforced here. The hard enforcement is
- * a check inside the audit wrapper, so that a future screen that forgets to
- * call assertCan() still cannot let an OWNER write.
+ * OWNER is read-only EVERYWHERE (decision B2), with exactly one documented
+ * exception: `delegation` (decision G2), so Amit can mark his own delegated
+ * tasks done and therefore appear on the scorecard. That grant is what lets him
+ * REACH the screen; what he may actually write is decided by the audit wrapper
+ * and is much narrower than the grant — three columns, on rows assigned to him.
+ *
+ * Enforcement is not here in either case. The hard check is inside the audit
+ * wrapper, so a future screen that forgets to call assertCan() still cannot let
+ * an OWNER write.
  */
 
 export const ROLES = [
@@ -54,6 +59,8 @@ export const RESOURCES = [
   "reports",
   "client",
   "import",
+  "delegation",
+  "delegation_scorecard",
   "admin",
 ] as const;
 
@@ -81,6 +88,8 @@ export const ACCESS: Matrix = {
     reports: "write",
     client: "write",
     import: "write",
+    delegation: "write",
+    delegation_scorecard: "read",
     admin: "write",
   },
 
@@ -104,6 +113,9 @@ export const ACCESS: Matrix = {
      * in one action.
      */
     import: "write",
+
+    /** Everyone owns tasks, so everyone gets the screen (G1). */
+    delegation: "write",
   },
 
   PLANNER: {
@@ -113,6 +125,7 @@ export const ACCESS: Matrix = {
     dispatch: "write",
     item_tracker: "read",
     client: "read",
+    delegation: "write",
   },
 
   ACCOUNTS: {
@@ -124,6 +137,7 @@ export const ACCESS: Matrix = {
     reports: "read", // B1
     item_tracker: "read",
     client: "read",
+    delegation: "write",
   },
 
   /**
@@ -136,14 +150,30 @@ export const ACCESS: Matrix = {
   FLOOR: {
     stage_update: "write",
     item_tracker: "read",
+    delegation: "write",
   },
 
-  /** Amit. Read-only everywhere, by design (B2). */
+  /**
+   * Amit. Read-only everywhere, by design (B2) — with ONE exception.
+   *
+   * `delegation: "write"` is the only "write" any OWNER has ever had in this
+   * matrix, and it is deliberately here rather than hidden: the matrix should
+   * describe what is true. What it does NOT mean is that an OWNER can write
+   * delegation tasks generally. The real boundary is enforced in the audit
+   * wrapper (decision G2) and is far narrower than this grant — his own task's
+   * status, completion date and blocker note, nothing else, on rows already
+   * assigned to him. He cannot delegate, cancel, reassign, or change a date.
+   *
+   * This entry exists so he can reach My Tasks. The wrapper is what decides
+   * what he can do once he is there.
+   */
   OWNER: {
     dashboard: "read",
     item_tracker: "read",
     ar_ledger: "read", // B1 — section 6.10 lists OWNER
     reports: "read", // B1
+    delegation: "write", // G2
+    delegation_scorecard: "read",
   },
 };
 
