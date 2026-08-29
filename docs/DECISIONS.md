@@ -1042,6 +1042,28 @@ through it, and every control on the screen is a thing to click by accident whil
 people watch. It is ordered worst-score-first so the conversation starts where it needs to
 rather than wherever the alphabet puts it.
 
+**G11 — An action that removes the row the page is showing has to say where to go.**
+
+Removing a task from its own screen returned a 404. `auditedSoftDelete` takes the row out of
+`v_delegation_status`, the detail page reads that view, and the page calls `notFound()` on a
+null — so the confirmation for removing something was an error page.
+
+Withdrawing does NOT have this problem and deliberately does not redirect: a cancelled task
+still exists and the screen can still show it, which is the whole distinction between the
+two buttons (G3). Only removal makes the page unreachable. Both halves are pinned by tests
+that assert what `getTask` can still find after each.
+
+The fix follows the `redirectTo` convention already used by the design, PO and dispatch
+forms: the action returns where to go and the component pushes there. Calling
+next/navigation's `redirect()` inside the action was the obvious alternative and is a trap —
+it works by throwing, and every action in this module is wrapped in a try/catch that would
+swallow it and report a successful removal as a failure.
+
+**The same defect exists on three Phase 2 screens** and is recorded in
+[`BACKLOG.md`](BACKLOG.md) rather than fixed here, to keep this commit reviewable:
+`/clients/[id]`, `/designs/[id]` and `/admin/users/[id]` all call `notFound()` on a missing
+record while their remove actions return `ok()` with no redirect.
+
 **G10 — An absent form field is null, not undefined, and that shipped as a bug.**
 
 Every status change on My Tasks was silently refused. `FormData.get()` returns **null** for

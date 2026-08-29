@@ -123,3 +123,24 @@ it.** Decision G2: OWNER may UPDATE `status`, `completed_at` and `blocker_note` 
 `delegation_task` rows already assigned to him, and nothing else anywhere. A second account
 was rejected as the *wider* grant despite looking safer. Eleven tests, eight negative, pin
 the boundary.
+
+---
+
+## Removing a record 404s the screen it was removed from
+
+Found 25 Aug 2026 while fixing the same bug in Delegation (decision G11). **Not yet fixed
+on these three screens.**
+
+`/clients/[id]`, `/designs/[id]` and `/admin/users/[id]` each call `notFound()` when their
+record is missing, and each has a Remove button whose action soft-deletes the record and
+returns `ok()` with no redirect. The record then leaves the query the page reads, so the
+confirmation for removing something is a 404.
+
+The fix is the one already applied in `src/modules/delegation/actions.ts`: return
+`ok(message, "/clients")` from the delete action and push to it from the control component,
+following the `redirectTo` convention the design, PO and dispatch forms already use. Do NOT
+call next/navigation's `redirect()` inside the action — it works by throwing and every one
+of these actions has a try/catch that would report the successful removal as a failure.
+
+Left out of the delegation fix on purpose: three more screens in a bugfix commit is a
+bigger review than the bug deserves, and none of them is new.

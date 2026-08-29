@@ -1,7 +1,13 @@
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { SYSTEM_ACTOR, auditedInsert, auditedUpdate, type Tx } from "@/db/audit";
+import {
+  SYSTEM_ACTOR,
+  auditedInsert,
+  auditedSoftDelete,
+  auditedUpdate,
+  type Tx,
+} from "@/db/audit";
 import { appUser, delegationTask } from "@/db/schema";
 import { vDelegationScorecard, vDelegationStatus } from "@/db/views";
 import {
@@ -9,7 +15,7 @@ import {
   canWriteFields,
   normaliseStatusPatch,
 } from "@/modules/delegation/permissions";
-import { taskCountsFor } from "@/modules/delegation/queries";
+import { getTask, taskCountsFor } from "@/modules/delegation/queries";
 import { parseStatusPatch } from "@/modules/delegation/validation";
 
 import { expectFailure, inRollback, uniq } from "./helpers";
@@ -545,6 +551,56 @@ describe("a status change, end to end", () => {
       expect(result.ok).toBe(false);
       expect(!result.ok && result.reason).toContain("Only the person who delegated");
       expect((await statusOf(tx, task.id))!.status).toBe("Not Started");
+    });
+  });
+});
+
+describe("what the detail screen can still find (G11)", () => {
+  it("KEEPS a withdrawn task visible — cancelling is a state, not a disappearance", async () => {
+    await inRollback(async (tx) => {
+      const me = await makeUser(tx, "Withdraw Visible");
+      const boss = await makeUser(tx, "Withdraw Visible Boss");
+
+      const task = await makeTask(tx, {
+        assignedTo: me,
+        assignedBy: boss,
+        dateGiven: await istDays(tx, -5),
+        expectedDate: await istDays(tx, 5),
+      });
+
+      await auditedUpdate(
+        SYSTEM_ACTOR,
+        delegationTask,
+        task.id,
+        { status: "Cancelled", completedAt: null },
+        tx,
+      );
+
+      const found = await getTask(task.id, tx);
+      expect(found).not.toBeNull();
+      expect(found!.status).toBe("Cancelled");
+    });
+  });
+
+  it("LOSES a removed task — which is why the screen must not stay on it", async () => {
+    // getTask reads the view, the view excludes soft-deleted rows, and the page
+    // calls notFound() on null. Removing a task while looking at it therefore
+    // 404s the person who just removed it unless the action sends them
+    // somewhere. This test is the reason removeTaskAction redirects.
+    await inRollback(async (tx) => {
+      const me = await makeUser(tx, "Remove Gone");
+      const boss = await makeUser(tx, "Remove Gone Boss");
+
+      const task = await makeTask(tx, {
+        assignedTo: me,
+        assignedBy: boss,
+        dateGiven: await istDays(tx, -5),
+        expectedDate: await istDays(tx, 5),
+      });
+
+      await auditedSoftDelete(SYSTEM_ACTOR, delegationTask, task.id, tx);
+
+      expect(await getTask(task.id, tx)).toBeNull();
     });
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -182,8 +183,17 @@ export function ReassignForm({
  * disappear.
  */
 export function WithdrawCard({ task }: { task: TaskRow }) {
+  const router = useRouter();
   const [cancelState, cancelAction] = useActionState(cancelTaskAction, initialState);
   const [removeState, removeAction] = useActionState(removeTaskAction, initialState);
+
+  // Removing soft-deletes the task, which takes it out of the view this page
+  // reads — so the page it was removed from becomes a 404. The action says
+  // where to go instead; without this the person who just removed something
+  // gets an error page as their confirmation (G11).
+  useEffect(() => {
+    if (removeState.ok && removeState.redirectTo) router.push(removeState.redirectTo);
+  }, [removeState.ok, removeState.redirectTo, router]);
 
   return (
     <section className="border-overdue/30 rounded-lg border p-4">

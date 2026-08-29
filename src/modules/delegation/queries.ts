@@ -62,8 +62,17 @@ export async function tasksIDelegated(userId: string): Promise<TaskRow[]> {
     .orderBy(asc(vDelegationStatus.expectedDate), asc(vDelegationStatus.createdAt));
 }
 
-export async function getTask(id: string): Promise<TaskRow | null> {
-  const [row] = await db
+/**
+ * One task as the detail screen sees it.
+ *
+ * Reads the VIEW, which excludes soft-deleted rows — so a removed task returns
+ * null here and the page calls notFound(). A withdrawn (Cancelled) task is
+ * still returned, because withdrawing is a state the task is in rather than the
+ * task ceasing to exist. The difference is what decides whether the screen can
+ * stay put after an action or has to go somewhere else (G11).
+ */
+export async function getTask(id: string, runner: Runner = db): Promise<TaskRow | null> {
+  const [row] = await runner
     .select()
     .from(vDelegationStatus)
     .where(eq(vDelegationStatus.delegationTaskId, id))

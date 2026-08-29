@@ -40,9 +40,32 @@ import {
  * not by which inputs a form happens to render — a form is a suggestion.
  */
 
-export type FormState = { ok: boolean; error: string | null; message?: string };
+export type FormState = {
+  ok: boolean;
+  error: string | null;
+  message?: string;
+  /**
+   * Where the screen should go next, consumed by the component with
+   * router.push — the same pattern the design and PO forms use.
+   *
+   * Set when an action makes the CURRENT page unreachable. Removing a task
+   * soft-deletes it, which takes it out of v_delegation_status, which is what
+   * the detail page reads — so staying put means notFound(), and the person who
+   * just removed something gets a 404 for their trouble (G11).
+   *
+   * Redirecting from the server action itself was the alternative and is a
+   * trap: next/navigation's redirect() works by throwing, and every action here
+   * is wrapped in a try/catch that would swallow it and report it as a failure.
+   */
+  redirectTo?: string;
+};
 
-const ok = (message?: string): FormState => ({ ok: true, error: null, message });
+const ok = (message?: string, redirectTo?: string): FormState => ({
+  ok: true,
+  error: null,
+  message,
+  redirectTo,
+});
 const fail = (error: string): FormState => ({ ok: false, error });
 
 async function requireDelegationUser(): Promise<Actor & { viewer: Viewer }> {
@@ -266,6 +289,8 @@ export async function cancelTaskAction(
     });
 
     revalidate(id);
+    // Deliberately no redirect: a withdrawn task still exists and the screen
+    // can still show it. Only removal makes the page unreachable.
     return ok("Task withdrawn. It no longer counts on the scorecard.");
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Could not cancel that task.");
@@ -355,7 +380,8 @@ export async function removeTaskAction(
     await auditedSoftDelete(actor, delegationTask, id);
 
     revalidate(id);
-    return ok("Task removed.");
+    // Back to the list, because this page no longer has anything to show.
+    return ok("Task removed.", "/delegation");
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Could not remove that task.");
   }
