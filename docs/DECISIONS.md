@@ -1042,6 +1042,33 @@ through it, and every control on the screen is a thing to click by accident whil
 people watch. It is ordered worst-score-first so the conversation starts where it needs to
 rather than wherever the alphabet puts it.
 
+**G10 — An absent form field is null, not undefined, and that shipped as a bug.**
+
+Every status change on My Tasks was silently refused. `FormData.get()` returns **null** for
+a field the form did not render; zod's `.optional()` permits `undefined`, not null. The
+status form renders the completion date only for Done and the blocker note only for Blocked,
+so at least one of the two was always absent — and the schema rejected the whole payload
+with "Invalid input" naming a field the person could not see on their screen.
+
+Every test passed while that was true. The rules were tested by calling them with
+hand-written objects, and a hand-written object is what the author already believes the form
+posts, so it can only ever confirm the belief. The parse step between the browser and those
+rules was the one thing nothing exercised.
+
+Two changes, and the second matters more than the first:
+
+1. `absentOrBlank()` in `validation.ts` normalises null and "" to undefined before the inner
+   schema sees them. Everything reading an optional value out of a FormData goes through it.
+2. `parseStatusPatch(formData)` moved OUT of the action and into `validation.ts`, purely so
+   the form contract can be tested with a real `FormData`.
+   `tests/delegation-form.test.ts` builds one with exactly the fields each status renders,
+   and `tests/delegation-views.test.ts` runs the whole path — parse, rules, normalise,
+   write — down to a row read back out of Postgres.
+
+The general lesson is about where the seam was, not about zod: a boundary that converts
+untyped input into typed input is the boundary most worth testing from the untyped side,
+and it is the one that unit tests structurally cannot reach.
+
 **G9 — The dashboard tile counts what is PENDING, with overdue underneath it.**
 
 The first version showed overdue only, and appeared only when the count was above zero. The

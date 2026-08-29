@@ -4,7 +4,13 @@ import { describe, expect, it } from "vitest";
 import { SYSTEM_ACTOR, auditedInsert, auditedUpdate, type Tx } from "@/db/audit";
 import { appUser, delegationTask } from "@/db/schema";
 import { vDelegationScorecard, vDelegationStatus } from "@/db/views";
+import {
+  canSetStatus,
+  canWriteFields,
+  normaliseStatusPatch,
+} from "@/modules/delegation/permissions";
 import { taskCountsFor } from "@/modules/delegation/queries";
+import { parseStatusPatch } from "@/modules/delegation/validation";
 
 import { expectFailure, inRollback, uniq } from "./helpers";
 
@@ -387,6 +393,158 @@ describe("v_delegation_scorecard", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]!.from_id).toBe(from);
       expect(rows[0]!.to_id).toBe(to);
+    });
+  });
+});
+
+describe("a status change, end to end", () => {
+  /**
+   * Everything updateStatusAction does except ask who is signed in: parse the
+   * posted form, check the rules, normalise, write.
+   *
+   * The bug that shipped lived in the FIRST of those steps and every unit test
+   * passed while it was there, because they all started from a hand-written
+   * object rather than from a form. This starts from a FormData and finishes at
+   * a row read back out of Postgres, so the parse, the rules and the CHECK
+   * constraints are all on the same path.
+   */
+  async function saveStatus(
+    tx: Tx,
+    taskId: string,
+    viewer: { id: string; role: "ADMIN" | "PLANNER" | "OWNER" },
+    posted: Record<string, string>,
+  ) {
+    const form = new FormData();
+    form.set("id", taskId);
+    for (const [k, v] of Object.entries(posted)) form.set(k, v);
+
+    const parsed = parseStatusPatch(form);
+    if (!parsed.success) return { ok: false as const, reason: parsed.error.issues[0]!.message };
+
+    const [row] = await tx
+      .select()
+      .from(delegationTask)
+      .where(eq(delegationTask.id, taskId));
+
+    const subject = {
+      assignedTo: row!.assignedTo,
+      assignedBy: row!.assignedBy,
+      status: row!.status,
+    };
+
+    const fields = canWriteFields(viewer, subject, ["status", "completedAt", "blockerNote"]);
+    if (!fields.ok) return { ok: false as const, reason: fields.reason };
+
+    const allowed = canSetStatus(viewer, subject, parsed.data.status);
+    if (!allowed.ok) return { ok: false as const, reason: allowed.reason };
+
+    const normalised = normaliseStatusPatch({
+      status: parsed.data.status,
+      completedAt: parsed.data.completedAt ?? null,
+      blockerNote: parsed.data.blockerNote ?? null,
+    });
+    if (!normalised.ok) return { ok: false as const, reason: normalised.reason };
+
+    await auditedUpdate(
+      { id: viewer.id, role: viewer.role },
+      delegationTask,
+      taskId,
+      normalised.value!,
+      tx,
+    );
+
+    return { ok: true as const };
+  }
+
+  it("saves every status the assignee picks, and the row changes", async () => {
+    await inRollback(async (tx) => {
+      const me = await makeUser(tx, "E2E Assignee");
+      const boss = await makeUser(tx, "E2E Boss");
+      const viewer = { id: me, role: "PLANNER" as const };
+
+      const task = await makeTask(tx, {
+        assignedTo: me,
+        assignedBy: boss,
+        dateGiven: await istDays(tx, -5),
+        expectedDate: await istDays(tx, 5),
+      });
+
+      // The exact sequence somebody clicks through on My Tasks.
+      expect(await saveStatus(tx, task.id, viewer, { status: "In Progress" })).toEqual({
+        ok: true,
+      });
+      expect((await statusOf(tx, task.id))!.status).toBe("In Progress");
+
+      expect(
+        await saveStatus(tx, task.id, viewer, {
+          status: "Blocked",
+          blockerNote: "Waiting on the client",
+        }),
+      ).toEqual({ ok: true });
+      expect((await statusOf(tx, task.id))!.status).toBe("Blocked");
+
+      const finished = await istDays(tx, 0);
+      expect(
+        await saveStatus(tx, task.id, viewer, { status: "Done", completedAt: finished }),
+      ).toEqual({ ok: true });
+
+      const row = await statusOf(tx, task.id);
+      expect(row!.status).toBe("Done");
+      expect(row!.completedAt).toBe(finished);
+      // Moving to Done cleared the blocker note rather than leaving it behind.
+      expect(row!.blockerNote).toBeNull();
+    });
+  });
+
+  it("clears the completion date when the task goes back to In Progress", async () => {
+    // The CHECK constraint would refuse a stale date, so this proves the
+    // normalisation and the schema agree rather than merely both existing.
+    await inRollback(async (tx) => {
+      const me = await makeUser(tx, "E2E Reopen");
+      const boss = await makeUser(tx, "E2E Reopen Boss");
+      const viewer = { id: me, role: "PLANNER" as const };
+
+      const task = await makeTask(tx, {
+        assignedTo: me,
+        assignedBy: boss,
+        dateGiven: await istDays(tx, -5),
+        expectedDate: await istDays(tx, 5),
+        status: "Done",
+        completedAt: await istDays(tx, -1),
+      });
+
+      expect(await saveStatus(tx, task.id, viewer, { status: "In Progress" })).toEqual({
+        ok: true,
+      });
+
+      const row = await statusOf(tx, task.id);
+      expect(row!.completedAt).toBeNull();
+      expect(row!.daysLate).toBe(0);
+    });
+  });
+
+  it("still refuses the assignee cancelling, through the same path", async () => {
+    await inRollback(async (tx) => {
+      const me = await makeUser(tx, "E2E Cancel");
+      const boss = await makeUser(tx, "E2E Cancel Boss");
+
+      const task = await makeTask(tx, {
+        assignedTo: me,
+        assignedBy: boss,
+        dateGiven: await istDays(tx, -5),
+        expectedDate: await istDays(tx, 5),
+      });
+
+      const result = await saveStatus(
+        tx,
+        task.id,
+        { id: me, role: "PLANNER" },
+        { status: "Cancelled" },
+      );
+
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.reason).toContain("Only the person who delegated");
+      expect((await statusOf(tx, task.id))!.status).toBe("Not Started");
     });
   });
 });

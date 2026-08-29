@@ -21,8 +21,8 @@ import { getTaskRecord } from "./queries";
 import {
   createTaskSchema,
   definitionPatchSchema,
+  parseStatusPatch,
   reassignSchema,
-  statusPatchSchema,
 } from "./validation";
 
 /**
@@ -147,12 +147,7 @@ export async function updateStatusAction(
   try {
     const { viewer, ...actor } = await requireDelegationUser();
 
-    const parsed = statusPatchSchema.safeParse({
-      id: formData.get("id"),
-      status: formData.get("status"),
-      completedAt: formData.get("completedAt"),
-      blockerNote: formData.get("blockerNote"),
-    });
+    const parsed = parseStatusPatch(formData);
     if (!parsed.success) return fail(parsed.error.issues[0]!.message);
     const v = parsed.data;
 
