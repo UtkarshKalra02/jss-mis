@@ -21,6 +21,8 @@ import {
   getItemStatus,
   getItemTimeline,
 } from "@/modules/items/queries";
+import { AddToRunControl } from "@/components/press-runs/run-controls";
+import { gangInfoFor, recentRuns } from "@/modules/press-runs/queries";
 
 export const metadata: Metadata = { title: "Item · JSS MIS" };
 
@@ -74,6 +76,16 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
   ]);
 
   const canSeePo = can(user.role, "purchase_order");
+  const canGang = can(user.role, "press_run", "write");
+
+  /**
+   * Ganging (H4). Two extra reads, and both are skipped entirely when this item
+   * has no job cards — which is every item today and most items forever, since
+   * ganging is three to eight jobs a month.
+   */
+  const gangs = await gangInfoFor(jobCards.map((jc) => jc.id));
+  const runs =
+    canGang && jobCards.some((jc) => jc.pressRunId === null) ? await recentRuns() : [];
 
   return (
     <div>
@@ -242,16 +254,56 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
                   </tr>
                 </thead>
                 <tbody>
-                  {jobCards.map((jc) => (
-                    <tr key={jc.id}>
-                      <td className="px-2 tabular-nums">{jc.jcNo}</td>
-                      <td className="px-2">{formatDate(jc.plannedDate)}</td>
-                      <td className="px-2 text-right tabular-nums">{formatQty(jc.plannedQty)}</td>
-                      <td className="px-2">{jc.status}</td>
-                    </tr>
-                  ))}
+                  {jobCards.map((jc) => {
+                    const gang = gangs.get(jc.id);
+
+                    return (
+                      <tr key={jc.id}>
+                        <td className="px-2 tabular-nums">{jc.jcNo}</td>
+                        <td className="px-2">{formatDate(jc.plannedDate)}</td>
+                        <td className="px-2 text-right tabular-nums">
+                          {formatQty(jc.plannedQty)}
+                        </td>
+                        <td className="px-2">
+                          {jc.status}
+                          {/* The ganged badge (H4). Says how many OTHERS share
+                              the plate, because that is the sentence somebody
+                              reads — "3 job cards in this run" makes them do
+                              the subtraction. A run of one is real and
+                              transient, so it links without claiming a gang. */}
+                          {gang ? (
+                            <Link
+                              href={`/press-runs/${gang.pressRunId}`}
+                              className="bg-neutral-status-bg text-primary ml-2 rounded-full px-2 py-0.5 text-[11px] hover:underline"
+                            >
+                              {gang.others > 0
+                                ? `Ganged with ${gang.others} other${gang.others === 1 ? "" : "s"}`
+                                : `On run ${gang.runNo}`}
+                            </Link>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+
+              {/* ADMIN and PLANNER only. There is no job card SCREEN yet —
+                  job cards arrive in Phase 4 — so the action lives where a job
+                  card is actually visible today. The Phase 4 planning board
+                  calls the same server action (H6). */}
+              {canGang
+                ? jobCards
+                    .filter((jc) => jc.pressRunId === null)
+                    .map((jc) => (
+                      <AddToRunControl
+                        key={jc.id}
+                        jobCardId={jc.id}
+                        jcNo={jc.jcNo}
+                        runs={runs}
+                      />
+                    ))
+                : null}
             </Panel>
           ) : null}
         </div>

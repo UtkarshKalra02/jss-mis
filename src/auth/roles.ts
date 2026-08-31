@@ -51,6 +51,7 @@ export const RESOURCES = [
   "design",
   "item_tracker",
   "job_planning",
+  "press_run",
   "stage_update",
   "dispatch",
   "invoice",
@@ -80,6 +81,7 @@ export const ACCESS: Matrix = {
     design: "write",
     item_tracker: "write",
     job_planning: "write",
+    press_run: "write",
     stage_update: "write",
     dispatch: "write",
     invoice: "write",
@@ -100,6 +102,9 @@ export const ACCESS: Matrix = {
     purchase_order: "write",
     design: "write",
     item_tracker: "read",
+    // Read only: the ganged badge on the Item Tracker links to the run, so
+    // anybody who can see an item can see the run it was printed in (H6).
+    press_run: "read",
     client: "read", // A3 — cannot enter a PO without picking a client
 
     /**
@@ -121,6 +126,7 @@ export const ACCESS: Matrix = {
   PLANNER: {
     dashboard: "read",
     job_planning: "write",
+    press_run: "write",
     stage_update: "write",
     dispatch: "write",
     item_tracker: "read",
@@ -136,6 +142,7 @@ export const ACCESS: Matrix = {
     dispatch: "write", // B1 — section 6.8 lists ACCOUNTS
     reports: "read", // B1
     item_tracker: "read",
+    press_run: "read",
     client: "read",
     delegation: "write",
   },
@@ -150,6 +157,7 @@ export const ACCESS: Matrix = {
   FLOOR: {
     stage_update: "write",
     item_tracker: "read",
+    press_run: "read",
     delegation: "write",
   },
 
@@ -172,6 +180,7 @@ export const ACCESS: Matrix = {
     item_tracker: "read",
     ar_ledger: "read", // B1 — section 6.10 lists OWNER
     reports: "read", // B1
+    press_run: "read",
     delegation: "write", // G2
     delegation_scorecard: "read",
   },

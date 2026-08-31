@@ -144,3 +144,40 @@ of these actions has a try/catch that would report the successful removal as a f
 
 Left out of the delegation fix on purpose: three more screens in a bugfix commit is a
 bigger review than the bug deserves, and none of them is new.
+
+---
+
+## ~~Press run grouping (ganged jobs)~~ — BUILT
+
+Captured 26 Aug 2026, built the same day; see decisions **H1–H7** in
+[`DECISIONS.md`](DECISIONS.md).
+
+> Roughly 3-8 jobs a month are "ganged" — items from DIFFERENT clients printed
+> together on one plate to fill a sheet. Today the system cannot represent this
+> at all, so the item tracker implies each ran standalone, which is false.
+>
+> Does NOT reverse the one-item-per-job-card rule. job_card.po_item_id stays
+> exactly as it is. Ganging is a grouping ABOVE job cards, not a loosening
+> below them.
+>
+> - press_run: run_no (FY series, prefix PR), run_date, machine (free text),
+>   notes. job_card gets a NULLABLE press_run_id.
+> - Deliberately out of scope: cost splitting, shared scheduling/capacity, and
+>   any constraint that ganged cards share a stage or move together.
+> - Screens: "Add to press run" from the job card; a press run detail view
+>   where cross-client is normal and must not warn; a "Ganged with 2 others"
+>   badge in the Item Tracker.
+> - No sidebar entry, no list screen, no reports.
+> - ADMIN and PLANNER create and edit; everyone with the Item Tracker sees the
+>   badge.
+
+### What is still blocked
+
+**The feature is inert until Phase 4.** Nothing in the application creates a job card —
+every reference to `job_card` is a read, and `getItemJobCards` says so itself. So there is
+nothing to gang yet. The schema, the run screen, the badge and the actions are all built and
+tested; they light up when the Phase 4 planning board starts creating job cards.
+
+Because there is no job card screen, "Add to press run" was placed in the Item Tracker's job
+cards panel (decision H6). When the planning board arrives, it should call the same server
+actions in `src/modules/press-runs/actions.ts` rather than growing its own.

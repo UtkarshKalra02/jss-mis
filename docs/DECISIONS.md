@@ -1114,3 +1114,114 @@ It is deliberately not a `MetricCard` with a phase placeholder: this module is b
 number is real. `MetricCard` grew an `href` for it, which spec 6.1 wants for the overdue and
 at-risk tiles too when Phase 3 fills them in — and it refuses to link while a tile is still
 a placeholder, since a link to an empty screen is worse than no link.
+
+
+---
+
+## H. Press runs — ganging (outside the v1 spec)
+
+Roughly three to eight jobs a month are **ganged**: items from DIFFERENT clients printed
+together on one plate to fill a sheet. The system could not represent that at all, so the
+Item Tracker implied every job ran standalone — false about one job in twenty, and false in
+the direction that makes the factory look simpler than it is.
+
+Settled 26 Aug 2026, before any code.
+
+**H1 — Ganging is a grouping ABOVE job cards, not a loosening below them.** `press_run` is a
+new table and `job_card.press_run_id` is a nullable foreign key to it. `job_card.po_item_id`
+is untouched and still NOT NULL: **one job card is still exactly one PO item.** What changes
+is that several job cards may share a run.
+
+This supersedes exactly one line of spec section 3 — *"No ganging across clients in v1"* —
+and leaves the cardinality rule beside it (*"one job card = one PO item"*) exactly as
+written. A test asserts `po_item_id` still points where it did after a card is ganged, so
+the spine rule cannot be broken by the back door.
+
+Nullable is the design, not a convenience: the overwhelming majority of job cards are not
+ganged and must stay exactly as they are. A null means "printed on its own", which is both
+the common case and the truth about every row that already exists. Nothing is backfilled.
+
+**H2 — Three things this deliberately does NOT do.** All three were considered and excluded,
+and the reasons are the point:
+
+- **No cost splitting across clients.** The allocation rule — by ups, by area, by quantity —
+  is genuinely unknown. Picking one here would be *inventing* a number rather than
+  discovering it, and an invented cost is indistinguishable from a measured one once it is
+  in a column. It belongs with the costing engine, which spec section 1 puts out of scope
+  for v1 entirely.
+- **No shared scheduling or capacity logic.** That is Phase 4 and it needs machine timings
+  that do not exist — the same absence spec section 1 already names as the reason this
+  system cannot produce utilisation or bottleneck detection.
+- **No constraint that ganged job cards share a stage or move together.** They diverge
+  legitimately the moment they come off the press: one goes to lamination, another straight
+  to die-cut. A rule forcing them to move together would be wrong on the floor within a day,
+  and rules that are wrong on the floor get worked around rather than reported.
+
+**H3 — Cross-client is normal here, and there is NO guard against it.** This is the one place
+in the system where two clients on one record is correct. Migration 0001's triggers refuse a
+`dispatch_line` whose item belongs to another client, and an `invoice_line` likewise (C8) —
+because on a challan a second client means somebody picked the wrong row. On a plate it is
+the entire reason the plate exists.
+
+So `press_run` has no client column, no cross-client trigger, and nothing on the run screen
+is coloured to suggest a mixed client list is a problem. Written down because the
+inconsistency with C8 is deliberate and looks exactly like an oversight: anybody "fixing" it
+for consistency would be removing the feature.
+
+**H4 — The badge counts the OTHERS on the plate.** "Ganged with 2 others", not "3 job cards
+in this run" — the reader should not have to do the subtraction to learn what they wanted to
+know. A run holding one card reports zero others and renders as a plain link to the run
+rather than as "ganged with 0 others"; that state is real and transient, since somebody
+starts a run and adds the second job a minute later.
+
+**H5 — There is no run status, and "open" means recent.** The requirement said "pick an
+existing open run", and `press_run` has no status column because a press run is a thing that
+happened on a date rather than a thing that is open or closed. Rather than invent a
+lifecycle nobody asked to maintain, the picker offers runs from the last 30 days, newest
+first, and calls them *recent* on the screen. Older runs stay reachable by number from the
+item they were printed with. A real open/closed distinction remains available as a later,
+deliberate addition rather than something that arrived by implication.
+
+**H6 — There is no job card screen to hang the action off, so it lives on the Item Tracker.**
+Found while planning: nothing in the application creates a job card. Every reference to
+`job_card` is a read, `job_planning` is Phase 4 and not in `BUILT`, and `getItemJobCards`
+says so in its own comment — *"Job cards are created in Phase 4, so this returns nothing
+today."*
+
+Two consequences, both accepted knowingly. A job card screen was NOT built, because Phase
+4 features are not built early. And **this feature is inert until Phase 4**: there are no job
+cards to gang. It is shipped now because getting the schema shape right before the planning
+board is written is worth more than the delay costs.
+
+"Add to press run" therefore lives in the Item Tracker's job cards panel — the only place a
+job card is visible today — gated to ADMIN and PLANNER. The Phase 4 planning board will call
+the same server action.
+
+Access follows that split: `press_run` is write for ADMIN and PLANNER, read for everybody
+else, because the ganged badge links to the run and every role can see the Item Tracker. No
+sidebar entry and no list screen, per the requirement — a minority case is reached from the
+job it belongs to.
+
+**H7 — A correlated subquery must not use drizzle's `${column}` interpolation, and a shipped
+bug proved it.** Found by a failing test on the run picker's job count.
+
+Drizzle qualifies a column reference inside a raw `sql` template only when the surrounding
+query has more than one table in scope. In a single-table query it renders bare names, so
+
+```
+select count(*)::int from ${jobCard} where ${jobCard.pressRunId} = ${pressRun.id}
+```
+
+becomes `where "press_run_id" = "id"` — and inside `from "job_card"` **both** names resolve
+to `job_card`. The subquery asks whether a job card's `press_run_id` equals its own `id`,
+which is never true. No error, no warning, every count silently zero.
+
+**The same shape had already shipped in `listImportBatches`**, where `liveItems` was
+therefore 0 for every batch — and the Import History screen hides the Undo button when that
+count is 0. So the batch undo, the entire safety net behind "a whole import can be reversed
+in one action" (F31), was **unreachable from the UI** while the data and the action behind
+it were perfectly correct. Both are now written with explicit table names and aliases, and
+both have a test that fails if the correlation breaks again.
+
+The general rule: in a correlated subquery, write the table names out. The interpolation is
+convenient and its failure mode is a plausible number rather than an error.

@@ -55,6 +55,7 @@ export const SERIES = {
   PO: { padding: 4, yearScoped: true, label: "Purchase order" },
   ITM: { padding: 5, yearScoped: true, label: "PO item" },
   JC: { padding: 4, yearScoped: true, label: "Job card" },
+  PR: { padding: 4, yearScoped: true, label: "Press run" },
   CH: { padding: 4, yearScoped: true, label: "Challan" },
   RCP: { padding: 4, yearScoped: true, label: "Receipt" },
   DSN: { padding: 5, yearScoped: false, label: "Design" },

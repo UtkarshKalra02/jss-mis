@@ -11,6 +11,7 @@ import {
   type ClientLookup,
   type RawRow,
 } from "@/modules/imports/validate";
+import { listImportBatches } from "@/modules/imports/queries";
 import { undoImportBatch, writeImportBatch } from "@/modules/imports/write";
 
 import { inRollback, uniq } from "./helpers";
@@ -343,6 +344,51 @@ describe("import write — clients (F32)", () => {
         .where(eq(purchaseOrder.importBatchId, counts.batchId));
 
       expect(order!.clientId).toBe(nat.id);
+    });
+  });
+});
+
+describe("import history — the live-row count that gates Undo", () => {
+  it("counts the rows a batch still owns, so the Undo button appears", async () => {
+    // This was 0 for every batch: the correlated subquery interpolated
+    // unqualified column names, so `where "import_batch_id" = "id"` compared a
+    // po_item against ITSELF inside `from po_item`. No error, no wrong screen —
+    // just an Undo button that never rendered, which quietly removed the one
+    // safety net a bad import has (F31).
+    await inRollback(async (tx) => {
+      const nat = await makeClient(tx, "History Count Co");
+
+      const counts = await importRows(
+        tx,
+        [
+          rawRow({ rowNumber: 4, clientName: nat.name, itemName: "Outer carton" }),
+          rawRow({ rowNumber: 5, clientName: nat.name, itemName: "Inner tray" }),
+        ],
+        [nat],
+      );
+
+      const batches = await listImportBatches(tx);
+      const mine = batches.find((b) => b.id === counts.batchId);
+
+      expect(mine).toBeDefined();
+      expect(mine!.liveItems).toBe(2);
+    });
+  });
+
+  it("drops to zero once the batch is undone, so the button goes away", async () => {
+    await inRollback(async (tx) => {
+      const nat = await makeClient(tx, "History Undone Co");
+      const counts = await importRows(tx, [rawRow({ clientName: nat.name })], [nat]);
+
+      expect(
+        (await listImportBatches(tx)).find((b) => b.id === counts.batchId)!.liveItems,
+      ).toBe(1);
+
+      await undoImportBatch(SYSTEM_ACTOR, tx, counts.batchId);
+
+      expect(
+        (await listImportBatches(tx)).find((b) => b.id === counts.batchId)!.liveItems,
+      ).toBe(0);
     });
   });
 });

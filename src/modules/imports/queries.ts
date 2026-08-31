@@ -131,9 +131,15 @@ export type BatchRow = {
   liveItems: number;
 };
 
-/** Import History — spec requirement: batch, date, user, rows, undo. */
-export async function listImportBatches(): Promise<BatchRow[]> {
-  const rows = await db
+/**
+ * Import History — spec requirement: batch, date, user, rows, undo.
+ *
+ * Takes an optional runner so the live-row count can be tested inside a
+ * rolled-back transaction. That count gates the Undo button, so it is not
+ * decoration.
+ */
+export async function listImportBatches(runner: typeof db | Tx = db): Promise<BatchRow[]> {
+  const rows = await runner
     .select({
       id: importBatch.id,
       filename: importBatch.filename,
@@ -144,10 +150,26 @@ export async function listImportBatches(): Promise<BatchRow[]> {
       importedById: importBatch.importedBy,
       undoneAt: importBatch.undoneAt,
       undoneById: importBatch.undoneBy,
+      /*
+       * EXPLICIT table names, not drizzle's `${column}` interpolation.
+       *
+       * Drizzle only qualifies a column reference when the surrounding query
+       * has more than one table in scope. This one selects from import_batch
+       * alone, so the interpolated form rendered as
+       * `where "import_batch_id" = "id"` — and inside `from po_item` BOTH
+       * names resolved to po_item, asking whether an item's import_batch_id
+       * equalled its own id. Never true, no error, every batch reporting zero
+       * live rows.
+       *
+       * That was not cosmetic: the Import History screen hides the Undo button
+       * when this is 0, so the batch undo — the entire safety net behind
+       * "a whole import can be reversed in one action" (F31) — was unreachable
+       * from the UI while the data behind it was perfectly correct.
+       */
       liveItems: sql<number>`(
-        select count(*)::int from ${poItem}
-        where ${poItem.importBatchId} = ${importBatch.id}
-          and ${poItem.deletedAt} is null
+        select count(*)::int from po_item poi
+        where poi.import_batch_id = import_batch.id
+          and poi.deleted_at is null
       )`,
     })
     .from(importBatch)
@@ -157,7 +179,7 @@ export async function listImportBatches(): Promise<BatchRow[]> {
   // Two names per batch at most, from a table of six people — a lookup map is
   // cheaper and far more readable than joining app_user twice.
   const names = new Map(
-    (await db.select({ id: appUser.id, name: appUser.name }).from(appUser)).map((u) => [
+    (await runner.select({ id: appUser.id, name: appUser.name }).from(appUser)).map((u) => [
       u.id,
       u.name,
     ]),

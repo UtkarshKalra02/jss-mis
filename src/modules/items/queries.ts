@@ -241,6 +241,8 @@ export type ItemJobCard = {
   plannedQty: number | null;
   plannedDate: string | null;
   status: string;
+  /** Set only when this card was ganged onto a shared plate (H4). */
+  pressRunId: string | null;
 };
 
 /**
@@ -259,6 +261,14 @@ export async function getItemJobCards(poItemId: string): Promise<ItemJobCard[]> 
       plannedQty: jobCard.plannedQty,
       plannedDate: jobCard.plannedDate,
       status: jobCard.status,
+      /**
+       * The gang this card was printed in, if any (H4).
+       *
+       * Null for the overwhelming majority — most jobs are not ganged — so the
+       * badge appears on the rare card that was, and nothing changes for the
+       * rest.
+       */
+      pressRunId: jobCard.pressRunId,
     })
     .from(jobCard)
     .where(and(eq(jobCard.poItemId, poItemId), isNull(jobCard.deletedAt)))
