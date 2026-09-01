@@ -18,7 +18,6 @@ import { baseColumns, MONEY } from "./_shared";
 import {
   approvalStatusEnum,
   committedDateBasisEnum,
-  dieplateStatusEnum,
   jobTypeEnum,
   poItemStatusEnum,
   priorityEnum,
@@ -53,10 +52,16 @@ export const design = pgTable(
     printType: text(),
     noOfColours: text(),
 
-    dieId: text(),
-    plateId: text(),
-    dieStatus: dieplateStatusEnum().notNull().default("NA"),
-    plateStatus: dieplateStatusEnum().notNull().default("NA"),
+    /*
+     * die_id, plate_id, die_status and plate_status USED TO LIVE HERE, as free
+     * text, and were dropped in migration 0016 (decision I7).
+     *
+     * Once the tooling register existed they were a second source of truth for
+     * "does this design have a die, and where is it" — and the wrong one would
+     * always have been whichever nobody updated that week. The design screen
+     * now shows the tooling attached to it, derived from the register, so
+     * there is one place to change a location and one place to read it.
+     */
 
     approvalStatus: approvalStatusEnum().notNull().default("Pending"),
     approvedAt: timestamp({ withTimezone: true }),

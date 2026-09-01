@@ -140,8 +140,6 @@ export async function getItemDetail(poItemId: string) {
       designCode: design.designCode,
       designJobName: design.jobName,
       designApprovalStatus: design.approvalStatus,
-      designDieStatus: design.dieStatus,
-      designPlateStatus: design.plateStatus,
       poNotes: purchaseOrder.notes,
       poFileUrl: purchaseOrder.fileUrl,
     })

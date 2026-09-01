@@ -1225,3 +1225,131 @@ both have a test that fails if the correlation breaks again.
 
 The general rule: in a correlated subquery, write the table names out. The interpolation is
 convenient and its failure mode is a plausible number rather than an error.
+
+
+---
+
+## I. Tooling register (outside the v1 spec)
+
+The physical tooling the factory owns — plates, foil blocks, dies and embossing blocks.
+Punit (ORDER_DESK) owns the register and logs everything. Not in `JSS_MIS_v1_SPEC.md`;
+like Delegation (G) and press runs (H) it is orthogonal to the six build phases rather
+than pulled forward from one.
+
+Settled 27 Aug 2026, before any code.
+
+**I1 — One table with a type discriminator, not four near-identical tables.** Every
+question anybody actually asks of a piece of tooling is the same question for all four
+kinds: where is it, what condition is it in, whose job is it for, what replaced it. Four
+tables would mean four screens, four queries and four places to forget a filter — and the
+first time somebody asks "what is in rack 3" the answer would need a union of all four.
+
+**I2 — One number series per type, financial-year scoped.** PLT, FBL, DIE and EMB, all
+through the shared allocator (C7), all taking their year from the tool's MADE date rather
+than from today (F10) — a die cut in March belongs to that financial year whether it is
+entered that week or a year later.
+
+Worth recording that this cuts against the reasoning printed beside DSN in
+`src/lib/numbering.ts`: that series is deliberately NOT year-scoped because *"a die or
+plate design outlives any financial year"*, and a physical die outlives it more literally
+still. Year-scoped anyway, as specified, and defensibly — `DIE-2026-0007` tells you roughly
+when the die was cut, which is the first thing anybody asks about a worn tool. It is one
+flag each to change if that reads wrong in practice.
+
+**I3 — `client_id` is derived from the design by a database trigger, not by the action.**
+The requirement says "derive from design when linked". Migration 0015 makes that true for
+every writer, on the same reasoning as F11: a rule living only in TypeScript is a rule the
+import script does not have and a psql session does not have at all. The symptom of missing
+it is silent — a tool naming one client while pointing at another client's design, invisible
+until the die is sent to the wrong customer.
+
+The column is still STORED rather than always read through the design, because tooling with
+no design can still belong to a client. Generic tooling for one customer is real, so the
+column has to exist independently — and then the linked case has to be kept honest, which
+is what the trigger does. It is a `BEFORE` trigger, so the row is never written wrong and
+there is no second UPDATE to audit.
+
+**I4 — "Which designs use it" can only ever be one design.** `tooling.design_id` is a
+single nullable foreign key as specified, so a tool belongs to at most one design and the
+detail screen shows at most one. Tooling genuinely shared between designs is NOT expressible
+today and would need a junction table.
+
+Recorded rather than quietly built: the requirement asks for "which designs use it" in the
+plural, and the schema in the same requirement permits only the singular. Faithful to the
+schema, and flagged so the gap is a known limit rather than a surprise.
+
+**I5 — No issue/return workflow. `status` is a plain field somebody sets.** Explicitly
+excluded: a checkout system is a daily-discipline burden nobody has agreed to carry, and a
+half-kept one is worse than none because it still reads as authoritative. If tooling goes
+to a vendor, Punit changes the status. There is no "issued to" person, no due-back date,
+and no reconciliation — all three would be the beginning of the system that was refused.
+
+**I6 — `colour` is not constrained to plates, though the form only offers it there.** The
+requirement calls colour "meaningful for PLATE only", and a CHECK enforcing that was
+considered and rejected: foil blocks have a foil colour, and a rule that is wrong on the
+floor gets worked around rather than reported (H2's reasoning). So the field is hidden in
+the form where it usually means nothing, the database stays permissive, and a value already
+recorded on a non-plate is preserved rather than cleared.
+
+**I7 — The four design columns are migrated and then DROPPED, in a three-step sequence
+whose last step refuses to run early.**
+
+`design.die_id`, `plate_id`, `die_status` and `plate_status` were free text answering the
+same question the register now answers properly. Leaving both would be two sources of truth,
+and the wrong one would always have been whichever nobody updated that week. So:
+
+| Step | What |
+|---|---|
+| 0014, 0015 | create `tooling` and its client-derivation trigger |
+| `npm run migrate:tooling` | dry run, then `-- --apply` |
+| 0016 | drop the four columns |
+
+**The ordering cannot be got wrong.** drizzle applies migrations in order, automatically, so
+a plain `db:migrate` on a database that had not yet run the script would drop the only copy
+of that data with no error and nothing to restore from. Migration 0016 therefore opens with
+a `DO` block that counts live designs still holding die/plate text with no tooling row
+against them, and raises — naming the script — if there are any. Verified in both directions
+against the real database before shipping: it refuses while data is unmigrated, and passes
+the moment the tooling row exists.
+
+**TWO MISMATCHES BETWEEN THE OLD SHAPE AND THE NEW ONE, and neither is guessed.**
+
+- `location` is NOT NULL and the design record has none. Migrated rows get the visible
+  placeholder *"Not recorded — please update"* rather than a blank, which is impossible, or
+  an invented rack, which is worse than either. This follows the same rule as A2: data
+  nobody measured must not present itself as measured.
+- The old vocabulary — Pending, Ordered, Received, Old, NA — is a PROCUREMENT state and does
+  not map onto `condition` (what state the metal is in) or `status` (where it is). Guessing
+  a mapping would put a value into an enum where it then reads as a fact somebody
+  established. The original is preserved verbatim in `remarks` instead.
+
+The PLAN is a pure function (`src/modules/tooling/migrate-from-design.ts`) so the dry run
+and the apply compute the same thing from the same input — the report is not a separate
+description of what the writer is believed to do. `scripts/migrate-tooling.ts` reads the
+four columns by RAW SQL, because they are already gone from the schema file: the script is
+the one thing in the repository that reads a pre-0016 shape, so it reaches past the schema
+rather than holding the schema back. It stops working once 0016 has run, which is correct —
+it has nothing left to do by then.
+
+The `dieplate_status` Postgres TYPE is left in place and still declared in `enums.ts`.
+Dropping a column does not drop its type, and removing the declaration would make
+drizzle-kit emit a `DROP TYPE` as a side effect of tidying. It costs nothing where it is.
+
+**I8 — The design screen shows the tooling attached to it, and that is what made the drop
+possible.** Location and condition come back with each row, so nobody has to open a second
+screen to learn where the die is kept — if they had to click through, the panel would have
+failed at its only job. Shown to readers as well as writers: knowing where a die lives is
+not an editing privilege.
+
+**I9 — ORDER_DESK and ADMIN write; everybody else reads, and FLOOR reads it on a phone.**
+Punit owns the register because he is the one who knows what a die is called and where it
+lives. Ajay gets it read-only on mobile, which makes the register the second mobile-first
+screen in the system after Stage Update — so the results have a card layout where location
+is the largest thing on the card, rendered alongside the desktop table with CSS choosing
+between them (F27's approach, and for F27's reason: server-rendered markup that does not
+depend on a measurement cannot flash the wrong layout before hydrating).
+
+Search covers tool number, name, LOCATION, client and design in one box (F24's reasoning),
+with type, condition and status as separate filters — "show me everything Damaged" is a
+browse rather than a search, and folding it into the box would match a tool whose remarks
+merely mention the word.

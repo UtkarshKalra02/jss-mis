@@ -194,9 +194,13 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
                   )}{" "}
                   — {detail.designJobName}
                 </p>
+                {/* Die and plate status used to be repeated here from the
+                    design record. They moved into the tooling register (I7),
+                    which is a different screen with a different owner — and
+                    restating a location on the item tracker would be the same
+                    second-source-of-truth problem in a new place. */}
                 <p className="text-muted-foreground">
-                  Approval {detail.designApprovalStatus} · die {detail.designDieStatus} · plate{" "}
-                  {detail.designPlateStatus}
+                  Approval {detail.designApprovalStatus}
                 </p>
               </div>
             ) : (

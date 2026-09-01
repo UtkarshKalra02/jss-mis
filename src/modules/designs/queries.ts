@@ -13,8 +13,6 @@ export type DesignRow = {
   jobSize: string | null;
   paperType: string | null;
   gsm: string | null;
-  dieStatus: string;
-  plateStatus: string;
   approvalStatus: string;
   processCount: number;
   isActive: boolean;
@@ -50,8 +48,6 @@ export async function listDesigns(): Promise<DesignRow[]> {
       jobSize: design.jobSize,
       paperType: design.paperType,
       gsm: design.gsm,
-      dieStatus: design.dieStatus,
-      plateStatus: design.plateStatus,
       approvalStatus: design.approvalStatus,
       processCount: sql<number>`coalesce(${processCounts.n}, 0)::int`,
       isActive: design.isActive,

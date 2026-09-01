@@ -49,6 +49,7 @@ export const RESOURCES = [
   "quotation",
   "purchase_order",
   "design",
+  "tooling",
   "item_tracker",
   "job_planning",
   "press_run",
@@ -79,6 +80,7 @@ export const ACCESS: Matrix = {
     quotation: "write",
     purchase_order: "write",
     design: "write",
+    tooling: "write",
     item_tracker: "write",
     job_planning: "write",
     press_run: "write",
@@ -101,6 +103,14 @@ export const ACCESS: Matrix = {
     quotation: "write",
     purchase_order: "write",
     design: "write",
+
+    /**
+     * Punit owns the tooling register (I9). It is the only thing outside the
+     * order desk's own paperwork that he creates and edits, and it is his
+     * because he is the one who knows what a die is called and where it lives.
+     */
+    tooling: "write",
+
     item_tracker: "read",
     // Read only: the ganged badge on the Item Tracker links to the run, so
     // anybody who can see an item can see the run it was printed in (H6).
@@ -130,6 +140,7 @@ export const ACCESS: Matrix = {
     stage_update: "write",
     dispatch: "write",
     item_tracker: "read",
+    tooling: "read",
     client: "read",
     delegation: "write",
   },
@@ -143,6 +154,7 @@ export const ACCESS: Matrix = {
     reports: "read", // B1
     item_tracker: "read",
     press_run: "read",
+    tooling: "read",
     client: "read",
     delegation: "write",
   },
@@ -158,6 +170,15 @@ export const ACCESS: Matrix = {
     stage_update: "write",
     item_tracker: "read",
     press_run: "read",
+
+    /**
+     * Ajay gets the tooling register READ-ONLY, on a phone. Looking up which
+     * rack a die is kept in, while standing next to the racks, is exactly the
+     * mobile case — and it is the one screen outside Stage Update he has a
+     * daily reason to open (I9).
+     */
+    tooling: "read",
+
     delegation: "write",
   },
 
@@ -181,6 +202,7 @@ export const ACCESS: Matrix = {
     ar_ledger: "read", // B1 — section 6.10 lists OWNER
     reports: "read", // B1
     press_run: "read",
+    tooling: "read",
     delegation: "write", // G2
     delegation_scorecard: "read",
   },

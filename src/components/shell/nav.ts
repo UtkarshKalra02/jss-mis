@@ -14,6 +14,7 @@ import {
   Receipt,
   Scale,
   Settings,
+  Stamp,
   Target,
   Truck,
   Workflow,
@@ -94,6 +95,12 @@ export const NAV: NavGroup[] = [
         phase: 2,
       },
       { resource: "design", label: "Designs", href: "/designs", icon: PenTool, phase: 2 },
+      /**
+       * Beside Designs rather than under Production: Punit owns the register
+       * (I9), a tool is nearly always made FOR a design, and the two screens
+       * link to each other constantly.
+       */
+      { resource: "tooling", label: "Tooling", href: "/tooling", icon: Stamp, phase: 1 },
       {
         resource: "item_tracker",
         label: "Item Tracker",
@@ -189,4 +196,5 @@ export const BUILT: ReadonlySet<Resource> = new Set<Resource>([
   "import",
   "delegation",
   "delegation_scorecard",
+  "tooling",
 ]);

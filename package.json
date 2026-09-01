@@ -17,6 +17,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "seed:users": "tsx scripts/seed-users.ts",
+    "migrate:tooling": "tsx scripts/migrate-tooling.ts",
     "set-password": "tsx scripts/set-password.ts"
   },
   "dependencies": {

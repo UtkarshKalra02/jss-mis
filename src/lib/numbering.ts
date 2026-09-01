@@ -59,6 +59,21 @@ export const SERIES = {
   CH: { padding: 4, yearScoped: true, label: "Challan" },
   RCP: { padding: 4, yearScoped: true, label: "Receipt" },
   DSN: { padding: 5, yearScoped: false, label: "Design" },
+
+  /**
+   * Tooling, one prefix per type (decision I2). Year-scoped, which is worth a
+   * note because it cuts against the reasoning beside DSN above: that series is
+   * NOT year-scoped precisely because "a die or plate design outlives any
+   * financial year", and a physical die outlives it more literally still.
+   *
+   * Year-scoped anyway, as specified, and defensibly: DIE-2026-0007 tells you
+   * roughly when the die was cut, which is the first thing anybody asks about a
+   * worn tool. Changing it is one flag each if that turns out to read wrong.
+   */
+  PLT: { padding: 4, yearScoped: true, label: "Plate" },
+  FBL: { padding: 4, yearScoped: true, label: "Foil block" },
+  DIE: { padding: 4, yearScoped: true, label: "Die" },
+  EMB: { padding: 4, yearScoped: true, label: "Emboss block" },
 } as const;
 
 export type SeriesPrefix = keyof typeof SERIES;

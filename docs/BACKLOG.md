@@ -181,3 +181,52 @@ tested; they light up when the Phase 4 planning board starts creating job cards.
 Because there is no job card screen, "Add to press run" was placed in the Item Tracker's job
 cards panel (decision H6). When the planning board arrives, it should call the same server
 actions in `src/modules/press-runs/actions.ts` rather than growing its own.
+
+---
+
+## ~~Tooling register~~ — BUILT
+
+Captured 27 Aug 2026, built the same day; see decisions **I1–I9** in
+[`DECISIONS.md`](DECISIONS.md).
+
+> Tracks the physical tooling the factory owns. Punit (ORDER_DESK) owns it.
+>
+> - Four types in ONE table with a discriminator: PLATE, FOIL_BLOCK, DIE,
+>   EMBOSS_BLOCK. Not four near-identical tables.
+> - tool_no from the FY series, prefix per type (PLT, FBL, DIE, EMB).
+>   location NOT NULL and prominent everywhere — the most-used field.
+>   replaces_tool_id for old/new versions of the same tooling.
+> - Migrate design.die_id / plate_id / die_status / plate_status into tooling,
+>   then DROP them. Do not leave both. Migration has a dry-run.
+> - Screens: searchable/filterable register, add/edit, detail with the
+>   replacement chain, and the tooling attached to a design on the design
+>   screen.
+> - NO issue/return workflow. Status is set manually.
+> - ORDER_DESK and ADMIN write. Everyone else read-only. FLOOR gets read-only
+>   search on mobile.
+
+### Still to run against production
+
+The design-column migration is a **three-step sequence** and the steps are not
+interchangeable (I7):
+
+```bash
+npm run db:migrate                              # 0014, 0015 — create tooling
+DOTENV_CONFIG_PATH=.env.production.local npm run migrate:tooling          # dry run
+DOTENV_CONFIG_PATH=.env.production.local npm run migrate:tooling -- --apply
+npm run db:migrate                              # 0016 — drop the four columns
+```
+
+Migration 0016 refuses to run until the script has been applied, so a plain `db:migrate`
+cannot drop the data early. Verified in both directions against a real database.
+
+Every migrated row lands with `location = "Not recorded — please update"`. Search the
+register for that phrase and fill them in from the shelf — until that is done, the register
+knows what tooling exists but not where any of it is.
+
+### Known limit, deliberately not built
+
+A tool belongs to at most ONE design (`design_id` is a single nullable FK, as specified).
+Tooling genuinely shared between designs cannot be expressed and would need a junction
+table. The detail screen therefore shows one design where the requirement said "which
+designs use it".

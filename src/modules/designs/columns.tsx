@@ -18,12 +18,6 @@ import type { DesignRow } from "./queries";
  */
 
 /** Die and plate: only the states that block production are marked. */
-function toneForDiePlate(status: string): string {
-  if (status === "Pending" || status === "Ordered") return "text-at-risk";
-  if (status === "NA") return "text-muted-foreground";
-  return "";
-}
-
 function toneForApproval(status: string): string {
   if (status === "Rejected") return "text-overdue";
   if (status === "Pending") return "text-at-risk";
@@ -80,26 +74,6 @@ export const designColumns: LegacyColumnDef<DesignRow>[] = [
       if (!paperType && !gsm) return "—";
       return [paperType, gsm ? `${gsm} gsm` : null].filter(Boolean).join(" · ");
     },
-  },
-  {
-    accessorKey: "dieStatus",
-    header: "Die",
-    meta: { width: "6.5rem" },
-    cell: ({ row }) => (
-      <span className={cn(toneForDiePlate(row.original.dieStatus))}>
-        {row.original.dieStatus}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "plateStatus",
-    header: "Plate",
-    meta: { width: "6.5rem" },
-    cell: ({ row }) => (
-      <span className={cn(toneForDiePlate(row.original.plateStatus))}>
-        {row.original.plateStatus}
-      </span>
-    ),
   },
   {
     accessorKey: "approvalStatus",

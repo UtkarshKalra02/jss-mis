@@ -8,7 +8,6 @@ import { StagePill } from "@/components/stages/stage-pill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { dieplateStatusEnum } from "@/db/schema/enums";
 import type { ClientOption, RouteStage } from "@/modules/designs/queries";
 import {
   createDesignAction,
@@ -28,10 +27,6 @@ type DesignValues = {
   paperType?: string | null;
   printType?: string | null;
   noOfColours?: string | null;
-  dieId?: string | null;
-  plateId?: string | null;
-  dieStatus?: string;
-  plateStatus?: string;
   artworkUrl?: string | null;
 };
 
@@ -67,29 +62,6 @@ const selectClass =
  * typed here — non-negotiable 5. Adding a value to the enum makes it appear in
  * both dropdowns with no edit to this file.
  */
-function DiePlateStatus({
-  name,
-  label,
-  defaultValue,
-}: {
-  name: string;
-  label: string;
-  defaultValue?: string;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={name}>{label}</Label>
-      <select id={name} name={name} defaultValue={defaultValue ?? "NA"} className={selectClass}>
-        {dieplateStatusEnum.enumValues.map((value) => (
-          <option key={value} value={value}>
-            {value}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 export function DesignForm({
   mode,
   design,
@@ -186,25 +158,6 @@ export function DesignForm({
             defaultValue={design?.noOfColours ?? ""}
             placeholder="4 + 1"
             hint="Free text — 4+1, CMYK + Pantone, and so on."
-          />
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <h2 className="text-sm font-medium">Die and plate</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            name="dieId"
-            label="Die ID"
-            defaultValue={design?.dieId ?? ""}
-            hint="The physical die's reference, as marked on it."
-          />
-          <DiePlateStatus name="dieStatus" label="Die status" defaultValue={design?.dieStatus} />
-          <Field name="plateId" label="Plate ID" defaultValue={design?.plateId ?? ""} />
-          <DiePlateStatus
-            name="plateStatus"
-            label="Plate status"
-            defaultValue={design?.plateStatus}
           />
         </div>
       </section>

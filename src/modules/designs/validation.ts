@@ -1,13 +1,9 @@
 import { z } from "zod";
 
-import { dieplateStatusEnum } from "@/db/schema/enums";
 
 /**
  * Design master validation.
  *
- * The status lists come from `dieplateStatusEnum.enumValues` rather than being
- * retyped here — non-negotiable 5, "TypeScript enums are generated from the
- * schema". Adding a value to the Postgres enum makes it valid here and appear
  * in the form with no second edit, and removing one is a compile error rather
  * than a value that quietly still validates.
  *
@@ -51,10 +47,6 @@ export const designSchema = z.object({
   printType: trimmed,
   noOfColours: trimmed,
 
-  dieId: trimmed,
-  plateId: trimmed,
-  dieStatus: z.enum(dieplateStatusEnum.enumValues),
-  plateStatus: z.enum(dieplateStatusEnum.enumValues),
 
   artworkUrl: optionalUrl,
 

@@ -87,6 +87,17 @@ export const committedDateBasisEnum = pgEnum("committed_date_basis", [
   "Calculated",
 ]);
 
+/**
+ * NO LONGER USED BY ANY COLUMN, and kept on purpose.
+ *
+ * design.die_status and plate_status were dropped in migration 0016 when the
+ * tooling register took over (I7). The Postgres TYPE still exists — dropping a
+ * column does not drop the type it used — so this declaration stays to keep
+ * drizzle-kit from emitting a DROP TYPE as a side effect of tidying.
+ *
+ * Removing the type is a separate, deliberate migration if it is ever worth
+ * doing. It costs nothing where it is.
+ */
 export const dieplateStatusEnum = pgEnum("dieplate_status", [
   "Pending",
   "Ordered",
@@ -130,6 +141,48 @@ export const receiptModeEnum = pgEnum("receipt_mode", [
   "Cash",
   "UPI",
   "Other",
+]);
+
+/* -------------------------------------------------------------------------- */
+/* Tooling                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The four kinds of physical tooling the factory owns.
+ *
+ * ONE table with a discriminator rather than four near-identical tables
+ * (decision I1): every question anybody actually asks — "where is it", "what
+ * condition is it in", "what replaced it" — is the same question for all four,
+ * and four tables would mean four screens, four queries and four places to
+ * forget a filter.
+ */
+export const toolTypeEnum = pgEnum("tool_type", [
+  "PLATE",
+  "FOIL_BLOCK",
+  "DIE",
+  "EMBOSS_BLOCK",
+]);
+
+/** What state the metal is in. Distinct from where it is — see toolStatusEnum. */
+export const toolConditionEnum = pgEnum("tool_condition", [
+  "Good",
+  "Worn",
+  "Damaged",
+  "Scrapped",
+]);
+
+/**
+ * Where the tooling is, as a state rather than a location string.
+ *
+ * Set MANUALLY. There is deliberately no issue/return workflow (I5): a checkout
+ * system is a daily-discipline burden nobody has agreed to carry, and one that
+ * is half-kept is worse than none because it looks authoritative.
+ */
+export const toolStatusEnum = pgEnum("tool_status", [
+  "In House",
+  "With Vendor",
+  "Issued to Floor",
+  "Lost",
 ]);
 
 /**

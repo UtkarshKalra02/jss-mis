@@ -10,6 +10,7 @@ import {
   DesignDelete,
 } from "@/components/designs/design-controls";
 import { DesignForm } from "@/components/designs/design-form";
+import { DesignTooling } from "@/components/tooling/design-tooling";
 import {
   getApproverName,
   getDesign,
@@ -17,6 +18,7 @@ import {
   listClientOptions,
   listRouteStages,
 } from "@/modules/designs/queries";
+import { toolingForDesign } from "@/modules/tooling/queries";
 
 export const metadata: Metadata = { title: "Design · JSS MIS" };
 
@@ -28,12 +30,15 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
   const design = await getDesign(id);
   if (!design) notFound();
 
-  const [processes, clients, stages, approverName] = await Promise.all([
+  const [processes, clients, stages, approverName, tools] = await Promise.all([
     getDesignProcesses(id),
     listClientOptions(),
     listRouteStages(),
     getApproverName(design.approvedBy),
+    toolingForDesign(id),
   ]);
+
+  const canAddTooling = can(user.role, "tooling", "write");
 
   return (
     <div className="max-w-3xl">
@@ -44,6 +49,20 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
       <div className="mt-2 flex items-baseline gap-3">
         <h1 className="page-title tabular-nums">{design.designCode}</h1>
         <span className="text-muted-foreground text-[13px]">{design.jobName}</span>
+      </div>
+
+      {/*
+        The tooling attached to this design, with location and condition (I8).
+        This is the screen Punit lives on, and it is the reason design.die_id
+        and plate_id could be dropped: the answer they held badly is now
+        derived from the register, where it is maintained properly and in
+        exactly one place.
+
+        Shown to readers as well as writers — knowing where the die is kept is
+        not an editing privilege.
+      */}
+      <div className="mt-8">
+        <DesignTooling tools={tools} canAdd={canAddTooling} />
       </div>
 
       {canWrite ? (

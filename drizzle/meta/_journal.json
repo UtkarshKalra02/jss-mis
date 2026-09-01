@@ -99,6 +99,27 @@
       "when": 1788171972570,
       "tag": "0013_press_run",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788258878806,
+      "tag": "0014_tooling",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1788258907885,
+      "tag": "0015_tooling_client_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788265711605,
+      "tag": "0016_drop_design_die_plate",
+      "breakpoints": true
     }
   ]
 }
