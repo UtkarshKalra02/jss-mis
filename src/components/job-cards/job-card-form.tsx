@@ -133,6 +133,7 @@ export function JobCardForm({
   runOptions,
   runSelected,
   hasExistingCard,
+  startOpen,
 }: {
   mode: "release" | "edit";
   poItemId?: string;
@@ -144,13 +145,15 @@ export function JobCardForm({
   runOptions: FabricationOptionRow[];
   runSelected: Map<string, Selection>;
   hasExistingCard?: boolean;
+  /** True on /job-cards/new, where the whole page IS the form. */
+  startOpen?: boolean;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(
     mode === "release" ? releaseJobCardAction : updateJobCardPlanAction,
     initialState,
   );
-  const [open, setOpen] = useState(mode === "edit");
+  const [open, setOpen] = useState(mode === "edit" || startOpen === true);
   const [runValues, setRunValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(runOptions.map((o) => [o.id, runSelected.get(o.id)?.valueId ?? ""])),
   );
@@ -181,7 +184,11 @@ export function JobCardForm({
   return (
     <form
       action={formAction}
-      className={mode === "release" ? "bg-muted/30 mt-4 rounded-lg border p-4" : "space-y-6"}
+      className={
+        mode === "release" && !startOpen
+          ? "bg-muted/30 mt-4 rounded-lg border p-4"
+          : "space-y-6"
+      }
     >
       {mode === "release" ? (
         <input type="hidden" name="poItemId" value={poItemId} />
@@ -189,7 +196,7 @@ export function JobCardForm({
         <input type="hidden" name="id" value={card!.id} />
       )}
 
-      {mode === "release" ? (
+      {mode === "release" && !startOpen ? (
         <div className="mb-4 flex items-baseline justify-between">
           <h3 className="text-sm font-medium">Release {itemCode} to production</h3>
           <button

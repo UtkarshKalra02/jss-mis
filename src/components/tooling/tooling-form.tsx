@@ -160,6 +160,38 @@ export function ToolingForm({
           placeholder="Rack 3, almirah 2, top shelf"
           hint="Rack, almirah or shelf. The most-read field in the register — be specific enough that somebody else can find it."
         />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Text name="size" label="Size" defaultValue={tool?.size} />
+
+          {/* Plates only, by presentation. The columns are not constrained
+              (I6) — a value already recorded on a non-plate is preserved
+              rather than cleared, because the form hiding a field is not the
+              same as the database refusing one. */}
+          {toolType === "PLATE" ? (
+            <>
+              <Text
+                name="colour"
+                label="Colour"
+                defaultValue={tool?.colour}
+                hint="Which colour of the set this plate carries."
+              />
+              <Text
+                name="ink"
+                label="Ink"
+                defaultValue={tool?.ink}
+                placeholder="Process cyan, opaque white…"
+              />
+              <Text
+                name="pantoneNo"
+                label="Pantone no."
+                defaultValue={tool?.pantoneNo}
+                placeholder="485 C"
+                hint="Searchable — somebody holding a job sheet looks the plate up by this."
+              />
+            </>
+          ) : null}
+        </div>
       </section>
 
       <section className="space-y-4">
@@ -245,58 +277,18 @@ export function ToolingForm({
         </div>
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-sm font-medium">The tool itself</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Text name="size" label="Size" defaultValue={tool?.size} />
+      {/*
+        "THE TOOL ITSELF" SECTION REMOVED (I10).
+        It carried made date, vendor, cost, impressions used and last used —
+        the provenance of the metal, which was taken off the detail screen at
+        the same time. Size, colour, ink and Pantone moved up beside the name
+        and location, where they belong: they say what the tool IS, not where
+        it came from.
 
-          {/* Plates only, by presentation. The columns are not constrained
-              (I6) — a value already recorded on a non-plate is preserved
-              rather than cleared, because the form hiding a field is not the
-              same as the database refusing one. */}
-          {toolType === "PLATE" ? (
-            <>
-              <Text
-                name="colour"
-                label="Colour"
-                defaultValue={tool?.colour}
-                hint="Which colour of the set this plate carries."
-              />
-              <Text
-                name="ink"
-                label="Ink"
-                defaultValue={tool?.ink}
-                placeholder="Process cyan, opaque white…"
-              />
-              <Text
-                name="pantoneNo"
-                label="Pantone no."
-                defaultValue={tool?.pantoneNo}
-                placeholder="485 C"
-                hint="Searchable — somebody holding a job sheet looks the plate up by this."
-              />
-            </>
-          ) : null}
-
-          <Text name="madeDate" label="Made on" type="date" defaultValue={tool?.madeDate} />
-          <Text name="vendor" label="Made by" defaultValue={tool?.vendor} placeholder="Vendor" />
-          <Text name="cost" label="Cost" type="number" defaultValue={tool?.cost} />
-          <Text
-            name="impressionsUsed"
-            label="Impressions used"
-            type="number"
-            defaultValue={tool?.impressionsUsed}
-            hint="Typed by hand. Nothing counts these automatically."
-          />
-          <Text
-            name="lastUsedDate"
-            label="Last used"
-            type="date"
-            defaultValue={tool?.lastUsedDate}
-          />
-        </div>
-      </section>
-
+        The five provenance COLUMNS are still on the table and any value
+        already recorded is untouched — the actions below simply stopped
+        writing them, so an edit cannot quietly null a cost somebody typed.
+      */}
       <section className="space-y-4">
         <h2 className="text-sm font-medium">Replacement</h2>
         <label className="block">

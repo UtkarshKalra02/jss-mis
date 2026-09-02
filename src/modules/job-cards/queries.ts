@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
@@ -335,4 +335,152 @@ export async function machineOptions(runner: Runner = db) {
     .from(machine)
     .where(and(isNull(machine.deletedAt), eq(machine.isActive, true)))
     .orderBy(asc(machine.sequence), asc(machine.name));
+}
+
+export type JobCardListRow = {
+  id: string;
+  jcNo: string;
+  plannedDate: string | null;
+  status: string;
+  plannedQty: number | null;
+  finalQty: number | null;
+  itemCode: string;
+  itemName: string;
+  clientCode: string;
+  clientName: string;
+  machineName: string | null;
+  pressRunId: string | null;
+};
+
+/**
+ * The job card list — every card, newest planned first.
+ *
+ * One search box across card number, item, client and machine, on the same
+ * reasoning as the Item Tracker (F24): somebody asked to reprint "the
+ * Fertilina card" has a fragment, not a field name.
+ */
+export async function searchJobCards(
+  query: string,
+  opts: { openOnly?: boolean; limit?: number } = {},
+): Promise<JobCardListRow[]> {
+  const term = query.trim();
+  const like = `%${term}%`;
+
+  const matches = term
+    ? or(
+        ilike(jobCard.jcNo, like),
+        ilike(poItem.itemCode, like),
+        ilike(poItem.itemName, like),
+        ilike(client.code, like),
+        ilike(client.name, like),
+        ilike(machine.name, like),
+      )
+    : undefined;
+
+  /*
+   * "Open" here means a card the floor could still be working from. A
+   * completed or cancelled card is history, and burying this week's six cards
+   * under two years of them is the failure the Item Tracker's open-only
+   * default exists to prevent (F22).
+   */
+  const openOnly = opts.openOnly
+    ? inArray(jobCard.status, ["Planned", "In Process", "On Hold"])
+    : undefined;
+
+  return db
+    .select({
+      id: jobCard.id,
+      jcNo: jobCard.jcNo,
+      plannedDate: jobCard.plannedDate,
+      status: jobCard.status,
+      plannedQty: jobCard.plannedQty,
+      finalQty: jobCard.finalQty,
+      itemCode: poItem.itemCode,
+      itemName: poItem.itemName,
+      clientCode: client.code,
+      clientName: client.name,
+      machineName: machine.name,
+      pressRunId: jobCard.pressRunId,
+    })
+    .from(jobCard)
+    .innerJoin(poItem, eq(poItem.id, jobCard.poItemId))
+    .innerJoin(purchaseOrder, eq(purchaseOrder.id, poItem.purchaseOrderId))
+    .innerJoin(client, eq(client.id, purchaseOrder.clientId))
+    .leftJoin(machine, eq(machine.id, jobCard.machineId))
+    .where(and(LIVE, matches, openOnly))
+    .orderBy(sql`${jobCard.plannedDate} desc nulls last`, desc(jobCard.createdAt))
+    .limit(opts.limit ?? 200);
+}
+
+export type ReleasableRow = {
+  poItemId: string;
+  itemCode: string;
+  itemName: string;
+  clientCode: string;
+  clientName: string;
+  poInternalNo: string;
+  pendingQty: number;
+  committedDate: string | null;
+  /** From the view, so it is measured against today_ist() and not a JS clock. */
+  daysToCommitted: number | null;
+  currentStageName: string | null;
+  isOverdue: boolean;
+  cards: number;
+};
+
+/**
+ * Items a job card could be raised against — the picker on /job-cards/new.
+ *
+ * Every OPEN item with quantity still owed, most urgent first, in the same
+ * order the Item Tracker and Stage Update use. Items that already have a card
+ * are included and say so: a second card is legitimate for a split or repeat
+ * run (J3), so this counts in order to inform rather than to filter.
+ */
+export async function releasableItems(query = "", limit = 200): Promise<ReleasableRow[]> {
+  const term = query.trim();
+  const like = `%${term}%`;
+
+  const matches = term
+    ? or(
+        ilike(vPoItemStatus.itemCode, like),
+        ilike(vPoItemStatus.itemName, like),
+        ilike(vPoItemStatus.clientCode, like),
+        ilike(vPoItemStatus.clientName, like),
+        ilike(vPoItemStatus.poInternalNo, like),
+      )
+    : undefined;
+
+  return db
+    .select({
+      poItemId: vPoItemStatus.poItemId,
+      itemCode: vPoItemStatus.itemCode,
+      itemName: vPoItemStatus.itemName,
+      clientCode: vPoItemStatus.clientCode,
+      clientName: vPoItemStatus.clientName,
+      poInternalNo: vPoItemStatus.poInternalNo,
+      pendingQty: vPoItemStatus.pendingQty,
+      committedDate: vPoItemStatus.committedDate,
+      daysToCommitted: vPoItemStatus.daysToCommitted,
+      currentStageName: vPoItemStatus.currentStageName,
+      isOverdue: vPoItemStatus.isOverdue,
+      /*
+       * Live cards already on this item. Written with an explicit table name
+       * rather than drizzle's `${column}` interpolation — in a correlated
+       * subquery that renders bare names and silently compares a column to
+       * itself, which is the bug H7 documents and that shipped twice.
+       */
+      cards: sql<number>`(
+        select count(*)::int from job_card jc
+        where jc.po_item_id = v_po_item_status.po_item_id
+          and jc.deleted_at is null
+      )`,
+    })
+    .from(vPoItemStatus)
+    .where(and(eq(vPoItemStatus.status, "Open"), gt(vPoItemStatus.pendingQty, 0), matches))
+    .orderBy(
+      desc(vPoItemStatus.isOverdue),
+      sql`${vPoItemStatus.committedDate} asc nulls last`,
+      asc(vPoItemStatus.itemCode),
+    )
+    .limit(limit);
 }

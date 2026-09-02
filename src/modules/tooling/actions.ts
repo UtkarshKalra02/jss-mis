@@ -85,6 +85,9 @@ export async function createToolingAction(
         actor,
         tooling,
         {
+          // The made date still decides the number's financial year (I2, F10)
+          // even though the form no longer asks for it — it falls back to
+          // today, which is right for a tool being entered as it is made.
           toolNo: await allocateNumber(tx, TOOL_TYPE_PREFIX[v.toolType], v.madeDate),
           toolType: v.toolType,
           name: v.name,
@@ -97,11 +100,6 @@ export async function createToolingAction(
           status: v.status,
           designId: v.designId ?? null,
           clientId: v.clientId ?? null,
-          madeDate: v.madeDate ?? null,
-          vendor: v.vendor ?? null,
-          cost: v.cost === undefined ? null : String(v.cost),
-          impressionsUsed: v.impressionsUsed ?? null,
-          lastUsedDate: v.lastUsedDate ?? null,
           replacesToolId: v.replacesToolId ?? null,
           remarks: v.remarks ?? null,
         },
@@ -148,6 +146,13 @@ export async function updateToolingAction(
       return fail("A tool cannot replace itself.");
     }
 
+    /*
+     * Provenance — made date, vendor, cost, impressions, last used — is
+     * deliberately NOT in this payload (I10). The form stopped offering those
+     * fields, so `v.madeDate ?? null` would blank a cost somebody typed
+     * before the section was removed, on every subsequent edit. The columns
+     * keep whatever they hold; nothing writes them.
+     */
     await auditedUpdate(actor, tooling, id, {
       toolType: v.toolType,
       name: v.name,
@@ -160,11 +165,6 @@ export async function updateToolingAction(
       status: v.status,
       designId: v.designId ?? null,
       clientId: v.clientId ?? null,
-      madeDate: v.madeDate ?? null,
-      vendor: v.vendor ?? null,
-      cost: v.cost === undefined ? null : String(v.cost),
-      impressionsUsed: v.impressionsUsed ?? null,
-      lastUsedDate: v.lastUsedDate ?? null,
       replacesToolId: v.replacesToolId ?? null,
       remarks: v.remarks ?? null,
     });

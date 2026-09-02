@@ -11,6 +11,7 @@ import {
   MessageSquareQuote,
   Package,
   PenTool,
+  Printer,
   Receipt,
   Scale,
   Settings,
@@ -124,6 +125,23 @@ export const NAV: NavGroup[] = [
         icon: CalendarDays,
         phase: 4,
       },
+      /**
+       * Its own entry, not a panel inside the Item Tracker.
+       *
+       * Release started life buried in the tracker's job cards panel, because
+       * H6 was written when nothing in the system created a card and there was
+       * no screen to hang the action off. That is no longer true, and the
+       * consequence was that the one document the floor works from every day
+       * took four clicks and prior knowledge to reach. A printed job card is a
+       * first-class thing here; it gets a first-class place.
+       */
+      {
+        resource: "job_card",
+        label: "Job Cards",
+        href: "/job-cards",
+        icon: Printer,
+        phase: 2,
+      },
       {
         resource: "stage_update",
         label: "Stage Update",
@@ -201,4 +219,5 @@ export const BUILT: ReadonlySet<Resource> = new Set<Resource>([
   "delegation",
   "delegation_scorecard",
   "tooling",
+  "job_card",
 ]);
