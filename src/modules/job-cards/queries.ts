@@ -5,12 +5,11 @@ import type { Tx } from "@/db/audit";
 import {
   client,
   design,
-  designProcess,
   jobCard,
+  machine,
   poItem,
   pressRun,
   purchaseOrder,
-  stage,
 } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
 
@@ -40,7 +39,25 @@ export type JobCardDetail = {
   paperSupplyBy: string | null;
   plateSupplyBy: string | null;
   plateJobId: string | null;
-  machineDetail: string | null;
+  machineId: string | null;
+  machineName: string | null;
+  machineSheetSize: string | null;
+
+  checklistPaper: boolean;
+  checklistPlates: boolean;
+  checklistColour: boolean;
+
+  paperSize: string | null;
+  paperGsm: string | null;
+  paperFinish: string | null;
+  sheetsPerReam: number | null;
+  paperRemarks: string | null;
+
+  execNoOfColours: string | null;
+  execSize: string | null;
+  execPlanning: string | null;
+
+  fabricationRemarks: string | null;
 
   finalQty: number | null;
   wastageQty: number | null;
@@ -104,7 +121,25 @@ export async function getJobCard(
       paperSupplyBy: jobCard.paperSupplyBy,
       plateSupplyBy: jobCard.plateSupplyBy,
       plateJobId: jobCard.plateJobId,
-      machineDetail: jobCard.machineDetail,
+      machineId: jobCard.machineId,
+      machineName: machine.name,
+      machineSheetSize: machine.sheetSize,
+
+      checklistPaper: jobCard.checklistPaper,
+      checklistPlates: jobCard.checklistPlates,
+      checklistColour: jobCard.checklistColour,
+
+      paperSize: jobCard.paperSize,
+      paperGsm: jobCard.paperGsm,
+      paperFinish: jobCard.paperFinish,
+      sheetsPerReam: jobCard.sheetsPerReam,
+      paperRemarks: jobCard.paperRemarks,
+
+      execNoOfColours: jobCard.execNoOfColours,
+      execSize: jobCard.execSize,
+      execPlanning: jobCard.execPlanning,
+
+      fabricationRemarks: jobCard.fabricationRemarks,
 
       finalQty: jobCard.finalQty,
       wastageQty: jobCard.wastageQty,
@@ -148,6 +183,7 @@ export async function getJobCard(
     .innerJoin(client, eq(client.id, purchaseOrder.clientId))
     .leftJoin(design, eq(design.id, poItem.designId))
     .leftJoin(pressRun, eq(pressRun.id, jobCard.pressRunId))
+    .leftJoin(machine, eq(machine.id, jobCard.machineId))
     .where(and(eq(jobCard.id, id), LIVE))
     .limit(1);
 
@@ -165,46 +201,17 @@ export async function getJobCardRecord(id: string, runner: Runner = db) {
   return row ?? null;
 }
 
-export type ProcessLine = {
-  code: string;
-  name: string;
-  /** True when this design's route includes the stage. */
-  onRoute: boolean;
-};
-
-/**
- * The fabrication checklist for the printed card (J5).
+/*
+ * The stage-based fabrication checklist used to live here, and is gone.
  *
- * EVERY process stage is returned, not just the ones on the design's route,
- * with `onRoute` saying which apply. A printed form lists all its options —
- * showing only the route would leave an operator with nowhere to tick a
- * process added on the day, and the paper card being replaced has every line
- * printed whether or not the job needs it.
- *
- * `is_process` is what separates floor work from order lifecycle (F18), so
- * ENQUIRY, PO_RECEIVED, READY and DISPATCHED are correctly absent: none of
- * them is a thing that happens to paper.
+ * It printed every `is_process` stage with an empty box for the floor to tick,
+ * which was right while the system held no fabrication detail. It cannot
+ * express the card's real vocabulary: three laminations under one LAMINATION
+ * stage, two UV lines under one UV stage, and Varnish and Embossing under no
+ * stage at all. `printedChecklist` in src/modules/fabrication/queries.ts is
+ * the replacement, and it carries each line's ANSWER as well as its tick (J8).
  */
-export async function processChecklistFor(
-  designId: string | null,
-  runner: Runner = db,
-): Promise<ProcessLine[]> {
-  const stages = await runner
-    .select({ code: stage.code, name: stage.name })
-    .from(stage)
-    .where(and(isNull(stage.deletedAt), eq(stage.isActive, true), eq(stage.isProcess, true)))
-    .orderBy(asc(stage.sequence));
 
-  if (!designId) return stages.map((s) => ({ ...s, onRoute: false }));
-
-  const route = await runner
-    .select({ stageCode: designProcess.stageCode })
-    .from(designProcess)
-    .where(and(eq(designProcess.designId, designId), isNull(designProcess.deletedAt)));
-
-  const onRoute = new Set(route.map((r) => r.stageCode));
-  return stages.map((s) => ({ ...s, onRoute: onRoute.has(s.code) }));
-}
 
 /**
  * How many live cards this item already has.
@@ -283,7 +290,7 @@ export type ItemJobCardRow = {
   status: string;
   finalQty: number | null;
   wastageQty: number | null;
-  machineDetail: string | null;
+  machineName: string | null;
   pressRunId: string | null;
 };
 
@@ -308,10 +315,24 @@ export async function jobCardsForItem(
       status: jobCard.status,
       finalQty: jobCard.finalQty,
       wastageQty: jobCard.wastageQty,
-      machineDetail: jobCard.machineDetail,
+      machineName: machine.name,
       pressRunId: jobCard.pressRunId,
     })
     .from(jobCard)
+    .leftJoin(machine, eq(machine.id, jobCard.machineId))
     .where(and(eq(jobCard.poItemId, poItemId), LIVE))
     .orderBy(desc(jobCard.plannedDate), desc(jobCard.createdAt));
+}
+
+/** The presses a job card may be ticked against (J10). */
+export async function machineOptions(runner: Runner = db) {
+  return runner
+    .select({
+      id: machine.id,
+      name: machine.name,
+      sheetSize: machine.sheetSize,
+    })
+    .from(machine)
+    .where(and(isNull(machine.deletedAt), eq(machine.isActive, true)))
+    .orderBy(asc(machine.sequence), asc(machine.name));
 }

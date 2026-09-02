@@ -55,8 +55,49 @@ export const releaseSchema = z.object({
   paperSupplyBy: absentOrBlank(z.enum(supplyByValues)),
   plateSupplyBy: absentOrBlank(z.enum(supplyByValues)),
   plateJobId: absentOrBlank(z.string().trim().max(120)),
-  machineDetail: absentOrBlank(z.string().trim().max(200)),
+
+  /** A tick, not free text — the press list is seeded data (J10). */
+  machineId: absentOrBlank(z.uuid()),
+
+  /**
+   * The pen-written half of the paper card, typed in when it is made.
+   *
+   * All optional at the database, because a card released before somebody has
+   * chosen the stock is still a real card. The screen says what is still
+   * missing rather than the schema refusing to save (J11).
+   */
+  checklistPaper: absentOrBlank(z.literal("on")),
+  checklistPlates: absentOrBlank(z.literal("on")),
+  checklistColour: absentOrBlank(z.literal("on")),
+
+  paperSize: absentOrBlank(z.string().trim().max(120)),
+  paperGsm: absentOrBlank(z.string().trim().max(60)),
+  paperFinish: absentOrBlank(z.string().trim().max(60)),
+  sheetsPerReam: absentOrBlank(
+    z.coerce
+      .number()
+      .int("Sheets per ream must be a whole number.")
+      .positive("Sheets per ream must be more than zero.")
+      .max(9_999_999),
+  ),
+  paperRemarks: absentOrBlank(z.string().trim().max(500)),
+
+  execNoOfColours: absentOrBlank(z.string().trim().max(60)),
+  execSize: absentOrBlank(z.string().trim().max(120)),
+  execPlanning: absentOrBlank(z.string().trim().max(200)),
+
+  fabricationRemarks: absentOrBlank(z.string().trim().max(1000)),
+
   notes: absentOrBlank(z.string().trim().max(1000)),
+
+  /**
+   * Run-scope fabrication answers — new die or old, and so on.
+   *
+   * Parallel arrays, one entry per option the DESIGN has that asks a run-scope
+   * question. Same shape and same reason as the design form's (F20).
+   */
+  fabricationOptionIds: z.array(z.string().trim()).default([]),
+  fabricationValueIds: z.array(z.string().trim()).default([]),
 
   /**
    * The second-card acknowledgement (J3).
@@ -73,6 +114,58 @@ export const releaseSchema = z.object({
 
 export type ReleaseInput = z.infer<typeof releaseSchema>;
 
+/**
+ * Editing the plan on a card that already exists.
+ *
+ * The same fields minus the item, which cannot move: a card covers exactly one
+ * PO item (H1) and repointing it would silently rewrite what was printed. And
+ * minus the second-card question, which is only asked once.
+ *
+ * This exists because the card is a DOCUMENT somebody types before printing
+ * it, and a typo in the sheet size should not mean removing the card and
+ * releasing another — that burns a JC number for a corrected sentence.
+ */
+export const planSchema = releaseSchema
+  .omit({ poItemId: true, confirmSecondCard: true })
+  .extend({ id: z.uuid() });
+
+export type PlanInput = z.infer<typeof planSchema>;
+
+export function parsePlanForm(formData: FormData) {
+  const base = parseReleaseForm(formData);
+  return planSchema.safeParse({
+    ...(base.success ? base.data : {}),
+    id: formData.get("id"),
+    // Re-read the raw values: parseReleaseForm may have failed on poItemId,
+    // which this schema does not ask for.
+    ...Object.fromEntries(
+      [
+        "plannedDate",
+        "plannedQty",
+        "paperSupplyBy",
+        "plateSupplyBy",
+        "plateJobId",
+        "machineId",
+        "checklistPaper",
+        "checklistPlates",
+        "checklistColour",
+        "paperSize",
+        "paperGsm",
+        "paperFinish",
+        "sheetsPerReam",
+        "paperRemarks",
+        "execNoOfColours",
+        "execSize",
+        "execPlanning",
+        "fabricationRemarks",
+        "notes",
+      ].map((k) => [k, formData.get(k)]),
+    ),
+    fabricationOptionIds: formData.getAll("fabricationOptionId").map(String),
+    fabricationValueIds: formData.getAll("fabricationValueId").map(String),
+  });
+}
+
 export function parseReleaseForm(formData: FormData) {
   return releaseSchema.safeParse({
     poItemId: formData.get("poItemId"),
@@ -81,8 +174,22 @@ export function parseReleaseForm(formData: FormData) {
     paperSupplyBy: formData.get("paperSupplyBy"),
     plateSupplyBy: formData.get("plateSupplyBy"),
     plateJobId: formData.get("plateJobId"),
-    machineDetail: formData.get("machineDetail"),
+    machineId: formData.get("machineId"),
+    checklistPaper: formData.get("checklistPaper"),
+    checklistPlates: formData.get("checklistPlates"),
+    checklistColour: formData.get("checklistColour"),
+    paperSize: formData.get("paperSize"),
+    paperGsm: formData.get("paperGsm"),
+    paperFinish: formData.get("paperFinish"),
+    sheetsPerReam: formData.get("sheetsPerReam"),
+    paperRemarks: formData.get("paperRemarks"),
+    execNoOfColours: formData.get("execNoOfColours"),
+    execSize: formData.get("execSize"),
+    execPlanning: formData.get("execPlanning"),
+    fabricationRemarks: formData.get("fabricationRemarks"),
     notes: formData.get("notes"),
+    fabricationOptionIds: formData.getAll("fabricationOptionId").map(String),
+    fabricationValueIds: formData.getAll("fabricationValueId").map(String),
     confirmSecondCard: formData.get("confirmSecondCard"),
   });
 }
@@ -126,4 +233,15 @@ export function parseExecutionForm(formData: FormData) {
     wastageQty: formData.get("wastageQty"),
     executionRemarks: formData.get("executionRemarks"),
   });
+}
+
+/** Zips the card's run-scope fabrication answers into selections. */
+export function runSelectionsFrom(input: {
+  fabricationOptionIds: string[];
+  fabricationValueIds: string[];
+}) {
+  return input.fabricationOptionIds.map((optionId, i) => ({
+    optionId,
+    valueId: input.fabricationValueIds[i]?.length ? input.fabricationValueIds[i]! : null,
+  }));
 }

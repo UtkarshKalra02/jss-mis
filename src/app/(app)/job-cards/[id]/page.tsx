@@ -5,10 +5,17 @@ import { notFound } from "next/navigation";
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
 import { ExecutionForm } from "@/components/job-cards/execution-form";
+import { JobCardForm } from "@/components/job-cards/job-card-form";
 import { Button } from "@/components/ui/button";
 import { formatCommittedDate, formatDate, formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { getJobCard, processChecklistFor } from "@/modules/job-cards/queries";
+import {
+  designSelections,
+  fabricationVocabulary,
+  jobCardSelections,
+  printedChecklist,
+} from "@/modules/fabrication/queries";
+import { getJobCard, machineOptions } from "@/modules/job-cards/queries";
 import { toolingForDesign } from "@/modules/tooling/queries";
 
 export const metadata: Metadata = { title: "Job card · JSS MIS" };
@@ -35,12 +42,28 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
   const card = await getJobCard(id);
   if (!card) notFound();
 
-  const [processes, tooling] = await Promise.all([
-    processChecklistFor(card.designId),
+  const [vocabulary, cardFab, tooling, machines] = await Promise.all([
+    fabricationVocabulary(),
+    jobCardSelections(id),
     card.designId ? toolingForDesign(card.designId) : Promise.resolve([]),
+    machineOptions(),
   ]);
 
-  const onRoute = processes.filter((p) => p.onRoute);
+  const designFab = card.designId ? await designSelections(card.designId) : new Map();
+  const checklist = printedChecklist(vocabulary, designFab, cardFab);
+
+  const applying = checklist.filter((l) => l.applies);
+
+  /*
+   * Run-scope questions the design has opened and nobody has answered.
+   *
+   * The printed card no longer carries a blank rule for these (J8) — the only
+   * thing left empty on the page is the run figures — so a missing answer is a
+   * GAP rather than an invitation. This screen says so before somebody prints
+   * a sheet with a hole in it.
+   */
+  const unanswered = checklist.filter((l) => l.awaitingValue);
+  const runOptions = vocabulary.filter((o) => o.valueScope === "Run" && designFab.has(o.id));
 
   return (
     <div className="max-w-4xl">
@@ -93,14 +116,46 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
         </p>
       ) : null}
 
-      {/* The plan. What was decided before the sheet was printed. */}
-      <dl className="mt-6 grid gap-x-8 gap-y-3 rounded-lg border p-4 text-[13px] sm:grid-cols-3">
+      {unanswered.length > 0 ? (
+        <p className="bg-at-risk-bg text-at-risk mt-4 rounded-md px-3 py-2 text-[13px]">
+          {unanswered.length === 1
+            ? `${unanswered[0]!.label} has no answer yet, and will print blank.`
+            : `${unanswered.length} fabrication answers are missing — ${unanswered
+                .map((l) => l.label)
+                .join(", ")} — and will print blank.`}
+        </p>
+      ) : null}
+
+      {/* The check list from the paper card's top-left corner (J11). */}
+      <div className="mt-6 flex flex-wrap items-baseline gap-4 rounded-lg border px-4 py-3 text-[13px]">
+        <span className="text-muted-foreground text-xs tracking-wide uppercase">Check list</span>
+        {(
+          [
+            ["Paper", card.checklistPaper],
+            ["Plates", card.checklistPlates],
+            ["Colour", card.checklistColour],
+          ] as const
+        ).map(([label, on]) => (
+          <span key={label} className={on ? "text-on-time font-medium" : "text-muted-foreground"}>
+            {on ? "✓" : "☐"} {label}
+          </span>
+        ))}
+      </div>
+
+      <dl className="mt-3 grid gap-x-8 gap-y-3 rounded-lg border p-4 text-[13px] sm:grid-cols-3">
         <Fact label="Quantity to run" value={formatQty(card.plannedQty)} />
         <Fact label="Ordered" value={formatQty(card.orderedQty)} />
         <Fact label="Committed" value={formatCommittedDate(card.committedDate)} />
 
         <Fact label="Planned date" value={formatDate(card.plannedDate)} />
-        <Fact label="Machine" value={card.machineDetail} />
+        <Fact
+          label="Machine"
+          value={
+            card.machineName
+              ? `${card.machineName}${card.machineSheetSize ? ` · ${card.machineSheetSize}` : ""}`
+              : null
+          }
+        />
         <Fact label="Plate / Job ID" value={card.plateJobId} />
 
         <Fact label="Paper supplied by" value={card.paperSupplyBy} />
@@ -111,38 +166,46 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <section className="rounded-lg border p-4">
           <h2 className="text-sm font-medium">Paper</h2>
+          <p className="text-muted-foreground mt-1 text-[12px]">
+            The parent sheet this run prints on, typed on the card — not the design&rsquo;s
+            finished size.
+          </p>
+          <dl className="mt-3 grid gap-x-8 gap-y-3 text-[13px] sm:grid-cols-2">
+            <Fact label="Size" value={card.paperSize} />
+            <Fact label="GSM" value={card.paperGsm} />
+            <Fact label="Matt / gloss" value={card.paperFinish} />
+            <Fact label="Sheets / ream" value={formatQty(card.sheetsPerReam)} />
+            <Fact label="No. of colours" value={card.execNoOfColours} />
+            <Fact label="Planning" value={card.execPlanning} />
+          </dl>
           {card.designId ? (
-            <dl className="mt-3 grid gap-x-8 gap-y-3 text-[13px] sm:grid-cols-2">
-              <Fact label="Design" value={`${card.designCode} · ${card.designJobName}`} />
-              <Fact label="Size" value={card.designJobSize} />
-              <Fact label="GSM" value={card.designGsm} />
-              <Fact label="Type" value={card.designPaperType} />
-              <Fact label="Print" value={card.designPrintType} />
-              <Fact label="Colours" value={card.designNoOfColours} />
-            </dl>
-          ) : (
-            <p className="text-muted-foreground mt-3 text-[13px]">
-              No design against this item, so there is no paper specification to show. The
-              printed card leaves these lines blank for hand entry.
+            <p className="text-muted-foreground mt-3 text-[12px]">
+              Design {card.designCode} — {card.designJobName}
+              {card.designJobSize ? ` · finished ${card.designJobSize}` : ""}
             </p>
-          )}
+          ) : null}
         </section>
 
         <section className="rounded-lg border p-4">
           <h2 className="text-sm font-medium">Fabrication</h2>
-          {onRoute.length === 0 ? (
+          {applying.length === 0 ? (
             <p className="text-muted-foreground mt-3 text-[13px]">
-              No processes recorded on this design&rsquo;s route. The printed card still lists
-              every process with an empty box, so the floor can tick what applies.
+              Nothing recorded on this design. The printed card still lists every process, so
+              the shape of the form stays the one the floor knows.
             </p>
           ) : (
-            <ul className="mt-3 flex flex-wrap gap-1.5">
-              {onRoute.map((p) => (
-                <li
-                  key={p.code}
-                  className="bg-neutral-status-bg rounded-full px-2.5 py-0.5 text-[12px]"
-                >
-                  {p.name}
+            <ul className="mt-3 space-y-1 text-[13px]">
+              {applying.map((line) => (
+                <li key={line.optionId} className="flex flex-wrap items-baseline gap-x-2">
+                  <span>{line.label}</span>
+                  <span
+                    className={cn(
+                      "font-medium",
+                      line.awaitingValue && "text-at-risk font-normal italic",
+                    )}
+                  >
+                    {line.detail ?? (line.awaitingValue ? "not answered" : "")}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -182,10 +245,12 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
         </section>
       </div>
 
-      {card.notes ? (
-        <p className="bg-neutral-status-bg text-muted-foreground mt-6 rounded-md px-3 py-2 text-[13px]">
-          {card.notes}
-        </p>
+      {card.fabricationRemarks || card.paperRemarks || card.notes ? (
+        <div className="bg-neutral-status-bg text-muted-foreground mt-6 space-y-1 rounded-md px-3 py-2 text-[13px]">
+          {card.paperRemarks ? <p>Paper — {card.paperRemarks}</p> : null}
+          {card.fabricationRemarks ? <p>Fabrication — {card.fabricationRemarks}</p> : null}
+          {card.notes ? <p>{card.notes}</p> : null}
+        </div>
       ) : null}
 
       <div className="mt-6">
@@ -208,6 +273,23 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
           </section>
         )}
       </div>
+
+      {/* Correcting the card BEFORE it goes to the floor. Deliberately separate
+          from the transcription above, so a wastage figure typed a week later
+          cannot post a stale copy of the plan over a correction (J6). */}
+      {canWrite ? (
+        <section className="mt-6 rounded-lg border p-4">
+          <h2 className="mb-4 text-sm font-medium">Edit the card</h2>
+          <JobCardForm
+            mode="edit"
+            itemCode={card.itemCode}
+            card={card}
+            machines={machines}
+            runOptions={runOptions}
+            runSelected={cardFab}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }

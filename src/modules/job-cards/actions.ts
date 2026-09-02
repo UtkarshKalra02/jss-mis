@@ -8,8 +8,15 @@ import { auditedInsert, auditedUpdate, type Actor } from "@/db/audit";
 import { jobCard } from "@/db/schema";
 import { allocateNumber, todayIST } from "@/lib/numbering";
 
+import { syncJobCardFabrication } from "@/modules/fabrication/write";
+
 import { getJobCardRecord, liveCardCountFor, releasableItem } from "./queries";
-import { parseExecutionForm, parseReleaseForm } from "./validation";
+import {
+  parseExecutionForm,
+  parsePlanForm,
+  parseReleaseForm,
+  runSelectionsFrom,
+} from "./validation";
 
 /**
  * Job card writes.
@@ -113,8 +120,8 @@ export async function releaseJobCardAction(
 
     const cardDate = v.plannedDate ?? todayIST();
 
-    const row = await db.transaction(async (tx) =>
-      auditedInsert(
+    const row = await db.transaction(async (tx) => {
+      const card = await auditedInsert(
         actor,
         jobCard,
         {
@@ -127,12 +134,43 @@ export async function releaseJobCardAction(
           paperSupplyBy: v.paperSupplyBy ?? null,
           plateSupplyBy: v.plateSupplyBy ?? null,
           plateJobId: v.plateJobId ?? null,
-          machineDetail: v.machineDetail ?? null,
+          machineId: v.machineId ?? null,
+
+          // The pen-written half of the paper card (J11). A tick posts "on"
+          // and an unticked box posts nothing at all, so absent means false.
+          checklistPaper: v.checklistPaper === "on",
+          checklistPlates: v.checklistPlates === "on",
+          checklistColour: v.checklistColour === "on",
+
+          paperSize: v.paperSize ?? null,
+          paperGsm: v.paperGsm ?? null,
+          paperFinish: v.paperFinish ?? null,
+          sheetsPerReam: v.sheetsPerReam ?? null,
+          paperRemarks: v.paperRemarks ?? null,
+
+          execNoOfColours: v.execNoOfColours ?? null,
+          execSize: v.execSize ?? null,
+          execPlanning: v.execPlanning ?? null,
+
+          fabricationRemarks: v.fabricationRemarks ?? null,
           notes: v.notes ?? null,
         },
         tx,
-      ),
-    );
+      );
+
+      /*
+       * Run-scope fabrication answers — new die or old — recorded against the
+       * card rather than the design (J8).
+       *
+       * INSIDE THE SAME TRANSACTION as the card itself, so the two arrive
+       * together or not at all. A second transaction would leave a numbered
+       * card with no answers if the second one failed, and the number would
+       * already be burnt.
+       */
+      await syncJobCardFabrication(actor, tx, card.id, runSelectionsFrom(v));
+
+      return card;
+    });
 
     revalidatePath("/items");
     revalidatePath(`/items/${v.poItemId}`);
@@ -141,6 +179,84 @@ export async function releaseJobCardAction(
     return ok(`${row.jcNo} released.`, `/job-cards/${row.id}`);
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Could not release that job card.");
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Edit the plan                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Corrects the card before it goes to the floor.
+ *
+ * Everything the release form asks, except the item — a card covers exactly one
+ * PO item (H1), and repointing it would silently rewrite what was printed.
+ *
+ * The JC NUMBER IS NEVER REISSUED, on the same reasoning that keeps a tool's
+ * number when its type is corrected (C7, I-series): the number is written on a
+ * sheet that may already be in somebody's hand, and renumbering after the fact
+ * is how the paper and the screen stop agreeing.
+ *
+ * Deliberately does NOT touch final quantity, wastage or the execution remark.
+ * Those are the transcription's, and a plan correction typed a week later must
+ * not post a stale copy of them back over what the floor recorded (J6).
+ */
+export async function updateJobCardPlanAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireJobCardWriter();
+
+    const parsed = parsePlanForm(formData);
+    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
+    const v = parsed.data;
+
+    const existing = await getJobCardRecord(v.id);
+    if (!existing) return fail("That job card is no longer in the system.");
+
+    await db.transaction(async (tx) => {
+      await auditedUpdate(
+        actor,
+        jobCard,
+        v.id,
+        {
+          plannedQty: v.plannedQty ?? null,
+          plannedDate: v.plannedDate ?? null,
+          paperSupplyBy: v.paperSupplyBy ?? null,
+          plateSupplyBy: v.plateSupplyBy ?? null,
+          plateJobId: v.plateJobId ?? null,
+          machineId: v.machineId ?? null,
+
+          checklistPaper: v.checklistPaper === "on",
+          checklistPlates: v.checklistPlates === "on",
+          checklistColour: v.checklistColour === "on",
+
+          paperSize: v.paperSize ?? null,
+          paperGsm: v.paperGsm ?? null,
+          paperFinish: v.paperFinish ?? null,
+          sheetsPerReam: v.sheetsPerReam ?? null,
+          paperRemarks: v.paperRemarks ?? null,
+
+          execNoOfColours: v.execNoOfColours ?? null,
+          execSize: v.execSize ?? null,
+          execPlanning: v.execPlanning ?? null,
+
+          fabricationRemarks: v.fabricationRemarks ?? null,
+          notes: v.notes ?? null,
+        },
+        tx,
+      );
+
+      await syncJobCardFabrication(actor, tx, v.id, runSelectionsFrom(v));
+    });
+
+    revalidatePath(`/job-cards/${v.id}`);
+    revalidatePath(`/items/${existing.poItemId}`);
+
+    return ok("Saved.");
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Could not save those changes.");
   }
 }
 

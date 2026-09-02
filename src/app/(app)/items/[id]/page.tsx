@@ -20,8 +20,9 @@ import {
   getItemStatus,
   getItemTimeline,
 } from "@/modules/items/queries";
-import { jobCardsForItem } from "@/modules/job-cards/queries";
-import { ReleaseJobCardControl } from "@/components/job-cards/release-control";
+import { jobCardsForItem, machineOptions } from "@/modules/job-cards/queries";
+import { designSelections, fabricationVocabulary } from "@/modules/fabrication/queries";
+import { JobCardForm } from "@/components/job-cards/job-card-form";
 import { AddToRunControl } from "@/components/press-runs/run-controls";
 import { gangInfoFor, recentRuns } from "@/modules/press-runs/queries";
 
@@ -69,12 +70,24 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
   const item = await getItemStatus(id);
   if (!item) notFound();
 
-  const [detail, timeline, dispatches, jobCards] = await Promise.all([
+  const [detail, timeline, dispatches, jobCards, machines, fabricationOptions] = await Promise.all([
     getItemDetail(id),
     getItemTimeline(id),
     getItemDispatches(id),
     jobCardsForItem(id),
+    machineOptions(),
+    fabricationVocabulary(),
   ]);
+
+  /*
+   * The run-scope questions this item's design opens: new die or old, and so
+   * on. Only options the DESIGN has are ever asked — the card cannot invent a
+   * process the design does not do (J8).
+   */
+  const designFab = detail?.designId ? await designSelections(detail.designId) : new Map();
+  const runOptions = fabricationOptions.filter(
+    (o) => o.valueScope === "Run" && designFab.has(o.id),
+  );
 
   const canSeePo = can(user.role, "purchase_order");
   const canGang = can(user.role, "press_run", "write");
@@ -288,7 +301,7 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
                           {formatQty(jc.plannedQty)}
                         </td>
                         <td className="text-muted-foreground px-2">
-                          {jc.machineDetail ?? "—"}
+                          {jc.machineName ?? "—"}
                         </td>
                         {/* What actually came off, once somebody has
                             transcribed it from the printed card (J4). An em
@@ -345,10 +358,14 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
               : null}
 
             {canReleaseCard && item.status === "Open" && item.pendingQty > 0 ? (
-              <ReleaseJobCardControl
+              <JobCardForm
+                mode="release"
                 poItemId={item.poItemId}
                 itemCode={item.itemCode}
                 pendingQty={item.pendingQty}
+                machines={machines}
+                runOptions={runOptions}
+                runSelected={new Map()}
                 hasExistingCard={jobCards.length > 0}
               />
             ) : null}

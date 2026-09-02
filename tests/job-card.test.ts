@@ -4,12 +4,7 @@ import { describe, expect, it } from "vitest";
 import { SYSTEM_ACTOR, auditedInsert, auditedSoftDelete, auditedUpdate, type Tx } from "@/db/audit";
 import { design, designProcess, jobCard, poItem, purchaseOrder } from "@/db/schema";
 import { allocateNumber } from "@/lib/numbering";
-import {
-  getJobCard,
-  jobCardsForItem,
-  liveCardCountFor,
-  processChecklistFor,
-} from "@/modules/job-cards/queries";
+import { getJobCard, jobCardsForItem, liveCardCountFor } from "@/modules/job-cards/queries";
 import { parseExecutionForm, parseReleaseForm } from "@/modules/job-cards/validation";
 
 import { expectFailure, inRollback, uniq } from "./helpers";
@@ -43,7 +38,7 @@ describe("the release form's fields, as the browser posts them", () => {
     form.set("paperSupplyBy", "");
     form.set("plateSupplyBy", "");
     form.set("plateJobId", "");
-    form.set("machineDetail", "");
+    form.set("machineId", "");
     form.set("notes", "");
     return form;
   }
@@ -56,7 +51,7 @@ describe("the release form's fields, as the browser posts them", () => {
     // Blank must reach the action as undefined, never as "".
     expect(parsed.data.plannedQty).toBeUndefined();
     expect(parsed.data.paperSupplyBy).toBeUndefined();
-    expect(parsed.data.machineDetail).toBeUndefined();
+    expect(parsed.data.machineId).toBeUndefined();
   });
 
   it("accepts a form that never rendered the optional fields at all", () => {
@@ -276,10 +271,12 @@ describe("the card, read back for the screen and the print", () => {
     await inRollback(async (tx) => {
       const { itemId } = await makeItem(tx, { withDesign: true });
       const card = await release(tx, itemId, "2026-05-10", {
-        machineDetail: "Heidelberg SM 74",
         paperSupplyBy: "Party" as const,
         plateSupplyBy: "Press" as const,
         plateJobId: "PL-8891",
+        paperSize: '25" x 36"',
+        paperGsm: "100",
+        sheetsPerReam: 300,
       });
 
       const read = await getJobCard(card.id, tx);
@@ -296,7 +293,11 @@ describe("the card, read back for the screen and the print", () => {
 
       expect(read!.paperSupplyBy).toBe("Party");
       expect(read!.plateSupplyBy).toBe("Press");
-      expect(read!.machineDetail).toBe("Heidelberg SM 74");
+
+      // The PARENT SHEET, typed on the card — not design.job_size, which is
+      // the finished size of the carton. Different facts (J11).
+      expect(read!.paperSize).toBe('25" x 36"');
+      expect(read!.sheetsPerReam).toBe(300);
     });
   });
 
@@ -316,43 +317,11 @@ describe("the card, read back for the screen and the print", () => {
   });
 });
 
-describe("the fabrication checklist on the printed card", () => {
-  it("lists every process stage, marking the ones on this design's route", async () => {
-    await inRollback(async (tx) => {
-      const { designId } = await makeItem(tx, { withDesign: true });
-
-      const lines = await processChecklistFor(designId, tx);
-
-      // is_process separates floor work from order lifecycle (F18), so none of
-      // these belongs on a fabrication checklist.
-      const codes = lines.map((l) => l.code);
-      expect(codes).not.toContain("PO_RECEIVED");
-      expect(codes).not.toContain("READY");
-      expect(codes).not.toContain("DISPATCHED");
-
-      // Every option is printed; the route decides which are marked.
-      expect(codes).toContain("FOILING");
-      const marked = lines.filter((l) => l.onRoute).map((l) => l.code).sort();
-      expect(marked).toEqual(["LAMINATION", "PRINTING"]);
-    });
-  });
-
-  it("returns every process unmarked when the item has no design", async () => {
-    await inRollback(async (tx) => {
-      const lines = await processChecklistFor(null, tx);
-      expect(lines.length).toBeGreaterThan(0);
-      expect(lines.every((l) => !l.onRoute)).toBe(true);
-    });
-  });
-});
-
 describe("transcribing the run figures back off the paper", () => {
   it("records the final quantity, wastage and remarks without touching the plan", async () => {
     await inRollback(async (tx) => {
       const { itemId } = await makeItem(tx);
-      const card = await release(tx, itemId, "2026-05-10", {
-        machineDetail: "Heidelberg SM 74",
-      });
+      const card = await release(tx, itemId, "2026-05-10", { execNoOfColours: "4/c" });
 
       await auditedUpdate(
         SYSTEM_ACTOR,
@@ -368,7 +337,7 @@ describe("transcribing the run figures back off the paper", () => {
       expect(read!.wastageQty).toBe(180);
       // The plan is untouched — that is the whole reason it is a separate form.
       expect(read!.plannedQty).toBe(5000);
-      expect(read!.machineDetail).toBe("Heidelberg SM 74");
+      expect(read!.execNoOfColours).toBe("4/c");
     });
   });
 

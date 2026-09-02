@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   date,
   index,
@@ -16,6 +17,47 @@ import { jobCardStatusEnum, supplyByEnum } from "./enums";
 import { poItem } from "./order";
 import { stage } from "./reference";
 import { appUser } from "./users";
+
+/* -------------------------------------------------------------------------- */
+/* machine                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The presses. A short, seeded list the job card ticks one of.
+ *
+ * This started as free text on `job_card`, on the reasoning that there was no
+ * machine master and inventing one would be a table nobody maintains. The
+ * paper job card settled it: Machine Detail there is a printed TICK LIST of
+ * the actual presses, not a blank. A master exists — it has just been on
+ * paper.
+ *
+ * A TABLE RATHER THAN AN ENUM, for the reason stages are a table (C3): the
+ * list belongs to this factory and changes when a press is bought or sold,
+ * which should be a row rather than a migration and a deploy.
+ */
+export const machine = pgTable(
+  "machine",
+  {
+    ...baseColumns(),
+
+    code: text().notNull(),
+
+    /** As the floor says it: "SM-72 — 6 Colour". */
+    name: text().notNull(),
+
+    /** Sheet size the press takes, printed beside the name: 20" x 28.5". */
+    sheetSize: text(),
+
+    sequence: integer().notNull().default(0),
+    isActive: boolean().notNull().default(true),
+  },
+  (t) => [
+    uniqueIndex("machine_code_key")
+      .on(t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index("machine_sequence_idx").on(t.sequence),
+  ],
+);
 
 /* -------------------------------------------------------------------------- */
 /* press_run                                                                   */
@@ -125,11 +167,59 @@ export const jobCard = pgTable(
     plateJobId: text(),
 
     /**
-     * Free text, and deliberately not a foreign key: there is no machine
-     * master in this system and inventing one here would be a table nobody
-     * maintains. Same reasoning as press_run.machine.
+     * Which press. A tick on the paper card, so a foreign key here.
+     *
+     * Replaced the free-text `machine_detail` this table carried for two days:
+     * the paper job card prints a tick list of the actual presses, which means
+     * the machine master the free text was excused by does exist. See J10.
      */
-    machineDetail: text(),
+    machineId: uuid().references(() => machine.id),
+
+    /* ---------------------------------------------------------------------- */
+    /* Typed in when the card is made — the pen-written half of the paper form  */
+    /* ---------------------------------------------------------------------- */
+
+    /**
+     * The card's top-left check list: paper, plates, colour.
+     *
+     * Three ticks that are, on paper, the readiness gate the BMP calls kitting
+     * — is the material here, is the plate made, is the colour settled. They
+     * are recorded, not enforced: nothing refuses to print a card with all
+     * three clear, because the paper form never did either (J11).
+     */
+    checklistPaper: boolean().notNull().default(false),
+    checklistPlates: boolean().notNull().default(false),
+    checklistColour: boolean().notNull().default(false),
+
+    /**
+     * The card's PAPER DETAIL band.
+     *
+     * NOT derived from the design, and that is not duplication. `design.job_size`
+     * is the FINISHED size of the job; `paper_size` here is the parent sheet the
+     * run prints on — 25" x 36" against a carton a fraction of that. They are
+     * different facts about different things, and the sheet is a decision made
+     * per run out of what stock is in the building.
+     */
+    paperSize: text(),
+    paperGsm: text(),
+    paperFinish: text(),
+    sheetsPerReam: integer(),
+    paperRemarks: text(),
+
+    /**
+     * The card's JOB EXECUTION band, minus the three that stay blank.
+     *
+     * Number of colours, the size run, and the planning note are all decided
+     * before the sheet is printed and are therefore printed on it. Final
+     * quantity, wastage and the execution remark are the only things on the
+     * page left empty (J4).
+     */
+    execNoOfColours: text(),
+    execSize: text(),
+    execPlanning: text(),
+
+    /** The card's Fabrication Detail remarks line. Printed, not hand-written. */
+    fabricationRemarks: text(),
 
     /* ---------------------------------------------------------------------- */
     /* Transcribed back from the paper card after the run                      */
@@ -187,6 +277,10 @@ export const jobCard = pgTable(
     check(
       "job_card_wastage_qty_non_negative",
       sql`${t.wastageQty} is null or ${t.wastageQty} >= 0`,
+    ),
+    check(
+      "job_card_sheets_per_ream_positive",
+      sql`${t.sheetsPerReam} is null or ${t.sheetsPerReam} > 0`,
     ),
   ],
 );
@@ -246,6 +340,7 @@ export const stageEvent = pgTable(
   ],
 );
 
+export type Machine = typeof machine.$inferSelect;
 export type PressRun = typeof pressRun.$inferSelect;
 export type JobCard = typeof jobCard.$inferSelect;
 export type StageEvent = typeof stageEvent.$inferSelect;

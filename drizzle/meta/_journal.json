@@ -141,6 +141,20 @@
       "when": 1788354690226,
       "tag": "0019_fabrication_vocabulary",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788355147611,
+      "tag": "0020_job_card_manual_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788355160344,
+      "tag": "0021_drop_job_card_machine_detail",
+      "breakpoints": true
     }
   ]
 }
