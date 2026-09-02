@@ -1602,3 +1602,113 @@ goods and the party's gatekeeper reads it, and that person has no screen either.
 3 work and stays Phase 3 work. Section 7's instruction to treat print stylesheets as
 first-class screens is now met by `src/app/(print)/`, which the challan will reuse rather
 than reinvent.
+
+---
+
+### J8 to J11 — after the paper card was photographed
+
+J5 said fabrication detail would be handwritten on a ruled blank, and gave reasons. A
+photograph of the actual job card overturned all of them. **J5's per-process paragraph is
+superseded by J8; the rest of J5 stands, and J4 is unchanged.**
+
+**J8 — Fabrication is its own vocabulary, not a column on `design_process`.**
+
+The plan was one detail field per `design_process` row: lamination matt-or-gloss, UV
+spot-or-full. The paper card cannot be expressed that way, and the card is the thing being
+replaced:
+
+| The card lists | The stage table has |
+|---|---|
+| N. Lamination · Thermal · Silver Lamination | one `LAMINATION` |
+| UV · Hybrid UV | one `UV` |
+| Box Pasting (Plasma) · Box Pasting (Manual) · Lock Pasting · Side Pasting | one `PASTING` |
+| Varnish · Embossing | **no stage at all** |
+
+One row per stage cannot carry three laminations. So `stage` keeps answering *where is this
+job* and a new `fabrication_option` vocabulary answers *what is done to it*. Neither is
+derived from the other, because on this floor they are genuinely different questions —
+which is the same reasoning F18 used to separate `is_process` from order lifecycle, taken
+one step further.
+
+Thirteen options, seeded from the card **verbatim**, in the card's own order. "N.
+Lamination" is not expanded to "Normal Lamination": that is the likely reading and is
+unconfirmed, and a guess printed on a floor document reads as a fact (A2). Binding —
+Perfect, Side Stitch, Centre Stitch, Hard Bound — is on the card and is **excluded by
+decision**.
+
+A table rather than an enum, for C3's reason: the vocabulary belongs to this factory, and a
+new finishing process should be a row rather than a migration and a deploy.
+
+**Values are a child table, and that is load-bearing.** With them as rows, a selection
+carries a COMPOSITE foreign key to `(value_id, option_id)`, so the database itself refuses
+"Gold lamination" — for a psql session and an import script too, not only the form (F11). A
+`text[]` column could only be checked by a trigger, which is more code enforcing the same
+rule less directly. Same reasoning that turned `design.processes text[]` into a junction
+table (C1).
+
+**Where the value is decided is DATA, not a rule in code.** `fabrication_option.value_scope`
+says Design, Run or None:
+
+- **Design** — matt-or-gloss, gold-or-silver, full-or-spot. A property of the design, right
+  every time it is ordered.
+- **Run** — Hybrid UV, Embossing and Die, all of which ask *new or old*. That is a fact
+  about THIS run. The design does not change between orders and the tooling does: a flag on
+  the design would print "new die" on every card for the next three years. It lives on
+  `job_card_fabrication`.
+- **None** — Box Pasting (Manual), Lock Pasting, Side Pasting. A tick with no question.
+
+**J9 — Re-adding a removed option starts EMPTY, and the schema is what guarantees it.**
+
+The danger was named before it was built: `design_process` carries a FULL unique constraint
+(F17), so a soft-deleted row stays visible to it and re-adding a removed process has to
+RESTORE the old row. Put a value on a row with that behaviour and taking Foiling off a
+design, then adding it back six months later, silently resurrects "Gold" — indistinguishable
+on screen and in print from somebody having chosen it, on a job that is silver.
+
+`design_fabrication` uses the **partial** unique index the rest of the schema uses (C5),
+`WHERE deleted_at IS NULL`. A removed row is invisible to the constraint, so re-adding is a
+genuine INSERT and the value starts empty. This needed no policy and no branch in the write
+path: it is a property of the index, and a test asserts both halves — two rows for one
+option on one design, the dead one still carrying its value, the live one carrying none.
+
+An empty answer is a question somebody answers. A resurrected one is an answer nobody gave.
+
+**J10 — Machine is a tick list, because the master already existed on paper.**
+
+`job_card.machine_detail` was free text for two days, excused by there being no machine
+master. The card disproved it: Machine Detail there is a printed tick list of the actual
+presses. `machine` is now a seeded table and `job_card.machine_id` a foreign key.
+
+Seeded with the two the card prints — SM-72 6 Colour and SM-72 2 Colour, both 20" x 28.5".
+No others, because no others have been named and a press nobody named is a press that does
+not exist (A2). Adding one is a row.
+
+`machine_detail` is dropped in migration 0021, **the only destructive migration in this
+project**. It is safe for a specific reason rather than a general one: the column was two
+days old, reachable from one form shipped the same day, and had never existed on production.
+The migration header says so and gives the query to check before it is ever run elsewhere.
+`press_run.machine` is deliberately left as free text — a run records what a plate went on,
+including presses that are no longer in the list.
+
+**J11 — Everything the pen wrote is typed in. Exactly one band stays blank.**
+
+The card's pen-written half — the Paper / Plates / Colour check list, the paper detail band,
+and the job execution row — is now typed into the system when the card is made, and
+**printed**. J5's convention of printing a ruled blank wherever the system did not know
+something is withdrawn: a rule to write on means a fact living on paper only, which is what
+this document exists to end. Where a value genuinely was not recorded, the sheet prints an
+em dash, and the card's own screen warns before printing which fabrication answers are
+missing.
+
+**Final quantity, wastage and the run remark remain the only empty boxes on the page**, and
+J4 is unchanged. They do not exist when the sheet goes out.
+
+`job_card.paper_size` is NOT a duplicate of `design.job_size`, and the distinction matters:
+the design holds the FINISHED size of the job, while the card holds the PARENT SHEET the run
+prints on — 25" x 36" against a carton a fraction of that. Different facts about different
+things, and the sheet is chosen per run out of whatever stock is in the building. That is
+why it is typed rather than pulled from the design.
+
+The check list is **recorded, not enforced**. Nothing refuses to print a card with all three
+boxes clear, because the paper form never did either. It is the kitting gate in miniature,
+and building the gate on top of it is a separate decision in `BACKLOG.md`.
