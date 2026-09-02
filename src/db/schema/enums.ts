@@ -120,6 +120,16 @@ export const jobCardStatusEnum = pgEnum("job_card_status", [
   "Cancelled",
 ]);
 
+/**
+ * Who provides the paper, and who provides the plate.
+ *
+ * 'Party' means the client sent it in. The distinction is on the paper job
+ * card because it changes what the floor is waiting for: a job whose paper the
+ * party is supplying cannot start until it arrives, and nobody on the press
+ * can tell that from the item name.
+ */
+export const supplyByEnum = pgEnum("supply_by", ["Press", "Party"]);
+
 export const dispatchStatusEnum = pgEnum("dispatch_status", [
   "Draft",
   "Dispatched",

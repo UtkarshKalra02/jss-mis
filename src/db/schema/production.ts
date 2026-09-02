@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { baseColumns } from "./_shared";
-import { jobCardStatusEnum } from "./enums";
+import { jobCardStatusEnum, supplyByEnum } from "./enums";
 import { poItem } from "./order";
 import { stage } from "./reference";
 import { appUser } from "./users";
@@ -107,6 +107,51 @@ export const jobCard = pgTable(
     holdReason: text(),
     notes: text(),
 
+    /* ---------------------------------------------------------------------- */
+    /* The printed card                                                        */
+    /* ---------------------------------------------------------------------- */
+
+    /**
+     * Who supplies the paper, and who supplies the plate.
+     *
+     * Both nullable, because both are genuinely unknown on a card released
+     * before anybody has decided — and a default of 'Press' would be a guess
+     * printed as a fact on the sheet the floor works from.
+     */
+    paperSupplyBy: supplyByEnum(),
+    plateSupplyBy: supplyByEnum(),
+
+    /** The plate's own identifier, as the party or the platemaker gave it. */
+    plateJobId: text(),
+
+    /**
+     * Free text, and deliberately not a foreign key: there is no machine
+     * master in this system and inventing one here would be a table nobody
+     * maintains. Same reasoning as press_run.machine.
+     */
+    machineDetail: text(),
+
+    /* ---------------------------------------------------------------------- */
+    /* Transcribed back from the paper card after the run                      */
+    /* ---------------------------------------------------------------------- */
+
+    /**
+     * WRITTEN BY HAND ON THE FLOOR FIRST, then typed in.
+     *
+     * These three are the only fields on this table that exist to be filled in
+     * AFTER the card has been printed and worked from. The printed card leaves
+     * them blank on purpose (decision J4) — the numbers do not exist when the
+     * sheet goes out — and somebody transcribes them afterwards so the record
+     * is not only on paper.
+     *
+     * `final_qty` is NOT capped at planned_qty. Over-runs are ordinary on a
+     * press, and a constraint that refuses the true number would be answered
+     * by typing a false one.
+     */
+    finalQty: integer(),
+    wastageQty: integer(),
+    executionRemarks: text(),
+
     /**
      * The gang this card was printed in, when it was ganged at all.
      *
@@ -134,6 +179,14 @@ export const jobCard = pgTable(
     check(
       "job_card_hold_reason_required",
       sql`${t.status} <> 'On Hold' or (${t.holdReason} is not null and length(trim(${t.holdReason})) > 0)`,
+    ),
+
+    // Non-negative, and nothing more. A ceiling on final_qty would refuse a
+    // genuine over-run; see the column comment.
+    check("job_card_final_qty_non_negative", sql`${t.finalQty} is null or ${t.finalQty} >= 0`),
+    check(
+      "job_card_wastage_qty_non_negative",
+      sql`${t.wastageQty} is null or ${t.wastageQty} >= 0`,
     ),
   ],
 );

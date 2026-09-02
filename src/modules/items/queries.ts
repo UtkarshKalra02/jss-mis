@@ -233,42 +233,15 @@ export async function getItemDispatches(poItemId: string): Promise<ItemDispatch[
     .orderBy(desc(dispatch.dispatchDate));
 }
 
-export type ItemJobCard = {
-  id: string;
-  jcNo: string;
-  plannedQty: number | null;
-  plannedDate: string | null;
-  status: string;
-  /** Set only when this card was ganged onto a shared plate (H4). */
-  pressRunId: string | null;
-};
-
-/**
- * Linked job cards (spec 6.4).
+/*
+ * Job cards for an item used to be read here, and are now read by
+ * `jobCardsForItem` in src/modules/job-cards/queries.ts.
  *
- * Job cards are created in Phase 4, so this returns nothing today. It is here
- * rather than left out because the tracker's job is to answer "everything about
- * this item" — and a section that appears later changes the shape of the screen
- * people have learned.
+ * Moved rather than duplicated when job card release was built (J1). This
+ * version returned four columns for a table that could never render, because
+ * nothing in the system created a card; the job-cards module owns the read now
+ * and returns what actually ran as well as what was planned. Two queries
+ * answering "which cards does this item have" is exactly how the two stop
+ * agreeing.
  */
-export async function getItemJobCards(poItemId: string): Promise<ItemJobCard[]> {
-  return db
-    .select({
-      id: jobCard.id,
-      jcNo: jobCard.jcNo,
-      plannedQty: jobCard.plannedQty,
-      plannedDate: jobCard.plannedDate,
-      status: jobCard.status,
-      /**
-       * The gang this card was printed in, if any (H4).
-       *
-       * Null for the overwhelming majority — most jobs are not ganged — so the
-       * badge appears on the rare card that was, and nothing changes for the
-       * rest.
-       */
-      pressRunId: jobCard.pressRunId,
-    })
-    .from(jobCard)
-    .where(and(eq(jobCard.poItemId, poItemId), isNull(jobCard.deletedAt)))
-    .orderBy(desc(jobCard.plannedDate));
-}
+

@@ -120,6 +120,13 @@
       "when": 1788265711605,
       "tag": "0016_drop_design_die_plate",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788344981901,
+      "tag": "0017_job_card_execution",
+      "breakpoints": true
     }
   ]
 }

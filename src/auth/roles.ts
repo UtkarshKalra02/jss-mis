@@ -52,6 +52,7 @@ export const RESOURCES = [
   "tooling",
   "item_tracker",
   "job_planning",
+  "job_card",
   "press_run",
   "stage_update",
   "dispatch",
@@ -83,6 +84,7 @@ export const ACCESS: Matrix = {
     tooling: "write",
     item_tracker: "write",
     job_planning: "write",
+    job_card: "write",
     press_run: "write",
     stage_update: "write",
     dispatch: "write",
@@ -111,6 +113,15 @@ export const ACCESS: Matrix = {
      */
     tooling: "write",
 
+    /**
+     * Punit writes job cards, though the Phase 4 planning board is not his.
+     * That is why `job_card` is its own resource rather than part of
+     * `job_planning` (J2): he releases a card so a job can go to the floor and
+     * transcribes the run figures back off the paper afterwards, and neither
+     * of those is scheduling.
+     */
+    job_card: "write",
+
     item_tracker: "read",
     // Read only: the ganged badge on the Item Tracker links to the run, so
     // anybody who can see an item can see the run it was printed in (H6).
@@ -136,6 +147,7 @@ export const ACCESS: Matrix = {
   PLANNER: {
     dashboard: "read",
     job_planning: "write",
+    job_card: "write",
     press_run: "write",
     stage_update: "write",
     dispatch: "write",
@@ -153,6 +165,7 @@ export const ACCESS: Matrix = {
     dispatch: "write", // B1 — section 6.8 lists ACCOUNTS
     reports: "read", // B1
     item_tracker: "read",
+    job_card: "read",
     press_run: "read",
     tooling: "read",
     client: "read",
@@ -169,6 +182,8 @@ export const ACCESS: Matrix = {
   FLOOR: {
     stage_update: "write",
     item_tracker: "read",
+    /** Ajay reads the card the printed sheet came from, never writes it. */
+    job_card: "read",
     press_run: "read",
 
     /**
@@ -199,6 +214,7 @@ export const ACCESS: Matrix = {
   OWNER: {
     dashboard: "read",
     item_tracker: "read",
+    job_card: "read",
     ar_ledger: "read", // B1 — section 6.10 lists OWNER
     reports: "read", // B1
     press_run: "read",

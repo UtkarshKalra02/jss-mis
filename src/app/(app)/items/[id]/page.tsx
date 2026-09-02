@@ -17,10 +17,11 @@ import { cn } from "@/lib/utils";
 import {
   getItemDetail,
   getItemDispatches,
-  getItemJobCards,
   getItemStatus,
   getItemTimeline,
 } from "@/modules/items/queries";
+import { jobCardsForItem } from "@/modules/job-cards/queries";
+import { ReleaseJobCardControl } from "@/components/job-cards/release-control";
 import { AddToRunControl } from "@/components/press-runs/run-controls";
 import { gangInfoFor, recentRuns } from "@/modules/press-runs/queries";
 
@@ -72,11 +73,12 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
     getItemDetail(id),
     getItemTimeline(id),
     getItemDispatches(id),
-    getItemJobCards(id),
+    jobCardsForItem(id),
   ]);
 
   const canSeePo = can(user.role, "purchase_order");
   const canGang = can(user.role, "press_run", "write");
+  const canReleaseCard = can(user.role, "job_card", "write");
 
   /**
    * Ganging (H4). Two extra reads, and both are skipped entirely when this item
@@ -246,14 +248,24 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
             )}
           </Panel>
 
-          {jobCards.length > 0 ? (
-            <Panel title="Job cards">
+          {/* ALWAYS RENDERED since job cards exist (J1). It used to hide
+              itself when empty, which was right while nothing in the system
+              could create one; now an item with no card is a fact worth
+              stating, and the release action has to live somewhere. */}
+          <Panel title="Job cards">
+            {jobCards.length === 0 ? (
+              <p className="text-muted-foreground text-[13px]">
+                No job card yet. Releasing one is what sends this item to the floor.
+              </p>
+            ) : (
               <table className="data-grid w-full">
                 <thead>
                   <tr>
                     <th className="px-2">Card</th>
                     <th className="px-2">Planned</th>
                     <th className="px-2 text-right">Qty</th>
+                    <th className="px-2">Machine</th>
+                    <th className="px-2 text-right">Ran</th>
                     <th className="px-2">Status</th>
                   </tr>
                 </thead>
@@ -263,10 +275,32 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
 
                     return (
                       <tr key={jc.id}>
-                        <td className="px-2 tabular-nums">{jc.jcNo}</td>
+                        <td className="px-2 tabular-nums">
+                          <Link
+                            href={`/job-cards/${jc.id}`}
+                            className="text-primary hover:underline"
+                          >
+                            {jc.jcNo}
+                          </Link>
+                        </td>
                         <td className="px-2">{formatDate(jc.plannedDate)}</td>
                         <td className="px-2 text-right tabular-nums">
                           {formatQty(jc.plannedQty)}
+                        </td>
+                        <td className="text-muted-foreground px-2">
+                          {jc.machineDetail ?? "—"}
+                        </td>
+                        {/* What actually came off, once somebody has
+                            transcribed it from the printed card (J4). An em
+                            dash here means nobody has typed it yet, which is a
+                            different statement from a zero. */}
+                        <td className="px-2 text-right tabular-nums">
+                          {formatQty(jc.finalQty)}
+                          {jc.wastageQty !== null ? (
+                            <span className="text-muted-foreground ml-1 text-[11px]">
+                              +{formatQty(jc.wastageQty)} waste
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-2">
                           {jc.status}
@@ -291,25 +325,34 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
                   })}
                 </tbody>
               </table>
+            )}
 
-              {/* ADMIN and PLANNER only. There is no job card SCREEN yet —
-                  job cards arrive in Phase 4 — so the action lives where a job
-                  card is actually visible today. The Phase 4 planning board
-                  calls the same server action (H6). */}
-              {canGang
-                ? jobCards
-                    .filter((jc) => jc.pressRunId === null)
-                    .map((jc) => (
-                      <AddToRunControl
-                        key={jc.id}
-                        jobCardId={jc.id}
-                        jcNo={jc.jcNo}
-                        runs={runs}
-                      />
-                    ))
-                : null}
-            </Panel>
-          ) : null}
+            {/* ADMIN and PLANNER. Kept here rather than moved to the job card
+                screen: this is where somebody looking at an item decides two
+                jobs should share a plate, and H6 named this panel as the home
+                for it. The Phase 4 planning board calls the same action. */}
+            {canGang
+              ? jobCards
+                  .filter((jc) => jc.pressRunId === null)
+                  .map((jc) => (
+                    <AddToRunControl
+                      key={jc.id}
+                      jobCardId={jc.id}
+                      jcNo={jc.jcNo}
+                      runs={runs}
+                    />
+                  ))
+              : null}
+
+            {canReleaseCard && item.status === "Open" && item.pendingQty > 0 ? (
+              <ReleaseJobCardControl
+                poItemId={item.poItemId}
+                itemCode={item.itemCode}
+                pendingQty={item.pendingQty}
+                hasExistingCard={jobCards.length > 0}
+              />
+            ) : null}
+          </Panel>
         </div>
       </div>
     </div>
