@@ -259,9 +259,22 @@ DOTENV_CONFIG_PATH=.env.production.local npm run db:migrate
 Check the `drizzle-kit target:` line names the main branch, as in step 6.
 
 Additive migrations — a new table, a new nullable column — are safe to apply
-ahead of the code that uses them. Destructive ones are not, and this project has
-no destructive migrations by design: soft delete only, and columns are added
-rather than repurposed.
+ahead of the code that uses them. **Destructive ones are the other way round and
+must be applied AFTER their code is deployed**, or the running deployment starts
+selecting a column that has just been removed.
+
+This project used to have no destructive migrations at all. It now has exactly
+one, `0021_drop_job_card_machine_detail`, and the ordering matters:
+
+| | Apply before the deploy | Apply after the deploy |
+|---|---|---|
+| additive (new table, new nullable column) | ✅ safe | also fine |
+| destructive (drops a column) | ❌ breaks the running code | ✅ correct |
+
+`drizzle-kit migrate` applies **every** pending migration, with no way to stop
+part-way. So when a batch contains a destructive one, deploy the code first and
+migrate second — which inverts the rule above for that batch, and is why the
+rule is written out rather than assumed.
 
 **A plain `npm run db:migrate` migrates DEV**, because `drizzle.config.ts` falls
 back to `.env.local`. That is the right default for everyday work and the wrong
@@ -290,6 +303,15 @@ applied. Step 6.
 
 **One screen 500s after a deploy, and the rest are fine.** Production is behind
 the schema by one migration, and only the pages touching the new columns fail.
+
+`GET /api/health` answers this directly — `schema.upToDate` is false and
+`schema.missing` names the migrations. **Trust that field only if the deployment
+you are asking is recent enough to know about the migration you are missing:**
+the expectation list lives in the code, so a deployment built before a migration
+existed cannot check for it. It reported `upToDate: true` against a database
+five migrations behind for exactly that reason, because the list had stopped
+being extended at 0009. It now runs to 0021, and every new migration has to add
+an entry.
 `Application error: a server-side exception has occurred` with a digest and
 nothing else is what this looks like from the browser; the Vercel function log
 has the real message, which is usually `column "x" does not exist`.

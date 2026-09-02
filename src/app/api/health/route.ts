@@ -61,14 +61,29 @@ function isTrusted(request: NextRequest): boolean {
  *
  * Each entry names the migration that introduced it, so the answer to a failure
  * is the command to fix it rather than a puzzle.
+ *
+ * THIS LIST HAS TO BE EXTENDED WITH EVERY MIGRATION, and forgetting is worse
+ * than never having had it. It stopped at 0009 while twelve more shipped, so
+ * `schema.upToDate` reported TRUE against a production database missing five
+ * of them — a confident all-clear on the one question somebody staring at
+ * "Application error: a server-side exception has occurred" is trying to
+ * answer. A check that is silently out of date is worse than no check.
  */
-const SCHEMA_EXPECTATIONS: { what: string; sql: ReturnType<typeof sql>; since: string }[] = [
-  {
-    what: "stage.is_process",
-    since: "0007_stage_is_process",
-    sql: sql`select 1 from information_schema.columns
-             where table_name = 'stage' and column_name = 'is_process'`,
-  },
+const SCHEMA_EXPECTATIONS: {
+  what: string;
+  sql: ReturnType<typeof sql>;
+  since: string;
+  /**
+   * 'absent' inverts the check, for a migration that DROPS something.
+   *
+   * Without it a drop is invisible here: the query returns nothing whether the
+   * migration ran or the table never existed, and the endpoint reports healthy
+   * while the deployed code is selecting a column that is still there — or
+   * worse, while a column the code no longer knows about is still being read
+   * by something else.
+   */
+  expect?: "present" | "absent";
+}[] = [
   {
     what: "po_item.committed_date is nullable",
     since: "0005_committed_date_nullable",
@@ -82,6 +97,12 @@ const SCHEMA_EXPECTATIONS: { what: string; sql: ReturnType<typeof sql>; since: s
     sql: sql`select 1 from pg_proc where proname = 'recompute_for_po_item'`,
   },
   {
+    what: "stage.is_process",
+    since: "0007_stage_is_process",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'stage' and column_name = 'is_process'`,
+  },
+  {
     what: "dispatch_consumption_guard()",
     since: "0008_draft_does_not_consume",
     sql: sql`select 1 from pg_proc where proname = 'dispatch_consumption_guard'`,
@@ -91,15 +112,85 @@ const SCHEMA_EXPECTATIONS: { what: string; sql: ReturnType<typeof sql>; since: s
     since: "0009_import_batch",
     sql: sql`select 1 from information_schema.tables where table_name = 'import_batch'`,
   },
+  {
+    what: "client.import_batch_id",
+    since: "0010_client_created_by_import",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'client' and column_name = 'import_batch_id'`,
+  },
+  {
+    what: "delegation_task",
+    since: "0011_delegation_task",
+    sql: sql`select 1 from information_schema.tables where table_name = 'delegation_task'`,
+  },
+  {
+    what: "v_delegation_scorecard",
+    since: "0012_delegation_views",
+    sql: sql`select 1 from information_schema.views where table_name = 'v_delegation_scorecard'`,
+  },
+  {
+    what: "press_run",
+    since: "0013_press_run",
+    sql: sql`select 1 from information_schema.tables where table_name = 'press_run'`,
+  },
+  {
+    what: "tooling",
+    since: "0014_tooling",
+    sql: sql`select 1 from information_schema.tables where table_name = 'tooling'`,
+  },
+  {
+    what: "tooling_derive_client()",
+    since: "0015_tooling_client_trigger",
+    sql: sql`select 1 from pg_proc where proname = 'tooling_derive_client'`,
+  },
+  {
+    what: "design.die_id is gone",
+    since: "0016_drop_design_die_plate",
+    expect: "absent",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'design' and column_name = 'die_id'`,
+  },
+  {
+    what: "job_card.paper_supply_by",
+    since: "0017_job_card_execution",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'job_card' and column_name = 'paper_supply_by'`,
+  },
+  {
+    what: "tooling.pantone_no",
+    since: "0018_tooling_ink_pantone",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'tooling' and column_name = 'pantone_no'`,
+  },
+  {
+    what: "fabrication_option",
+    since: "0019_fabrication_vocabulary",
+    sql: sql`select 1 from information_schema.tables where table_name = 'fabrication_option'`,
+  },
+  {
+    what: "job_card.paper_size and the machine list",
+    since: "0020_job_card_manual_fields",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'job_card' and column_name = 'paper_size'`,
+  },
+  {
+    what: "job_card.machine_detail is gone",
+    since: "0021_drop_job_card_machine_detail",
+    expect: "absent",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'job_card' and column_name = 'machine_detail'`,
+  },
 ];
 
 async function checkSchema() {
   const missing: { what: string; since: string }[] = [];
 
   for (const check of SCHEMA_EXPECTATIONS) {
+    const wantPresent = (check.expect ?? "present") === "present";
     try {
       const result = await db.execute(check.sql);
-      if (result.rows.length === 0) missing.push({ what: check.what, since: check.since });
+      const found = result.rows.length > 0;
+      if (found !== wantPresent) missing.push({ what: check.what, since: check.since });
     } catch {
       missing.push({ what: check.what, since: check.since });
     }
