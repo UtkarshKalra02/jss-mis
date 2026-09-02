@@ -1226,6 +1226,81 @@ both have a test that fails if the correlation breaks again.
 The general rule: in a correlated subquery, write the table names out. The interpolation is
 convenient and its failure mode is a plausible number rather than an error.
 
+**H8 — A ganged plate is ONE row on the floor-facing screens, and it has to be opened
+before anything on it can be moved.**
+
+Settled 2 Sep 2026, after job cards became creatable (J1) and ganging stopped being inert.
+
+H1 through H7 built the DATA correctly and left the DISPLAY wrong. Preeti and Ajay saw
+three disconnected rows on Stage Update for what is physically one trip through the press,
+and nothing on the screen said the plate was shared. **Nothing about the data changes
+here** — separate job cards, separate clients, separate stage histories, separate dispatch,
+separate OTD, exactly as H1 built them. This is a grouping in the UI and nowhere else.
+
+**Only a plate with two or more OPEN jobs collapses.** A run holding one live job is real
+and transient — somebody starts a run and adds the second a minute later (H5) — and
+collapsing it would add a click to reach a single item while protecting against nothing.
+
+**Several stages are never shown as one.** If every job on the plate is at the same stage,
+the collapsed row shows that pill. If they differ it reads *"Mixed — 3 stages"*. Showing
+the earliest pill instead would assert exactly the thing H2 took care not to build: ganged
+cards are under no constraint to share a stage, and they diverge the moment they come off
+the press, one to lamination and another straight to die-cut.
+
+**THE EXPANSION GATE, and the argument on both sides.** A collapsed run carries no
+checkbox and no stage picker. The header's select-all covers only what is individually
+tickable, so it cannot sweep up a plate nobody has opened.
+
+*For the gate:* one click on a collapsed run would advance several DIFFERENT clients'
+items, each with its own committed date feeding its own OTD. And `stage_event` is
+append-only (C6, F1) — a correction is another append, so the wrong event stays in the
+history permanently. **There is no undo.** One extra click before an irreversible,
+multi-client write is cheap.
+
+*Against it:* Preeti's real action after a print run IS "these three came off together,
+mark them Printed". Adding friction to the single most common legitimate gang operation is
+how a rule gets worked around, which is F2's own reasoning (*"a gate that is wrong for the
+current month's real work is worse than a badge somebody learns to read"*) and H2's.
+
+*Resolved by paying for the safety somewhere cheaper:* expansion is required, and an
+expanded run carries a **"select all N in this run"** checkbox on its header. The common
+case costs two clicks instead of one; the accidental multi-client advance becomes
+impossible. The backward-move confirmation additionally names every client when a selection
+spans more than one.
+
+**Three details that are easy to get wrong and are therefore pinned by tests:**
+
+- **The run inherits its most urgent member's position.** Rows arrive overdue-first, then
+  nearest commitment, and a run takes the slot of its first member. Sorting runs by their
+  own date would let a plate carrying an overdue job sink below fresh work.
+- **A partly-delivered plate says so.** Stage Update lists open work only, so a run that
+  carried three jobs shows two rows once one is delivered. The header reads *"2 of 3 jobs
+  shown"* rather than claiming the plate held two.
+- **Collapsing a run clears any selection inside it.** Otherwise the next bulk update
+  would carry rows nobody can see.
+
+**The phone gets the same rule and loses nothing.** Ajay's collapsed run card has no stage
+control, which costs him nothing because that view has never had a bulk control to gate
+(F27). Expanding reveals exactly the cards he would otherwise have scrolled past
+separately.
+
+**PHASE 4 MUST APPLY THE SAME COLLAPSE RULE. This is written down now so it is not missed
+later.** The job planning board (spec 6.6) is the other screen that lists production work
+for a human to act on in bulk, and it is the screen where ganging is actually decided. When
+it is built:
+
+- a plate must appear as one row there too, for the same reason it does here — three
+  entries for one trip through the press is a false picture of the floor;
+- the expansion gate applies unchanged, because assigning a planned date to several
+  clients' jobs in one unexamined click has the same shape as advancing their stages;
+- reuse `groupByPressRun`, `stageSummary` and `selectableIds` in
+  `src/modules/stage-update/grouping.ts` rather than growing a second implementation. They
+  are pure functions taking rows, not a screen's state, precisely so a second screen can
+  call them.
+
+The Item Tracker's ganged badge (H4) is untouched. It answers a different question — "was
+this one item ganged?" — from the item's own page, where there is no bulk anything.
+
 
 ---
 

@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { designProcess, poItem, stage } from "@/db/schema";
+import { designProcess, jobCard, poItem, pressRun, stage } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
 
 import type { StageOption } from "./precedence";
@@ -28,6 +28,19 @@ export type StageUpdateRow = {
   isAtRisk: boolean;
   /** Stage codes from the item's design route. Empty when it has none (F4). */
   routeCodes: string[];
+
+  /**
+   * The press run this item's job card was printed in, when it was ganged.
+   *
+   * Null for the overwhelming majority — ganging is three to eight jobs a
+   * month (H1) — and those rows render exactly as they always have. It is here
+   * so the screen can COLLAPSE a shared plate into one row (H8); the data
+   * itself is untouched, per client and per job card as H1 built it.
+   */
+  pressRunId: string | null;
+  runNo: string | null;
+  runDate: string | null;
+  runMachine: string | null;
 };
 
 /**
@@ -51,6 +64,32 @@ export async function listItemsToUpdate(): Promise<StageUpdateRow[]> {
     .groupBy(designProcess.designId)
     .as("routes");
 
+  /*
+   * The press run for each item, at most one row per item.
+   *
+   * An item may have several job cards (spec section 3 — split and repeat
+   * runs), so this takes the most recently planned card that is actually on a
+   * run. DISTINCT ON is what keeps one item to one row; a plain join would
+   * duplicate an item across two plates and put it on the screen twice.
+   */
+  const gang = db
+    .selectDistinctOn([jobCard.poItemId], {
+      poItemId: jobCard.poItemId,
+      pressRunId: pressRun.id,
+      runNo: pressRun.runNo,
+      runDate: pressRun.runDate,
+      runMachine: pressRun.machine,
+    })
+    .from(jobCard)
+    .innerJoin(pressRun, eq(pressRun.id, jobCard.pressRunId))
+    .where(and(isNull(jobCard.deletedAt), isNull(pressRun.deletedAt)))
+    .orderBy(
+      jobCard.poItemId,
+      sql`${jobCard.plannedDate} desc nulls last`,
+      desc(jobCard.createdAt),
+    )
+    .as("gang");
+
   return db
     .select({
       poItemId: vPoItemStatus.poItemId,
@@ -73,10 +112,15 @@ export async function listItemsToUpdate(): Promise<StageUpdateRow[]> {
       isOverdue: vPoItemStatus.isOverdue,
       isAtRisk: vPoItemStatus.isAtRisk,
       routeCodes: sql<string[]>`coalesce(${routes.codes}, '{}')`,
+      pressRunId: gang.pressRunId,
+      runNo: gang.runNo,
+      runDate: gang.runDate,
+      runMachine: gang.runMachine,
     })
     .from(vPoItemStatus)
     .innerJoin(poItem, eq(poItem.id, vPoItemStatus.poItemId))
     .leftJoin(routes, eq(routes.designId, poItem.designId))
+    .leftJoin(gang, eq(gang.poItemId, vPoItemStatus.poItemId))
     .where(and(eq(vPoItemStatus.status, "Open"), gt(vPoItemStatus.pendingQty, 0)))
     .orderBy(
       desc(vPoItemStatus.isOverdue),
@@ -105,4 +149,33 @@ export async function listAllStages(): Promise<StageOption[]> {
     .from(stage)
     .where(and(isNull(stage.deletedAt), eq(stage.isActive, true)))
     .orderBy(asc(stage.sequence));
+}
+
+/**
+ * How many live job cards each of these runs holds, in total.
+ *
+ * Needed because Stage Update only ever shows OPEN work: a plate that carried
+ * three jobs shows two rows once one of them has been delivered, and a header
+ * reading "3 jobs" against two visible rows is a worse lie than no number at
+ * all. The screen says "2 of 3 jobs shown" instead.
+ *
+ * Written with an explicit table name rather than drizzle's `${column}`
+ * interpolation. In a single-table query drizzle renders column references
+ * bare, so a correlated subquery silently compares a column to itself and
+ * every count comes back zero with no error anywhere — the bug H7 documents
+ * and that shipped twice before it was found.
+ */
+export async function runCardCounts(runIds: readonly string[]): Promise<Map<string, number>> {
+  if (runIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      pressRunId: jobCard.pressRunId,
+      cards: sql<number>`count(*)::int`,
+    })
+    .from(jobCard)
+    .where(and(inArray(jobCard.pressRunId, [...runIds]), isNull(jobCard.deletedAt)))
+    .groupBy(jobCard.pressRunId);
+
+  return new Map(rows.filter((r) => r.pressRunId !== null).map((r) => [r.pressRunId!, r.cards]));
 }
