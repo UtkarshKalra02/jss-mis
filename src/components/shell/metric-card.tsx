@@ -1,7 +1,20 @@
+import { ArrowDownRight, ArrowRight, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+
+/**
+ * The trend beside a metric.
+ *
+ * `direction` is what the arrow points at; `label` says what it is measuring.
+ * Both are supplied by the caller rather than derived from two numbers here,
+ * because the caller is the only thing that knows whether the comparison was
+ * worth making at all — see MIN_FOR_TREND in the dashboard queries. A tile
+ * given no trend simply shows none, which is the honest rendering of "not
+ * enough data to say".
+ */
+export type Trend = { direction: "up" | "down" | "flat"; label: string };
 
 /**
  * A dashboard tile.
@@ -29,6 +42,7 @@ export function MetricCard({
   size = "default",
   pendingPhase,
   href,
+  trend,
   className,
 }: {
   label: string;
@@ -38,6 +52,7 @@ export function MetricCard({
   size?: "default" | "large";
   pendingPhase?: number;
   href?: string;
+  trend?: Trend | null;
   className?: string;
 }) {
   const pending = pendingPhase !== undefined;
@@ -49,19 +64,44 @@ export function MetricCard({
     "on-time": "text-on-time",
   }[tone];
 
+  /* Semantic colour only (section 7): a rising OTD is on-time green, a falling
+     one is overdue red, and a flat one is not coloured at all. The arrow is
+     never decorative — if there is no trend, there is no arrow. */
+  const TrendIcon =
+    trend?.direction === "up"
+      ? ArrowUpRight
+      : trend?.direction === "down"
+        ? ArrowDownRight
+        : ArrowRight;
+
+  const trendClass = {
+    up: "text-on-time",
+    down: "text-overdue",
+    flat: "text-muted-foreground",
+  }[trend?.direction ?? "flat"];
+
   const body = (
     <>
       <p className="text-muted-foreground text-[12px] font-medium">{label}</p>
 
-      <p
-        className={cn(
-          "mt-1.5 tabular-nums",
-          size === "large" ? "text-4xl font-semibold tracking-tight" : "text-2xl font-semibold",
-          pending ? "text-muted-foreground/40" : toneClass,
-        )}
-      >
-        {pending ? "—" : (value ?? "—")}
-      </p>
+      <div className="mt-1.5 flex items-baseline gap-2">
+        <p
+          className={cn(
+            "tabular-nums",
+            size === "large" ? "text-4xl font-semibold tracking-tight" : "text-2xl font-semibold",
+            pending ? "text-muted-foreground/40" : toneClass,
+          )}
+        >
+          {pending ? "—" : (value ?? "—")}
+        </p>
+
+        {!pending && trend ? (
+          <span className={cn("flex items-center gap-0.5 text-[12px] font-medium", trendClass)}>
+            <TrendIcon className="size-3.5" strokeWidth={2.25} />
+            <span className="tabular-nums">{trend.label}</span>
+          </span>
+        ) : null}
+      </div>
 
       <p className="text-muted-foreground/70 mt-1 text-[11px]">
         {pending ? `Arrives in Phase ${pendingPhase}` : sub}

@@ -57,9 +57,11 @@ export type ItemSearchRow = {
  * Job card number is matched through an EXISTS rather than a join, so an item
  * with three job cards still returns once.
  */
+export type RiskFilter = "overdue" | "at-risk";
+
 export async function searchItems(
   query: string,
-  opts: { openOnly?: boolean; limit?: number } = {},
+  opts: { openOnly?: boolean; risk?: RiskFilter; limit?: number } = {},
 ): Promise<ItemSearchRow[]> {
   const term = query.trim();
   const like = `%${term}%`;
@@ -82,6 +84,23 @@ export async function searchItems(
     : undefined;
 
   const openOnly = opts.openOnly ? eq(vPoItemStatus.status, "Open") : undefined;
+
+  /*
+   * The dashboard's Overdue and At-risk tiles link here (spec 6.1 asks for
+   * "count + clickable list"), so the two screens have to agree about what the
+   * words mean. They do, because both read the same column: is_overdue and
+   * is_at_risk are computed once in v_po_item_status and re-derived nowhere.
+   *
+   * At-risk in particular is not a fixed three days — the window is a setting
+   * the Admin screen can change (B3) — so a filter written as date arithmetic
+   * here would silently stop matching the tile the moment somebody edited it.
+   */
+  const risk =
+    opts.risk === "overdue"
+      ? eq(vPoItemStatus.isOverdue, true)
+      : opts.risk === "at-risk"
+        ? eq(vPoItemStatus.isAtRisk, true)
+        : undefined;
 
   return db
     .select({
@@ -106,7 +125,7 @@ export async function searchItems(
       priority: vPoItemStatus.priority,
     })
     .from(vPoItemStatus)
-    .where(and(matches, openOnly))
+    .where(and(matches, openOnly, risk))
     // Overdue first, then the nearest commitment. Items with no committed date
     // sort last: NULLS LAST is explicit because Postgres puts them first for
     // ascending order, which would push historical rows above live work.
