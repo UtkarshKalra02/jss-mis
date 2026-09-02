@@ -1,0 +1,138 @@
+/*
+ * PRINT STYLES — the first print surface in this system.
+ *
+ * Section 7 asks for dedicated print stylesheets and says to treat them as
+ * first-class screens rather than afterthoughts. This one belongs to the job
+ * card (decision J7): it is the sheet that goes to the floor, and the people
+ * reading it cannot open a browser to check anything it leaves out.
+ *
+ * SCOPED TO THE (print) ROUTE GROUP, not global. The application shell is
+ * dense, themed and interactive, and none of that survives a laser printer —
+ * so a printable document gets its own layout with its own rules instead of a
+ * pile of `print:` overrides scattered through the app's components.
+ *
+ * EVERYTHING HERE IS EXPLICIT BLACK ON WHITE. The app's colours are CSS
+ * variables that flip with the theme, and a card printed from a dark-mode
+ * browser would come out as white text on nothing. Tokens are deliberately not
+ * used below.
+ */
+
+.print-sheet {
+  /* A4 content width at 12mm margins. */
+  width: 186mm;
+  margin: 0 auto;
+  padding: 0;
+  background: #fff;
+  color: #000;
+  font-size: 11.5pt;
+  line-height: 1.35;
+}
+
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
+
+/* Borders and rules must survive the browser's "don't waste ink" default,
+   or the whole form arrives as floating text with no boxes. */
+.print-sheet,
+.print-sheet * {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.print-sheet h1,
+.print-sheet h2 {
+  margin: 0;
+  font-weight: 700;
+}
+
+/* Section headings: small, upper case, and quiet. On a form the LABELS should
+   never compete with the values somebody is looking for. */
+.print-section-title {
+  font-size: 8.5pt;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #000;
+}
+
+.print-box {
+  border: 1px solid #000;
+}
+
+.print-divider {
+  border-top: 1px solid #000;
+}
+
+.print-hairline {
+  border-top: 1px solid #999;
+}
+
+/* A rule to write on. Used wherever the system has no value and the paper form
+   expects handwriting (J5). */
+.print-rule {
+  display: inline-block;
+  border-bottom: 1px solid #666;
+  min-width: 3rem;
+  min-height: 1.05em;
+  vertical-align: bottom;
+}
+
+/* A tick box. Empty ones are the point on this form — the operator marks what
+   applied on the day. */
+.print-check {
+  display: inline-block;
+  width: 10pt;
+  height: 10pt;
+  border: 1px solid #000;
+  vertical-align: -1pt;
+  text-align: center;
+  line-height: 9pt;
+  font-size: 9pt;
+  font-weight: 700;
+}
+
+.print-label {
+  font-size: 8.5pt;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #333;
+}
+
+.print-value {
+  font-size: 11.5pt;
+}
+
+@media print {
+  /* The screen-only chrome: the Print button and the back link. */
+  .print-hide {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    margin: 0;
+    padding: 0;
+  }
+
+  .print-sheet {
+    width: auto;
+  }
+
+  /* A job card is one sheet. If a long fabrication list ever pushes it over,
+     break between sections rather than through a box. */
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+/* An instruction to the person holding the sheet. Deliberately NOT
+   .print-label: a full line set in capitals reads as shouting and gets
+   skipped, which is the opposite of what an instruction needs. */
+.print-hint {
+  font-size: 8.5pt;
+  color: #333;
+}

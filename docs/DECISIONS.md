@@ -1353,3 +1353,128 @@ Search covers tool number, name, LOCATION, client and design in one box (F24's r
 with type, condition and status as separate filters — "show me everything Damaged" is a
 browse rather than a search, and folding it into the box would match a tool whose remarks
 merely mention the word.
+
+
+---
+
+## J. Job cards and the printed card
+
+Nothing in the system created a `job_card`. Every reference to the table was a read, which
+left press runs inert by their own admission (H6) and the Item Tracker's job cards panel
+hidden behind a length check that was never true. This section is what changed and why.
+
+Settled 2 Sep 2026, before any code.
+
+**J1 — A job card is released by a person, not minted by a stage event.** The alternative
+was a hook inside `updateStageAction` creating the card the first time an item reached a
+production stage. It was considered properly and rejected for four reasons, each of which
+is enough on its own:
+
+- **The card carries fields a human has to supply.** Paper supply, plate supply, plate/job
+  ID and machine are all on the printed sheet. A card created by a stage change is born
+  with all four blank and *prints* blank, which is the outcome the whole feature exists to
+  avoid.
+- **It would mint numbered documents on a mis-click.** Stage Update has bulk select. One
+  wrong click with eight rows ticked would allocate eight `JC-` numbers, and a number that
+  has been issued cannot be quietly un-issued (C7).
+- **Backward moves are deliberately legal (F4)** and no hook can tell rework from a
+  legitimate split run. An item returning to MATERIAL_READY after a correction looks
+  exactly like an item genuinely starting a second run.
+- **It would name a stage CODE inside a write path.** Stages are ADMIN-editable
+  configuration precisely so the factory's vocabulary can change without a migration (C3,
+  F18). A rule keyed on `MATERIAL_READY` stops firing silently the day somebody renames it,
+  and the symptom is cards that quietly stop appearing.
+
+Spec 6.6 already makes creation a human act — *"Assign item → creates `job_card` with
+`planned_date`"* — so an automatic trigger would also have contradicted the Phase 4 design
+this is building toward. H6 predicted the shape: the planning board will call
+`releaseJobCardAction` rather than growing a second write path.
+
+**The cost is real and is accepted knowingly.** This is a new daily discipline, and
+disciplines lapse. The mitigation is visibility rather than enforcement: the Item Tracker's
+panel now renders even when empty and says "No job card yet", so an unreleased item is a
+thing somebody can see rather than a thing they have to remember.
+
+**J2 — `job_card` is its own resource, not part of `job_planning`.** ADMIN, PLANNER and
+ORDER_DESK write; ACCOUNTS, OWNER and FLOOR read. Punit releases cards and transcribes the
+run figures back off the paper, and neither of those is scheduling — folding the grant into
+`job_planning` would have handed him the Phase 4 planning board months early as a side
+effect of letting him print a card. Ajay reads it, because the sheet in his hand names a
+card he may want to look up.
+
+**J3 — A second card on the same item warns, and does not block.** Spec section 3 is
+explicit that a PO item may have several job cards, for repeat runs and split runs, while
+one card still covers exactly one item (H1). Refusing the second would break the case the
+schema was built for, so `releaseJobCardAction` counts live cards and asks. The
+acknowledgement rides on the submit button's own `name`/`value` rather than a
+state-driven hidden input, for the reason F20 found on the PO form: a click submits before
+React re-renders, so a state-driven flag arrives one submit late and the form asks the same
+question twice.
+
+`po_item_id` is untouched and still NOT NULL. A test asserts it after a second release, so
+the spine rule cannot be loosened by the back door.
+
+**J4 — Three fields exist to be filled in AFTER the card is printed, and the printed card
+leaves them blank.** `final_qty`, `wastage_qty` and `execution_remarks` are written by hand
+on the sheet at the press and typed back in afterwards, so the record is not only on paper.
+
+The print therefore leaves those three boxes empty **even when the system already holds
+values**. That looks like a bug and is the opposite of one: a card is printed before the
+run, the numbers do not exist yet, and printing a previously-recorded figure onto a fresh
+sheet would be putting the last run's quantity in front of the operator doing this one.
+
+`final_qty` is not capped against `planned_qty`, in the form or the database. An over-run is
+ordinary on a press, and a constraint refusing the true number would be answered by typing a
+false one — the same reasoning that made a duplicate PO number a warning rather than a
+constraint (F7). Both quantities are checked non-negative and nothing more.
+
+**J5 — What the system does not know is printed as a rule to write on, never omitted.**
+This is the whole convention of the sheet. Sheets-per-ream has no column anywhere in the
+system; an item may legitimately have no design, so size, GSM and paper type may all be
+unknown; paper and plate supply may not have been decided when the card was raised. Every
+one of those prints as a ruled blank rather than disappearing, because **a missing line is a
+question and a blank line is an instruction**. The floor has always written these in ink.
+
+The fabrication checklist prints **every** stage with `is_process = true` (F18), with the
+design's route ticked and the rest as empty boxes. Printing only the route would leave an
+operator with nowhere to mark a process added on the day. `is_process` is what keeps
+ENQUIRY, PO_RECEIVED, READY and DISPATCHED off the list: none of them is a thing that
+happens to paper.
+
+Per-process DETAIL — lamination matt or gloss, foiling gold or silver, die new or old — is
+handwritten on the rule beside each line and is **not** captured in the database. Adding an
+optional detail column to `design_process` was considered. The argument for it is better
+than it first appears: matt-versus-gloss is a property of the DESIGN, not of the run, so it
+would be typed once and reused rather than becoming a field nobody fills. Two things still
+decided against it. `design_process` restores soft-deleted rows on re-add (F17), so a detail
+string would silently resurrect stale text when a process is removed and put back. And if
+this data is worth holding, its home is a design-level field beside `print_type` and
+`no_of_colours`, not a per-process one. The signal to revisit is concrete: if the same word
+is written on every card for a design, that is design data and we will know where to put it.
+
+**J6 — The transcription writes three columns and nothing else.** The plan and the outcome
+are separate forms and separate actions. Somebody entering a wastage figure a week after the
+run must not post the machine and the planned quantity back with it, because the copy in
+their browser may be older than the copy in the database. The alternative — one form for the
+whole card — would make every late transcription a chance to silently revert a correction.
+
+**J7 — The job card prints. The challan still does not. That is deliberate, and this is the
+distinction.**
+
+Phase 3 lists "challan print" and it has not been built, while this print surface — the
+first in the system — was built for the job card instead. The rule separating them is not
+about which is more important:
+
+> **Print what is read by somebody who cannot open a screen.**
+
+A challan is handled by Preeti, at a desk, with the system already open in front of her. If
+she needs to know what is on it she looks at `/dispatch/[id]`. A job card is read by Ajay
+and the machine operators, standing at a press, with no screen and no reason to have one —
+so the sheet is not a convenience copy of the record, it *is* the record until somebody
+transcribes it back (J4).
+
+That rule also says the challan print is still owed: it goes out of the building with the
+goods and the party's gatekeeper reads it, and that person has no screen either. It is Phase
+3 work and stays Phase 3 work. Section 7's instruction to treat print stylesheets as
+first-class screens is now met by `src/app/(print)/`, which the challan will reuse rather
+than reinvent.
