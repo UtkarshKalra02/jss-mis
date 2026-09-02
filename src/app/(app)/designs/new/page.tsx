@@ -5,13 +5,18 @@ import { requireAccess } from "@/auth/guard";
 import { DesignForm } from "@/components/designs/design-form";
 import { Button } from "@/components/ui/button";
 import { listClientOptions, listRouteStages } from "@/modules/designs/queries";
+import { fabricationVocabulary } from "@/modules/fabrication/queries";
 
 export const metadata: Metadata = { title: "New design · JSS MIS" };
 
 export default async function NewDesignPage() {
   await requireAccess("design", "write");
 
-  const [clients, stages] = await Promise.all([listClientOptions(), listRouteStages()]);
+  const [clients, stages, fabricationOptions] = await Promise.all([
+    listClientOptions(),
+    listRouteStages(),
+    fabricationVocabulary(),
+  ]);
 
   return (
     <div className="max-w-3xl">
@@ -40,7 +45,14 @@ export default async function NewDesignPage() {
             </Button>
           </div>
         ) : (
-          <DesignForm mode="create" clients={clients} stages={stages} selectedProcesses={[]} />
+          <DesignForm
+            mode="create"
+            clients={clients}
+            stages={stages}
+            selectedProcesses={[]}
+            fabricationOptions={fabricationOptions}
+            fabricationSelected={new Map()}
+          />
         )}
       </div>
     </div>

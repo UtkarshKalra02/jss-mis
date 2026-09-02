@@ -134,6 +134,13 @@
       "when": 1788346213519,
       "tag": "0018_tooling_ink_pantone",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788354690226,
+      "tag": "0019_fabrication_vocabulary",
+      "breakpoints": true
     }
   ]
 }

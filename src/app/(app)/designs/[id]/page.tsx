@@ -18,6 +18,7 @@ import {
   listClientOptions,
   listRouteStages,
 } from "@/modules/designs/queries";
+import { designSelections, fabricationVocabulary } from "@/modules/fabrication/queries";
 import { toolingForDesign } from "@/modules/tooling/queries";
 
 export const metadata: Metadata = { title: "Design · JSS MIS" };
@@ -30,13 +31,16 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
   const design = await getDesign(id);
   if (!design) notFound();
 
-  const [processes, clients, stages, approverName, tools] = await Promise.all([
-    getDesignProcesses(id),
-    listClientOptions(),
-    listRouteStages(),
-    getApproverName(design.approvedBy),
-    toolingForDesign(id),
-  ]);
+  const [processes, clients, stages, approverName, tools, fabricationOptions, fabricationSelected] =
+    await Promise.all([
+      getDesignProcesses(id),
+      listClientOptions(),
+      listRouteStages(),
+      getApproverName(design.approvedBy),
+      toolingForDesign(id),
+      fabricationVocabulary(),
+      designSelections(id),
+    ]);
 
   const canAddTooling = can(user.role, "tooling", "write");
 
@@ -74,6 +78,8 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
               clients={clients}
               stages={stages}
               selectedProcesses={processes}
+              fabricationOptions={fabricationOptions}
+              fabricationSelected={fabricationSelected}
             />
           </div>
 

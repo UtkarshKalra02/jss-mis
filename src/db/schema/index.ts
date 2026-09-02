@@ -19,6 +19,7 @@ export * from "./pre-order";
 export * from "./order";
 export * from "./tooling";
 export * from "./production";
+export * from "./fabrication";
 export * from "./dispatch";
 export * from "./accounts";
 export * from "./delegation";

@@ -57,7 +57,35 @@ export const designSchema = z.object({
    * would go stale the moment ADMIN adds one.
    */
   processes: z.array(z.string().trim().min(1)).default([]),
+
+  /**
+   * Fabrication selections — what is DONE to this design, as distinct from the
+   * stages it passes through.
+   *
+   * Posted as parallel arrays, one entry per TICKED option: the option's id,
+   * the chosen value id (empty for a tick-only option or one whose value the
+   * run decides), and the free text for FOILING → Other. Same shape as the PO
+   * form's item rows and for the same reason (F20): every ticked row renders
+   * every field, so index i is row i throughout, and a conditionally omitted
+   * input cannot shift every later row by one.
+   */
+  fabricationOptionIds: z.array(z.string().trim()).default([]),
+  fabricationValueIds: z.array(z.string().trim()).default([]),
+  fabricationOtherTexts: z.array(z.string().trim()).default([]),
 });
+
+/** Zips the parallel arrays into selections, dropping blanks safely. */
+export function fabricationSelectionsFrom(input: {
+  fabricationOptionIds: string[];
+  fabricationValueIds: string[];
+  fabricationOtherTexts: string[];
+}) {
+  return input.fabricationOptionIds.map((optionId, i) => ({
+    optionId,
+    valueId: input.fabricationValueIds[i]?.length ? input.fabricationValueIds[i]! : null,
+    otherText: input.fabricationOtherTexts[i]?.length ? input.fabricationOtherTexts[i]! : null,
+  }));
+}
 
 export type DesignInput = z.infer<typeof designSchema>;
 

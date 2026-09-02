@@ -130,6 +130,17 @@ export const jobCardStatusEnum = pgEnum("job_card_status", [
  */
 export const supplyByEnum = pgEnum("supply_by", ["Press", "Party"]);
 
+/**
+ * Where a fabrication option's VALUE is decided.
+ *
+ * Not where the option is chosen — that is always the design. This says who
+ * answers the question the option asks. Matt-or-gloss belongs to the design and
+ * is reused every order; new-die-or-old belongs to the run, because the design
+ * does not change between orders and the die stops being new after the first.
+ * 'None' is a plain tick with no question attached.
+ */
+export const fabricationScopeEnum = pgEnum("fabrication_scope", ["Design", "Run", "None"]);
+
 export const dispatchStatusEnum = pgEnum("dispatch_status", [
   "Draft",
   "Dispatched",

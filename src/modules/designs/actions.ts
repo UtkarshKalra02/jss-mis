@@ -13,11 +13,16 @@ import {
   type Actor,
   type Tx,
 } from "@/db/audit";
-import { design, designProcess, stage } from "@/db/schema";
+import { design, designFabrication, designProcess, stage } from "@/db/schema";
 import { allocateNumber } from "@/lib/numbering";
+import { syncDesignFabrication, unknownSelections } from "@/modules/fabrication/write";
 
 import { getDesign } from "./queries";
-import { designSchema, quickDesignSchema } from "./validation";
+import {
+  designSchema,
+  fabricationSelectionsFrom,
+  quickDesignSchema,
+} from "./validation";
 
 export type FormState = {
   ok: boolean;
@@ -54,6 +59,9 @@ function parse(formData: FormData) {
     noOfColours: formData.get("noOfColours"),
     artworkUrl: formData.get("artworkUrl"),
     processes: formData.getAll("processes").map(String),
+    fabricationOptionIds: formData.getAll("fabricationOptionId").map(String),
+    fabricationValueIds: formData.getAll("fabricationValueId").map(String),
+    fabricationOtherTexts: formData.getAll("fabricationOtherText").map(String),
   });
 }
 
@@ -134,6 +142,13 @@ export async function createDesignAction(
     const v = parsed.data;
 
     const created = await db.transaction(async (tx) => {
+      const mismatched = await unknownSelections(tx, fabricationSelectionsFrom(v));
+      if (mismatched.length > 0) {
+        // The composite foreign key refuses this too; the message here is a
+        // sentence rather than a constraint name.
+        throw new Error("A fabrication value was posted against the wrong process.");
+      }
+
       const missing = await unknownStages(v.processes, tx);
       if (missing.length > 0) {
         throw new Error(`Unknown stage${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.`);
@@ -163,6 +178,11 @@ export async function createDesignAction(
       );
 
       await syncProcesses(actor, tx, row.id, v.processes);
+
+      // What is DONE to the design, as distinct from the stages it passes
+      // through (J8). The two are separate vocabularies and neither is derived
+      // from the other.
+      await syncDesignFabrication(actor, tx, row.id, fabricationSelectionsFrom(v));
       return row;
     });
 
@@ -189,6 +209,13 @@ export async function updateDesignAction(
     const v = parsed.data;
 
     await db.transaction(async (tx) => {
+      const mismatched = await unknownSelections(tx, fabricationSelectionsFrom(v));
+      if (mismatched.length > 0) {
+        // The composite foreign key refuses this too; the message here is a
+        // sentence rather than a constraint name.
+        throw new Error("A fabrication value was posted against the wrong process.");
+      }
+
       const missing = await unknownStages(v.processes, tx);
       if (missing.length > 0) {
         throw new Error(`Unknown stage${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.`);
@@ -212,6 +239,7 @@ export async function updateDesignAction(
       );
 
       await syncProcesses(actor, tx, id, v.processes);
+      await syncDesignFabrication(actor, tx, id, fabricationSelectionsFrom(v));
     });
 
     revalidatePath("/designs");
@@ -313,6 +341,13 @@ export async function deleteDesignAction(
         .where(and(eq(designProcess.designId, id), isNull(designProcess.deletedAt)));
 
       for (const r of routes) await auditedSoftDelete(actor, designProcess, r.id, tx);
+
+      const fabrication = await tx
+        .select({ id: designFabrication.id })
+        .from(designFabrication)
+        .where(and(eq(designFabrication.designId, id), isNull(designFabrication.deletedAt)));
+
+      for (const r of fabrication) await auditedSoftDelete(actor, designFabrication, r.id, tx);
 
       await auditedSoftDelete(actor, design, id, tx);
     });

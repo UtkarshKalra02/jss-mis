@@ -5,10 +5,12 @@ import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 
 import { StagePill } from "@/components/stages/stage-pill";
+import { FabricationPicker } from "@/components/designs/fabrication-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ClientOption, RouteStage } from "@/modules/designs/queries";
+import type { FabricationOptionRow, Selection } from "@/modules/fabrication/queries";
 import {
   createDesignAction,
   updateDesignAction,
@@ -68,12 +70,16 @@ export function DesignForm({
   clients,
   stages,
   selectedProcesses,
+  fabricationOptions,
+  fabricationSelected,
 }: {
   mode: "create" | "edit";
   design?: DesignValues;
   clients: ClientOption[];
   stages: RouteStage[];
   selectedProcesses: string[];
+  fabricationOptions: FabricationOptionRow[];
+  fabricationSelected: Map<string, Selection>;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(
@@ -195,6 +201,8 @@ export function DesignForm({
           ))}
         </div>
       </section>
+
+      <FabricationPicker options={fabricationOptions} selected={fabricationSelected} />
 
       <section className="space-y-4">
         <h2 className="text-sm font-medium">Artwork</h2>
