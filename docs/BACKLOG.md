@@ -126,15 +126,27 @@ the boundary.
 
 ---
 
-## Removing a record 404s the screen it was removed from
+## ~~Removing a record 404s the screen it was removed from~~ — FIXED
 
-Found 25 Aug 2026 while fixing the same bug in Delegation (decision G11). **Not yet fixed
-on these three screens.**
+Found 25 Aug 2026 while fixing the same bug in Delegation (decision G11). **Fixed on 2 Sep
+2026, on FOUR screens rather than three** — a fourth instance turned up when the bug was
+reported from use.
 
-`/clients/[id]`, `/designs/[id]` and `/admin/users/[id]` each call `notFound()` when their
-record is missing, and each has a Remove button whose action soft-deletes the record and
-returns `ok()` with no redirect. The record then leaves the query the page reads, so the
-confirmation for removing something is a 404.
+`/clients/[id]`, `/designs/[id]`, `/admin/users/[id]` and
+`/purchase-orders/[id]/items/[itemId]` each call `notFound()` when their record is missing,
+and each had a Remove button whose action soft-deleted the record and returned `ok()` with
+no redirect. The record then left the query the page reads, so the confirmation for
+removing something was a 404.
+
+**The fourth one was not in this list and is worth noting**, because it is why "three
+screens" was the wrong count: `removePoItemAction` is reachable from the PO item's own
+detail page, not only from the order. Removing an item while standing on
+`/purchase-orders/[id]/items/[itemId]` had exactly the same failure, and nobody had walked
+that path. The lesson is that the audit for this bug is "which actions soft-delete a row
+that some page reads by id", not "which detail screens have a Remove button".
+
+Cancelling deliberately does NOT redirect anywhere. A cancelled item, PO or challan is
+still there and still worth looking at; only removal makes the page unreadable.
 
 The fix is the one already applied in `src/modules/delegation/actions.ts`: return
 `ok(message, "/clients")` from the delete action and push to it from the control component,
@@ -142,8 +154,10 @@ following the `redirectTo` convention the design, PO and dispatch forms already 
 call next/navigation's `redirect()` inside the action — it works by throwing and every one
 of these actions has a try/catch that would report the successful removal as a failure.
 
-Left out of the delegation fix on purpose: three more screens in a bugfix commit is a
-bigger review than the bug deserves, and none of them is new.
+Left out of the delegation fix on purpose at the time: three more screens in a bugfix
+commit was a bigger review than the bug deserved, and none of them was new. That judgement
+turned out to cost a real 404 in use, which is the argument for taking the whole class next
+time rather than the instance in front of you.
 
 ---
 

@@ -395,7 +395,12 @@ export async function removePoItemAction(
     await auditedSoftDelete(actor, poItem, id);
 
     revalidatePath(`/purchase-orders/${existing.purchaseOrderId}`);
-    return ok({ message: `${existing.itemCode} removed.` });
+    // Back to the order. The item's own screen reads a row that no longer
+    // exists, so returning without a destination 404s the confirmation (G11).
+    return ok({
+      message: `${existing.itemCode} removed.`,
+      redirectTo: `/purchase-orders/${existing.purchaseOrderId}`,
+    });
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Could not remove the item.");
   }

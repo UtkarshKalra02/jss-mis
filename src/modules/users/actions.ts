@@ -18,9 +18,26 @@ import {
   updateUserSchema,
 } from "./validation";
 
-export type FormState = { ok: boolean; error: string | null; message?: string };
+export type FormState = {
+  ok: boolean;
+  error: string | null;
+  message?: string;
+  /**
+   * Where the screen should go next.
+   *
+   * Set by any action that removes the row the current page is reading (G11).
+   * Without it the record leaves the query, the page calls notFound(), and the
+   * confirmation for removing something is a 404.
+   */
+  redirectTo?: string;
+};
 
-const ok = (message?: string): FormState => ({ ok: true, error: null, message });
+const ok = (message?: string, redirectTo?: string): FormState => ({
+  ok: true,
+  error: null,
+  message,
+  redirectTo,
+});
 const fail = (error: string): FormState => ({ ok: false, error });
 
 /**
@@ -223,7 +240,7 @@ export async function deleteUserAction(
     await auditedSoftDelete(actor, appUser, id);
 
     revalidatePath("/admin/users");
-    return ok(`${target.name} removed.`);
+    return ok(`${target.name} removed.`, "/admin/users");
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Could not remove the user.");
   }

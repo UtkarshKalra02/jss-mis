@@ -318,7 +318,7 @@ export async function deleteDesignAction(
     });
 
     revalidatePath("/designs");
-    return ok(`${existing.designCode} removed.`);
+    return ok(`${existing.designCode} removed.`, "/designs");
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Could not remove the design.");
   }
