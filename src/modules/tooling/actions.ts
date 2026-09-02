@@ -13,7 +13,7 @@ import { getToolingRecord } from "./queries";
 import { parseToolingForm, TOOL_TYPE_PREFIX } from "./validation";
 
 /**
- * Tooling register writes.
+ * Job Kitting register writes.
  *
  * ORDER_DESK and ADMIN only — Punit owns this register (I9). Everybody else
  * reads it, including FLOOR, because looking up where a die is kept from a
@@ -91,6 +91,8 @@ export async function createToolingAction(
           location: v.location,
           size: v.size ?? null,
           colour: v.colour ?? null,
+          ink: v.ink ?? null,
+          pantoneNo: v.pantoneNo ?? null,
           condition: v.condition,
           status: v.status,
           designId: v.designId ?? null,
@@ -152,6 +154,8 @@ export async function updateToolingAction(
       location: v.location,
       size: v.size ?? null,
       colour: v.colour ?? null,
+      ink: v.ink ?? null,
+      pantoneNo: v.pantoneNo ?? null,
       condition: v.condition,
       status: v.status,
       designId: v.designId ?? null,

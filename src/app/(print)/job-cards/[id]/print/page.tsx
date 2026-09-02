@@ -139,7 +139,7 @@ export default async function JobCardPrintPage({
         {/* ---------------------------------------------------------------- */}
         {/* Plate and tooling                                                 */}
         {/* ---------------------------------------------------------------- */}
-        <Block title="Plate &amp; tooling">
+        <Block title="Plate &amp; job kitting">
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             <Slot label="Plate / job ID" value={card.plateJobId} />
             <div>
@@ -148,7 +148,7 @@ export default async function JobCardPrintPage({
           </div>
 
           <div className="mt-2.5">
-            <p className="print-label">Tooling from the register</p>
+            <p className="print-label">Job kitting — plates, dies &amp; blocks</p>
             {tooling.length === 0 ? (
               <p className="mt-1 text-[10pt]">
                 Nothing recorded against this design.{" "}

@@ -1354,6 +1354,55 @@ with type, condition and status as separate filters — "show me everything Dama
 browse rather than a search, and folding it into the box would match a tool whose remarks
 merely mention the word.
 
+**I10 — The register is called "Job Kitting". THAT IS A NAMING CHOICE AND NOTHING ELSE.**
+
+The screen, the sidebar entry and the headings now read *Job Kitting*. The route is still
+`/tooling`, the table is still `tooling`, and the resource key in the role matrix is still
+`tooling`. Renaming a URL breaks every link anybody has saved and every bookmark on Punit's
+phone; renaming the table is a migration that buys nothing. A label is the only thing that
+changed.
+
+**IT IS NOT THE KITTING GATE, AND THE TWO MUST NOT BE CONFLATED.** The Business Mastery
+Program's kitting gate is the check that **material, plate, die and artwork are all ready
+before a job starts** — a go/no-go on a specific job, on a specific day. This register is a
+permanent inventory of physical tooling whose central question is *where is the die kept*.
+The two overlap on the word and on nothing else:
+
+| | Job Kitting (this register) | The kitting gate (not built) |
+|---|---|---|
+| Subject | a piece of metal that exists for years | one job, about to run |
+| Question | where is it, what condition, what replaced it | is this job ready to start |
+| Lifetime | permanent | answered once, per job card |
+| Hangs off | `tooling` | would hang off `job_card` |
+
+The gate is recorded in [`BACKLOG.md`](BACKLOG.md) as a future item and is **not built**.
+This paragraph exists because the shared word is exactly the kind of thing that gets
+"already done" ticked against it in six months by somebody reading a sidebar.
+
+**Two columns added: `ink` and `pantone_no`,** both nullable text, neither constrained to
+PLATE. The reasoning is I6's, unchanged: a CHECK restricting them would be wrong the first
+time somebody records the ink a foil block runs with, and a rule that is wrong on the floor
+gets worked around rather than reported. The form offers them for plates only; the database
+stays permissive and preserves a value already recorded against another type.
+
+`pantone_no` joins the search box; `ink` does not. A Pantone reference is an IDENTIFIER —
+somebody holding a job sheet that says 485 C wants the plate carrying it, which is the same
+lookup as a tool number. Ink is a description, and descriptions in the search box are what
+make "Damaged" match a tool whose remarks merely mention the word.
+
+**The provenance box was removed from the tool detail screen,** on request: client, design,
+made date, vendor, cost, impressions used and last used. Two consequences follow and are
+recorded rather than discovered later:
+
+1. **Five of those fields are now write-only.** `made_date`, `vendor`, `cost`,
+   `impressions_used` and `last_used_date` are still on the edit form and are no longer
+   displayed anywhere. They can be entered and not read back. Nothing is lost from the
+   database, and the form is one edit away from being trimmed to match if that is the
+   intent.
+2. **The tool → design and tool → client links are gone.** The relationship is now
+   navigable in one direction only, from the design screen's panel (I8). Reaching a
+   design from its die means going the other way round or searching for it.
+
 
 ---
 

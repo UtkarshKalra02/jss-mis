@@ -6,7 +6,6 @@ import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
 import { RemoveToolingCard } from "@/components/tooling/remove-tooling";
 import { ToolingForm } from "@/components/tooling/tooling-form";
-import { formatDate, formatINR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   clientOptions,
@@ -21,7 +20,18 @@ import { TOOL_TYPE_LABELS } from "@/modules/tooling/validation";
 export const metadata: Metadata = { title: "Tool · JSS MIS" };
 
 /**
- * One tool: the full record, its replacement chain, and the design it serves.
+ * One tool: what it is, where it is, and what it replaced.
+ *
+ * THE PROVENANCE BOX WAS REMOVED (decision I10). It carried client, design,
+ * made date, vendor, cost, impressions used and last used — the history of the
+ * metal rather than the answer to the question this register is opened for.
+ *
+ * Two consequences are deliberate and worth knowing before anybody "restores"
+ * it. Five of those fields are still on the EDIT FORM and are therefore
+ * write-only on this screen: they can be recorded and are not displayed back.
+ * And the links from a tool to its design and its client are gone, so the
+ * relationship is now navigable only in the other direction, from the design
+ * screen's panel (I8).
  *
  * THE REPLACEMENT CHAIN IS THE INTERESTING PART. The v1 data already carries
  * entries like "OLD DIE (FERTILINA TAB 60)", so old and new versions of the
@@ -53,7 +63,7 @@ export default async function ToolingDetailPage({
   return (
     <div className="max-w-3xl">
       <Link href="/tooling" className="text-muted-foreground text-[13px] hover:underline">
-        ← Tooling
+        ← Job Kitting
       </Link>
 
       <h1 className="page-title mt-2 tabular-nums">{tool.toolNo}</h1>
@@ -69,47 +79,9 @@ export default async function ToolingDetailPage({
         · <span className={cn(tool.status === "Lost" && "text-overdue")}>{tool.status}</span>
         {tool.size ? ` · ${tool.size}` : ""}
         {tool.colour ? ` · ${tool.colour}` : ""}
+        {tool.ink ? ` · ${tool.ink}` : ""}
+        {tool.pantoneNo ? ` · Pantone ${tool.pantoneNo}` : ""}
       </p>
-
-      <dl className="mt-6 grid gap-x-8 gap-y-3 rounded-lg border p-4 text-[13px] sm:grid-cols-2">
-        <div>
-          <dt className="text-muted-foreground text-xs">Client</dt>
-          <dd>{tool.clientName ?? "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground text-xs">Design</dt>
-          <dd>
-            {tool.designCode ? (
-              <Link href={`/designs/${tool.designId}`} className="text-primary hover:underline">
-                {tool.designCode} · {tool.designJobName}
-              </Link>
-            ) : (
-              "Generic — not tied to a design"
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground text-xs">Made</dt>
-          <dd>
-            {formatDate(record?.madeDate ?? null)}
-            {record?.vendor ? ` by ${record.vendor}` : ""}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground text-xs">Cost</dt>
-          <dd className="tabular-nums">{record?.cost ? formatINR(record.cost) : "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground text-xs">Impressions used</dt>
-          <dd className="tabular-nums">
-            {record?.impressionsUsed?.toLocaleString("en-IN") ?? "—"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground text-xs">Last used</dt>
-          <dd>{formatDate(record?.lastUsedDate ?? null)}</dd>
-        </div>
-      </dl>
 
       {record?.remarks ? (
         <p className="bg-neutral-status-bg text-muted-foreground mt-4 rounded-md px-3 py-2 text-[13px]">

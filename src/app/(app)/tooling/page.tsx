@@ -10,10 +10,15 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { searchTooling } from "@/modules/tooling/queries";
 
-export const metadata: Metadata = { title: "Tooling · JSS MIS" };
+export const metadata: Metadata = { title: "Job Kitting · JSS MIS" };
 
 /**
- * The tooling register (decision I8).
+ * The Job Kitting register (decisions I8, I10).
+ *
+ * The NAME is a label and nothing more (I10). This is not the BMP kitting
+ * gate — the check that material, plate, die and artwork are all ready before
+ * a job starts. That is a future checklist tied to a job card, recorded in
+ * BACKLOG.md. This screen answers "where is the die".
  *
  * The question this screen answers, many times a day, is "where is the die for
  * X" — so location is searchable, is a column, and is the largest thing on the
@@ -38,7 +43,7 @@ export default async function ToolingPage({
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <h1 className="page-title">Tooling</h1>
+        <h1 className="page-title">Job Kitting</h1>
         {canWrite ? (
           <Button asChild size="sm">
             <Link href="/tooling/new">Add tooling</Link>

@@ -148,7 +148,7 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
             </ul>
           )}
 
-          <h2 className="mt-5 text-sm font-medium">Tooling</h2>
+          <h2 className="mt-5 text-sm font-medium">Job kitting</h2>
           {tooling.length === 0 ? (
             <p className="text-muted-foreground mt-2 text-[13px]">
               Nothing in the register against this design.

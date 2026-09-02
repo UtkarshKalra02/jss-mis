@@ -250,14 +250,32 @@ export function ToolingForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <Text name="size" label="Size" defaultValue={tool?.size} />
 
-          {/* Plates only, by presentation. The column is not constrained (I6). */}
+          {/* Plates only, by presentation. The columns are not constrained
+              (I6) — a value already recorded on a non-plate is preserved
+              rather than cleared, because the form hiding a field is not the
+              same as the database refusing one. */}
           {toolType === "PLATE" ? (
-            <Text
-              name="colour"
-              label="Colour"
-              defaultValue={tool?.colour}
-              hint="Which colour of the set this plate carries."
-            />
+            <>
+              <Text
+                name="colour"
+                label="Colour"
+                defaultValue={tool?.colour}
+                hint="Which colour of the set this plate carries."
+              />
+              <Text
+                name="ink"
+                label="Ink"
+                defaultValue={tool?.ink}
+                placeholder="Process cyan, opaque white…"
+              />
+              <Text
+                name="pantoneNo"
+                label="Pantone no."
+                defaultValue={tool?.pantoneNo}
+                placeholder="485 C"
+                hint="Searchable — somebody holding a job sheet looks the plate up by this."
+              />
+            </>
           ) : null}
 
           <Text name="madeDate" label="Made on" type="date" defaultValue={tool?.madeDate} />

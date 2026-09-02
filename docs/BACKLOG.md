@@ -184,7 +184,7 @@ actions in `src/modules/press-runs/actions.ts` rather than growing its own.
 
 ---
 
-## ~~Tooling register~~ — BUILT
+## ~~Tooling register~~ (now "Job Kitting") — BUILT
 
 Captured 27 Aug 2026, built the same day; see decisions **I1–I9** in
 [`DECISIONS.md`](DECISIONS.md).
@@ -230,3 +230,52 @@ A tool belongs to at most ONE design (`design_id` is a single nullable FK, as sp
 Tooling genuinely shared between designs cannot be expressed and would need a junction
 table. The detail screen therefore shows one design where the requirement said "which
 designs use it".
+
+
+---
+
+## The kitting gate — NOT BUILT, and not what "Job Kitting" is
+
+Captured 2 Sep 2026, alongside the rename recorded as **I10** in
+[`DECISIONS.md`](DECISIONS.md). Written down the same day the register was renamed,
+precisely because the shared word is what would otherwise get this ticked off as done.
+
+The Business Mastery Program's **kitting gate** is a readiness check run against ONE JOB
+before it starts:
+
+> Are material, plate, die and artwork all ready? If any one of them is not, the job does
+> not go to the floor.
+
+That is a checklist tied to a `job_card` — answered once per job, on a specific day, with
+a go/no-go outcome. It is **not** the register now labelled Job Kitting, which is a
+permanent inventory of physical tooling answering "where is the die kept". The two share a
+word and nothing else.
+
+Not built, and not to be built as a side effect of anything else. When it is built it
+should be:
+
+- a checklist against `job_card`, not against `tooling` and not against `po_item`;
+- capable of blocking or warning at release (J1), which is the only point in the system
+  where a job is declared ready to go to the floor;
+- honest about material, which the system cannot see at all today — see the IMS entry
+  below. A gate that ticks "material ready" from nothing but somebody's say-so is a gate
+  in name only, and the register cannot supply that half of the answer.
+
+---
+
+## IMS — inventory management, board / ink / foil stock
+
+Captured 2 Sep 2026, verbatim:
+
+> IMS (inventory management — board, ink, foil stock) is a future need. Out of scope until
+> the costing engine and the real kitting gate exist, since IMS without job-linked material
+> issue just becomes another unmaintained stock count.
+
+Spec section 1 already puts "Inventory / material stock" out of scope for v1, so this is
+not a new exclusion — it is the reason the exclusion should hold, recorded so that the next
+person to want a stock screen finds the argument rather than re-running it.
+
+The dependency is the load-bearing part. A stock count that nothing decrements is a number
+that is right on the day it is typed and wrong every day after, and it looks exactly as
+authoritative on both — the same failure mode I5 refused for tooling issue/return, and A2
+flagged for the unmeasured stage targets.

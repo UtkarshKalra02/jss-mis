@@ -22,8 +22,15 @@ import { client } from "./reference";
 /* -------------------------------------------------------------------------- */
 
 /**
- * The physical tooling the factory owns — plates, foil blocks, dies and
- * embossing blocks.
+ * JOB KITTING — the physical tooling the factory owns: plates, foil blocks,
+ * dies and embossing blocks.
+ *
+ * THE NAME IS A LABEL, NOT A FEATURE (decision I10). "Job Kitting" is what
+ * this register is called on screen; it is NOT the BMP kitting gate, which is
+ * the check that material, plate, die and artwork are all ready before a job
+ * starts. That gate is a future checklist hanging off `job_card` and is
+ * recorded in BACKLOG.md. This table answers "where is the die", and nothing
+ * in it knows whether a job is ready to run.
  *
  * ONE TABLE WITH A TYPE DISCRIMINATOR, not four near-identical tables
  * (decision I1). Every question anybody actually asks of a piece of tooling is
@@ -90,6 +97,19 @@ export const tooling = pgTable(
      * where it usually means nothing; the database stays permissive.
      */
     colour: text(),
+
+    /**
+     * Ink and Pantone reference.
+     *
+     * Meaningful mainly for plates, and NOT constrained to them, on exactly
+     * the reasoning already recorded for `colour` in I6: a CHECK restricting
+     * these to PLATE would be wrong the first time somebody records the ink a
+     * foil block runs with, and a rule that is wrong on the floor gets worked
+     * around rather than reported. The form offers them where they usually
+     * mean something; the database stays permissive.
+     */
+    ink: text(),
+    pantoneNo: text(),
 
     /** Rack / almirah / shelf. The most-read field in the whole table. */
     location: text().notNull(),

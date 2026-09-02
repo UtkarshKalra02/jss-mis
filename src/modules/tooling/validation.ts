@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toolConditionEnum, toolStatusEnum, toolTypeEnum } from "@/db/schema/enums";
 
 /**
- * Tooling register validation.
+ * Job Kitting register validation.
  *
  * The lists come from the enums rather than being retyped here, so
  * non-negotiable 5 holds: adding a tool type is a schema change and every
@@ -68,6 +68,10 @@ export const toolingSchema = z.object({
   size: absentOrBlank(z.string().trim().max(120)),
   colour: absentOrBlank(z.string().trim().max(60)),
 
+  /** Plate-shaped in practice, unconstrained in the database (I6). */
+  ink: absentOrBlank(z.string().trim().max(120)),
+  pantoneNo: absentOrBlank(z.string().trim().max(60)),
+
   condition: z.enum(toolConditions),
   status: z.enum(toolStatuses),
 
@@ -110,6 +114,8 @@ export function parseToolingForm(formData: FormData) {
     location: formData.get("location"),
     size: formData.get("size"),
     colour: formData.get("colour"),
+    ink: formData.get("ink"),
+    pantoneNo: formData.get("pantoneNo"),
     condition: formData.get("condition"),
     status: formData.get("status"),
     designId: formData.get("designId"),

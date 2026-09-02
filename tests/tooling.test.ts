@@ -357,3 +357,107 @@ describe("the tooling form contract", () => {
     expect(parsed.success && parsed.data.designId).toBeUndefined();
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Ink and Pantone (I10)                                                       */
+/* -------------------------------------------------------------------------- */
+
+describe("ink and pantone", () => {
+  it("stores both on a plate", async () => {
+    await inRollback(async (tx) => {
+      const tool = await auditedInsert(
+        SYSTEM_ACTOR,
+        tooling,
+        {
+          toolNo: await allocateNumber(tx, "PLT", "2026-05-01"),
+          toolType: "PLATE",
+          name: "Fertilina cyan",
+          location: "Plate room shelf B",
+          ink: "Process cyan",
+          pantoneNo: "485 C",
+        },
+        tx,
+      );
+
+      const [read] = await tx.select().from(tooling).where(eq(tooling.id, tool.id));
+      expect(read!.ink).toBe("Process cyan");
+      expect(read!.pantoneNo).toBe("485 C");
+    });
+  });
+
+  it("does NOT refuse them on a non-plate (I6's reasoning, I10)", async () => {
+    await inRollback(async (tx) => {
+      // A foil block genuinely has a foil colour and can have an ink note. The
+      // form hides the fields for this type; the database must not, or the
+      // rule becomes one somebody works around.
+      const tool = await auditedInsert(
+        SYSTEM_ACTOR,
+        tooling,
+        {
+          toolNo: await allocateNumber(tx, "FBL", "2026-05-01"),
+          toolType: "FOIL_BLOCK",
+          name: "Gold foil block",
+          location: "Rack 7",
+          ink: "Gold foil",
+        },
+        tx,
+      );
+
+      const [read] = await tx.select().from(tooling).where(eq(tooling.id, tool.id));
+      expect(read!.ink).toBe("Gold foil");
+    });
+  });
+
+  it("finds a plate by its Pantone number, and not by its ink", async () => {
+    await inRollback(async (tx) => {
+      const pantone = uniq("PANT");
+      const ink = uniq("INKX");
+
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        tooling,
+        {
+          toolNo: await allocateNumber(tx, "PLT", "2026-05-01"),
+          toolType: "PLATE",
+          name: "Searchable plate",
+          location: "Plate room",
+          ink,
+          pantoneNo: pantone,
+        },
+        tx,
+      );
+
+      // Pantone is an identifier — somebody holding a job sheet looks it up.
+      const byPantone = await searchTooling({ query: pantone }, tx);
+      expect(byPantone.map((t) => t.pantoneNo)).toContain(pantone);
+
+      // Ink is a description, and descriptions in the search box are what make
+      // a browse term match a tool whose remarks merely mention it.
+      const byInk = await searchTooling({ query: ink }, tx);
+      expect(byInk).toHaveLength(0);
+    });
+  });
+
+  it("carries both through the form contract, absent or blank", () => {
+    const form = new FormData();
+    form.set("toolType", "PLATE");
+    form.set("name", "Plate");
+    form.set("location", "Shelf");
+    form.set("condition", "Good");
+    form.set("status", "In House");
+    form.set("ink", "");
+    // pantoneNo is not rendered at all for non-plate types, so absent is a
+    // state the parser has to accept (G10).
+
+    const blank = parseToolingForm(form);
+    expect(blank.success).toBe(true);
+    expect(blank.success && blank.data.ink).toBeUndefined();
+    expect(blank.success && blank.data.pantoneNo).toBeUndefined();
+
+    form.set("ink", "Opaque white");
+    form.set("pantoneNo", "Warm Red C");
+    const filled = parseToolingForm(form);
+    expect(filled.success && filled.data.ink).toBe("Opaque white");
+    expect(filled.success && filled.data.pantoneNo).toBe("Warm Red C");
+  });
+});

@@ -19,7 +19,7 @@ export default async function NewToolingPage() {
   return (
     <div className="max-w-3xl">
       <Link href="/tooling" className="text-muted-foreground text-[13px] hover:underline">
-        ← Tooling
+        ← Job Kitting
       </Link>
 
       <h1 className="page-title mt-2">Add tooling</h1>

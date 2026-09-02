@@ -99,8 +99,12 @@ export const NAV: NavGroup[] = [
        * Beside Designs rather than under Production: Punit owns the register
        * (I9), a tool is nearly always made FOR a design, and the two screens
        * link to each other constantly.
+       *
+       * "Job Kitting" is the label only (I10). The route, the table and the
+       * resource key all stay `tooling`: renaming a URL breaks every link
+       * anybody has saved, and this is NOT the BMP kitting gate.
        */
-      { resource: "tooling", label: "Tooling", href: "/tooling", icon: Stamp, phase: 1 },
+      { resource: "tooling", label: "Job Kitting", href: "/tooling", icon: Stamp, phase: 1 },
       {
         resource: "item_tracker",
         label: "Item Tracker",

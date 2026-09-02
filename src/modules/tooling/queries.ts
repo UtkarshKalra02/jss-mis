@@ -5,7 +5,7 @@ import type { Tx } from "@/db/audit";
 import { client, design, tooling } from "@/db/schema";
 
 /**
- * Reads for the tooling register.
+ * Reads for the Job Kitting register.
  *
  * The query this file exists for is "where is the die for X". Everything is
  * shaped around answering that from a phone in one search box, so the search
@@ -22,6 +22,8 @@ export type ToolingRow = {
   name: string;
   size: string | null;
   colour: string | null;
+  ink: string | null;
+  pantoneNo: string | null;
   location: string;
   condition: string;
   status: string;
@@ -44,6 +46,8 @@ function selectRow() {
     name: tooling.name,
     size: tooling.size,
     colour: tooling.colour,
+    ink: tooling.ink,
+    pantoneNo: tooling.pantoneNo,
     location: tooling.location,
     condition: tooling.condition,
     status: tooling.status,
@@ -96,6 +100,16 @@ export async function searchTooling(
       sql`${client.code} ilike ${like}`,
       sql`${design.designCode} ilike ${like}`,
       sql`${design.jobName} ilike ${like}`,
+      /*
+       * Pantone is searchable; ink is not.
+       *
+       * A Pantone reference is an IDENTIFIER — somebody holding a job sheet
+       * that says 485 C wants the plate that carries it, which is the same
+       * kind of lookup as a tool number. Ink is a description, and folding
+       * descriptions into the box is what makes "Damaged" match a tool whose
+       * remarks merely mention the word.
+       */
+      sql`${tooling.pantoneNo} ilike ${like}`,
     );
     if (match) conditions.push(match);
   }
