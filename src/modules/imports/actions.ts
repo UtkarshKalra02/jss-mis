@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
@@ -116,6 +117,7 @@ export async function previewImportAction(
       existingKeys: [...existingKeys],
     };
   } catch (error) {
+    unstable_rethrow(error);
     // A parse error is a statement about the FILE and is shown as-is. Anything
     // else is a statement about US, and belongs in the log with its stack
     // rather than being paraphrased at somebody who cannot act on it.
@@ -206,6 +208,7 @@ export async function confirmImportAction(
         ".",
     };
   } catch (error) {
+    unstable_rethrow(error);
     console.error("[import] confirm failed", error);
     return {
       ok: false,
@@ -263,6 +266,7 @@ export async function undoImportAction(
         ".",
     };
   } catch (error) {
+    unstable_rethrow(error);
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Could not undo that import.",

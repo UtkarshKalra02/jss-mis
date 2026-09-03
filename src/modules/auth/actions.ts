@@ -1,5 +1,7 @@
 "use server";
 
+import { unstable_rethrow } from "next/navigation";
+
 import { AuthError } from "next-auth";
 
 import { signIn } from "@/auth";
@@ -35,6 +37,7 @@ export async function loginAction(
     await signIn("credentials", { username, password, redirectTo: "/" });
     return { error: null };
   } catch (error) {
+    unstable_rethrow(error);
     if (error instanceof AuthError) {
       return { error: GENERIC_FAILURE };
     }

@@ -21,6 +21,7 @@ import {
 } from "@/modules/fabrication/queries";
 import { getJobCard, machineOptions } from "@/modules/job-cards/queries";
 import { toolingForDesign } from "@/modules/tooling/queries";
+import { locationLabel } from "@/modules/tooling/location";
 
 export const metadata: Metadata = { title: "Job card · JSS MIS" };
 
@@ -233,7 +234,7 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
                   </Link>
                   <span>{t.name}</span>
                   {/* Where it is kept — the reason anybody opens the register. */}
-                  <span className="font-medium">{t.location}</span>
+                  <span className="font-medium">{locationLabel(t)}</span>
                   <span
                     className={cn(
                       "text-muted-foreground",

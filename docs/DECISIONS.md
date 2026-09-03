@@ -1834,3 +1834,49 @@ figures belonging to nobody.
 card's detail, so he can still answer "has the card for this design been raised, and what
 did it run?" — which is the question the order desk actually asks. What he cannot do is
 decide the answer.
+
+**I11 — `Ordered` joins the tool status list, and `location` becomes nullable for that one
+case.**
+
+Punit creates the record when a plate or die is ORDERED from a vendor — status `Ordered`,
+vendor filled, location genuinely unknown — and edits **the same row** to `In House` when it
+arrives. **Receiving a tool is an edit, never a second record.** A second row would give one
+physical die two numbers, and the number is written on the metal (C7): the shelf and the
+register would disagree from the day it arrived.
+
+`Ordered` sits FIRST in the enum, before `In House`, because that is where it comes in a
+tool's life and enum order is what an `ORDER BY status` would follow.
+
+**The blocker was `location`, and the fix is F8's shape.** The column was NOT NULL with a
+CHECK refusing blanks, and the schema comment was emphatic: *"A blank location is the one
+thing that makes this register useless."* That is right about a tool on a shelf and wrong
+about one that has not arrived — which has no location, as a fact rather than as missing
+data. Exactly the distinction F8 drew for a historical row's committed date.
+
+So the column is nullable, and `tooling_location_present_unless_ordered` replaces the
+blanket check: **required for every status except `Ordered`**. The useful consequence is
+that the flow enforces itself — moving a row from `Ordered` to `In House` cannot be saved
+until somebody says which rack it went on. Receiving a tool without recording where it went
+is not a discipline anybody has to remember; it is a thing the database refuses.
+
+**A null location is never rendered as a blank.** `locationLabel()` is one function used by
+all six places a location appears — the register table, its phone card, the tool's own
+screen, the design panel, the job card screen and the printed job card — and it reads *"On
+order from Modern Dies"*. A blank on the one field this register exists to answer would say
+"somebody forgot to type this" about the one case where nobody forgot (F8's fifth clause,
+applied to a different column). Six copies of that decision would be five chances for one to
+render an empty cell.
+
+Sorting spells out `NULLS LAST`. Postgres puts nulls first ascending, so without it every
+tool still on order would sit above the whole register — the trap F23 named.
+
+**Vendor came back to the form for this.** It was removed with the rest of the provenance
+block in I10, and without it "ordered from whom" cannot be recorded, which is most of what
+the status is for. It is the only one of those five fields the actions write again; made
+date, cost, impressions and last used are still not written by any action.
+
+**This does not become a procurement workflow, and I5 still holds.** Nothing enforces
+`Ordered → In House`, there is no expected date, no purchase order link and no
+reconciliation. It is one more value on a field somebody sets by hand — which is all I5
+ever permitted, and the reason it permitted it: a half-kept workflow is worse than none
+because it still reads as authoritative.

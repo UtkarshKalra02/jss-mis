@@ -9,6 +9,7 @@ import {
   searchTooling,
   toolingForDesign,
 } from "@/modules/tooling/queries";
+import { isAwaited, locationLabel } from "@/modules/tooling/location";
 import { parseToolingForm, TOOL_TYPE_PREFIX } from "@/modules/tooling/validation";
 
 import { expectFailure, inRollback, uniq } from "./helpers";
@@ -157,9 +158,11 @@ describe("client_id is derived from the design (I3)", () => {
 describe("what the database refuses", () => {
   it("refuses a blank location — the one thing that makes the register useless", async () => {
     await inRollback(async (tx) => {
+      // Constraint renamed by I11 when Ordered rows became allowed to have no
+      // location. The rule for everything that has ARRIVED is unchanged.
       const result = await expectFailure(tx, (sp) => makeTool(sp, { location: "   " }));
       expect(result.threw).toBe(true);
-      expect(result.message).toContain("tooling_location_not_blank");
+      expect(result.message).toContain("tooling_location_present_unless_ordered");
     });
   });
 
@@ -459,5 +462,157 @@ describe("ink and pantone", () => {
     const filled = parseToolingForm(form);
     expect(filled.success && filled.data.ink).toBe("Opaque white");
     expect(filled.success && filled.data.pantoneNo).toBe("Warm Red C");
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Ordered, and receiving a tool (I11)                                         */
+/* -------------------------------------------------------------------------- */
+
+describe("a tool that has been ordered but has not arrived", () => {
+  it("saves with no location at all", async () => {
+    await inRollback(async (tx) => {
+      const tool = await auditedInsert(
+        SYSTEM_ACTOR,
+        tooling,
+        {
+          toolNo: await allocateNumber(tx, "DIE", "2026-05-01"),
+          toolType: "DIE",
+          name: "Fertilina Tab 60 die",
+          status: "Ordered",
+          vendor: "Modern Dies",
+          // No location. It is not in the building.
+        },
+        tx,
+      );
+
+      const [read] = await tx.select().from(tooling).where(eq(tooling.id, tool.id));
+      expect(read!.status).toBe("Ordered");
+      expect(read!.location).toBeNull();
+      expect(read!.vendor).toBe("Modern Dies");
+    });
+  });
+
+  it("REFUSES to become In House without a location", async () => {
+    await inRollback(async (tx) => {
+      const tool = await auditedInsert(
+        SYSTEM_ACTOR,
+        tooling,
+        {
+          toolNo: await allocateNumber(tx, "DIE", "2026-05-01"),
+          toolType: "DIE",
+          name: "Fertilina Tab 60 die",
+          status: "Ordered",
+          vendor: "Modern Dies",
+        },
+        tx,
+      );
+
+      // This is the point of the conditional CHECK: receiving a tool enforces
+      // itself. Nobody can mark a die as arrived without saying where it went.
+      const failed = await expectFailure(tx, (sp) =>
+        sp.execute(sql`update tooling set status = 'In House' where id = ${tool.id}`),
+      );
+
+      expect(failed.threw).toBe(true);
+      expect(failed.message).toContain("tooling_location_present_unless_ordered");
+    });
+  });
+
+  it("accepts the same record being edited when it arrives", async () => {
+    await inRollback(async (tx) => {
+      const tool = await auditedInsert(
+        SYSTEM_ACTOR,
+        tooling,
+        {
+          toolNo: await allocateNumber(tx, "DIE", "2026-05-01"),
+          toolType: "DIE",
+          name: "Fertilina Tab 60 die",
+          status: "Ordered",
+          vendor: "Modern Dies",
+        },
+        tx,
+      );
+
+      await auditedUpdate(
+        SYSTEM_ACTOR,
+        tooling,
+        tool.id,
+        { status: "In House", location: "Rack 3, almirah 2" },
+        tx,
+      );
+
+      const [read] = await tx.select().from(tooling).where(eq(tooling.id, tool.id));
+
+      // THE SAME ROW, so the number written on the metal still matches the
+      // register. Receiving is an edit, never a second record (I11).
+      expect(read!.id).toBe(tool.id);
+      expect(read!.toolNo).toBe(tool.toolNo);
+      expect(read!.status).toBe("In House");
+      expect(read!.location).toBe("Rack 3, almirah 2");
+    });
+  });
+
+  it("still refuses a blank location on anything that is not Ordered", async () => {
+    await inRollback(async (tx) => {
+      const failed = await expectFailure(tx, (sp) =>
+        sp.execute(sql`
+          insert into tooling (tool_no, tool_type, name, status, location)
+          values (${uniq("DIE-")}, 'DIE', 'No location die', 'In House', '   ')
+        `),
+      );
+
+      expect(failed.threw).toBe(true);
+      expect(failed.message).toContain("tooling_location_present_unless_ordered");
+    });
+  });
+
+  it("sorts tools with no location LAST, not first", async () => {
+    await inRollback(async (tx) => {
+      const marker = uniq("SORTZ");
+
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        tooling,
+        {
+          toolNo: await allocateNumber(tx, "DIE", "2026-05-01"),
+          toolType: "DIE",
+          name: `${marker} on order`,
+          status: "Ordered",
+        },
+        tx,
+      );
+      await makeTool(tx, { name: `${marker} on the shelf`, location: "Rack 1" });
+
+      const found = (await searchTooling({ query: marker }, tx)).filter((t) =>
+        t.name.startsWith(marker),
+      );
+
+      // Postgres puts NULLs first in ascending order. Without NULLS LAST every
+      // tool still on order would sit above the whole register (F23's trap).
+      expect(found).toHaveLength(2);
+      expect(found[0]!.location).toBe("Rack 1");
+      expect(found[1]!.location).toBeNull();
+    });
+  });
+});
+
+describe("how a missing location reads on screen", () => {
+  it("says who it is on order from rather than showing a blank", () => {
+    expect(
+      locationLabel({ location: null, status: "Ordered", vendor: "Modern Dies" }),
+    ).toBe("On order from Modern Dies");
+
+    // A blank on the one field this register exists to answer reads as
+    // somebody having forgotten to type it (I11, F8's reasoning).
+    expect(locationLabel({ location: null, status: "Ordered" })).toBe("On order");
+    expect(locationLabel({ location: "Rack 3", status: "In House" })).toBe("Rack 3");
+  });
+
+  it("knows when a tool is not in the building", () => {
+    expect(isAwaited({ location: null, status: "Ordered" })).toBe(true);
+    expect(isAwaited({ location: "Rack 3", status: "In House" })).toBe(false);
+    // Ordered but already given a shelf — it has arrived in all but the flag.
+    expect(isAwaited({ location: "Rack 3", status: "Ordered" })).toBe(false);
   });
 });

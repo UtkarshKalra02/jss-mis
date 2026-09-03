@@ -24,7 +24,7 @@ export type ToolingRow = {
   colour: string | null;
   ink: string | null;
   pantoneNo: string | null;
-  location: string;
+  location: string | null;
   condition: string;
   status: string;
   clientId: string | null;
@@ -126,7 +126,12 @@ export async function searchTooling(
     .leftJoin(design, eq(design.id, tooling.designId))
     .leftJoin(client, eq(client.id, tooling.clientId))
     .where(and(...conditions))
-    .orderBy(asc(tooling.location), asc(tooling.name));
+    /*
+     * NULLS LAST spelled out. Postgres puts nulls FIRST in ascending order, so
+     * without it every tool still on order would sit above the whole register
+     * — the same trap F23 named on the Item Tracker's committed date.
+     */
+    .orderBy(sql`${tooling.location} asc nulls last`, asc(tooling.name));
 }
 
 export async function getTooling(id: string, runner: Runner = db): Promise<ToolingRow | null> {

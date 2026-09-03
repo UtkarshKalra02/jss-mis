@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
@@ -87,6 +88,7 @@ export async function saveStagesAction(
         : `Saved ${changes.length} stages.`,
     );
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not save the stages.");
   }
 }
@@ -120,6 +122,7 @@ export async function saveAtRiskWindowAction(
     revalidatePath("/dashboard");
     return ok(`At-risk window set to ${next} ${next === 1 ? "day" : "days"}.`);
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not save the setting.");
   }
 }

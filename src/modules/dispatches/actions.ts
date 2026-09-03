@@ -2,6 +2,7 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
@@ -212,6 +213,7 @@ export async function createDispatchAction(
       redirectTo: `/dispatch/${result.head.id}`,
     });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not save the dispatch.");
   }
 }
@@ -296,6 +298,7 @@ export async function updateDispatchHeaderAction(
         : "Saved.",
     });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not save the changes.");
   }
 }
@@ -347,6 +350,7 @@ export async function addDispatchLineAction(
     revalidatePath("/items");
     return ok({ message: "Line added." });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not add the line.");
   }
 }
@@ -374,6 +378,7 @@ export async function removeDispatchLineAction(
     revalidatePath("/items");
     return ok({ message: "Line removed." });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not remove the line.");
   }
 }
@@ -426,6 +431,7 @@ export async function setDispatchCancelledAction(
         : `${existing.challanNo} reinstated.`,
     });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not change the challan.");
   }
 }

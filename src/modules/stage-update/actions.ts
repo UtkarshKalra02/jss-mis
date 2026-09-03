@@ -2,6 +2,7 @@
 
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
 import { requireAccess } from "@/auth/guard";
@@ -137,6 +138,7 @@ export async function updateStageAction(
           : ""),
     );
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not update the stage.");
   }
 }

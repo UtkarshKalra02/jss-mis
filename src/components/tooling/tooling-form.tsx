@@ -107,6 +107,7 @@ export function ToolingForm({
   );
 
   const [toolType, setToolType] = useState(tool?.toolType ?? "DIE");
+  const [status, setStatus] = useState(tool?.status ?? "In House");
   const [designId, setDesignId] = useState(tool?.designId ?? "");
 
   useEffect(() => {
@@ -151,14 +152,23 @@ export function ToolingForm({
           />
         </div>
 
-        {/* The field the register exists for. */}
+        {/* The field the register exists for.
+            Not `required` in the markup, because a tool still on order has no
+            location and that is legitimate (I11). The schema and the database
+            both require it for every other status, so moving a row to In House
+            cannot save until somebody says which rack it went on — receiving
+            enforces itself. */}
         <Text
           name="location"
-          label="Location"
-          required
+          label={status === "Ordered" ? "Location (once it arrives)" : "Location"}
+          required={status !== "Ordered"}
           defaultValue={tool?.location}
           placeholder="Rack 3, almirah 2, top shelf"
-          hint="Rack, almirah or shelf. The most-read field in the register — be specific enough that somebody else can find it."
+          hint={
+            status === "Ordered"
+              ? "Leave blank until it arrives. Changing the status to In House will ask for it."
+              : "Rack, almirah or shelf. The most-read field in the register — be specific enough that somebody else can find it."
+          }
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -216,7 +226,8 @@ export function ToolingForm({
             <span className="text-[13px] font-medium">Status</span>
             <select
               name="status"
-              defaultValue={tool?.status ?? "In House"}
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
               className="border-input bg-background mt-1.5 h-9 w-full rounded-md border px-2 text-[13px]"
             >
               {toolStatuses.map((s) => (
@@ -226,11 +237,23 @@ export function ToolingForm({
               ))}
             </select>
             <span className="text-muted-foreground mt-1 block text-[12px]">
-              Set by hand. There is no issue/return workflow — if it goes to a vendor, change
-              this.
+              {status === "Ordered"
+                ? "Record it now with the vendor, and edit this same row to In House when it arrives — a received tool is an edit, never a second record."
+                : "Set by hand. There is no issue/return workflow — if it goes to a vendor, change this."}
             </span>
           </label>
         </div>
+
+        {/* Vendor came back with the Ordered status (I11). It was taken off
+            with the rest of the provenance block, and without it "ordered from
+            whom" cannot be recorded — which is most of what the status is for.
+            The other four provenance fields stay off. */}
+        <Text
+          name="vendor"
+          label={status === "Ordered" ? "Ordered from" : "Made by"}
+          defaultValue={tool?.vendor}
+          placeholder="Modern Dies"
+        />
       </section>
 
       <section className="space-y-4">

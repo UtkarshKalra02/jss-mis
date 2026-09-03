@@ -15,6 +15,7 @@ import {
   replaceableTools,
   replacementChain,
 } from "@/modules/tooling/queries";
+import { isAwaited, locationLabel } from "@/modules/tooling/location";
 import { TOOL_TYPE_LABELS } from "@/modules/tooling/validation";
 
 export const metadata: Metadata = { title: "Tool · JSS MIS" };
@@ -69,8 +70,17 @@ export default async function ToolingDetailPage({
       <h1 className="page-title mt-2 tabular-nums">{tool.toolNo}</h1>
       <p className="mt-1 text-[13px]">{tool.name}</p>
 
-      {/* Location gets its own line at size, because it is the answer. */}
-      <p className="mt-4 text-lg font-semibold">{tool.location}</p>
+      {/* Location gets its own line at size, because it is the answer. A tool
+          still on order says so, and says who from (I11) — a blank on this
+          line would read as somebody having forgotten to type it. */}
+      <p
+        className={cn(
+          "mt-4 text-lg font-semibold",
+          isAwaited(tool) && "text-at-risk font-normal",
+        )}
+      >
+        {locationLabel({ ...tool, vendor: record?.vendor })}
+      </p>
       <p className="text-muted-foreground mt-1 text-[13px]">
         {TOOL_TYPE_LABELS[tool.toolType as keyof typeof TOOL_TYPE_LABELS] ?? tool.toolType} ·{" "}
         <span className={cn(tool.condition === "Damaged" && "text-overdue")}>

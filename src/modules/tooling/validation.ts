@@ -58,12 +58,14 @@ export const toolingSchema = z.object({
     .min(2, "Say what this tool is — the name is how anybody finds it.")
     .max(200),
 
-  /** The field the whole register exists to answer. Never optional. */
-  location: z
-    .string()
-    .trim()
-    .min(1, "Where is it kept? Rack, almirah or shelf — this is the field people read.")
-    .max(120),
+  /**
+   * The field the whole register exists to answer.
+   *
+   * Optional ONLY while the tool is Ordered and has not arrived (I11) — see
+   * the refine below, which is the same rule the database enforces. Anything
+   * that is in the building has to say where.
+   */
+  location: absentOrBlank(z.string().trim().max(120)),
 
   size: absentOrBlank(z.string().trim().max(120)),
   colour: absentOrBlank(z.string().trim().max(60)),
@@ -96,7 +98,25 @@ export const toolingSchema = z.object({
   lastUsedDate: absentOrBlank(isoDate),
   replacesToolId: absentOrBlank(z.string().uuid()),
   remarks: absentOrBlank(z.string().trim().max(1000)),
-});
+})
+  /**
+   * A tool that is here has to say where it is.
+   *
+   * Mirrors `tooling_location_present_unless_ordered`, which is the constraint
+   * that actually holds — for a psql session and an import script too (F11).
+   * This exists to turn the refusal into a sentence naming the field rather
+   * than a constraint name, the same way the tooling form already does for a
+   * self-replacing tool.
+   *
+   * The useful consequence is that receiving a tool ENFORCES ITSELF: moving a
+   * row from Ordered to In House cannot be saved until somebody says which
+   * rack it went on.
+   */
+  .refine((v) => v.status === "Ordered" || (v.location?.length ?? 0) > 0, {
+    message:
+      "Where is it kept? Rack, almirah or shelf. Only a tool still on order may have no location.",
+    path: ["location"],
+  });
 
 export type ToolingInput = z.infer<typeof toolingSchema>;
 

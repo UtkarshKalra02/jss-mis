@@ -1,0 +1,1 @@
+ALTER TYPE "public"."tool_status" ADD VALUE 'Ordered' BEFORE 'In House';

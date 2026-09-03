@@ -3,6 +3,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { ToolingRow } from "@/modules/tooling/queries";
 import { TOOL_TYPE_LABELS } from "@/modules/tooling/validation";
+import { locationLabel } from "@/modules/tooling/location";
 
 /**
  * The register's results, in two layouts.
@@ -71,7 +72,7 @@ export function ToolingList({ tools }: { tools: ToolingRow[] }) {
                   </Link>
                 </td>
                 {/* The field the register exists for, second only to its number. */}
-                <td className="px-3 font-medium">{t.location}</td>
+                <td className="px-3 font-medium">{locationLabel(t)}</td>
                 <td className="px-3">{t.name}</td>
                 <td className="text-muted-foreground px-3">
                   {TOOL_TYPE_LABELS[t.toolType as keyof typeof TOOL_TYPE_LABELS] ?? t.toolType}
@@ -102,7 +103,7 @@ export function ToolingList({ tools }: { tools: ToolingRow[] }) {
               href={`/tooling/${t.id}`}
               className="hover:border-primary/40 block rounded-lg border p-4 transition-colors"
             >
-              <p className="text-lg font-semibold">{t.location}</p>
+              <p className="text-lg font-semibold">{locationLabel(t)}</p>
               <p className="mt-0.5 text-sm">{t.name}</p>
               <p className="text-muted-foreground mt-1 text-[12px] tabular-nums">
                 {t.toolNo} ·{" "}

@@ -114,7 +114,8 @@ export async function createToolingAction(
           toolNo: await allocateNumber(tx, TOOL_TYPE_PREFIX[v.toolType], v.madeDate),
           toolType: v.toolType,
           name: v.name,
-          location: v.location,
+          location: v.location ?? null,
+          vendor: v.vendor ?? null,
           size: v.size ?? null,
           colour: v.colour ?? null,
           ink: v.ink ?? null,
@@ -171,16 +172,22 @@ export async function updateToolingAction(
     }
 
     /*
-     * Provenance — made date, vendor, cost, impressions, last used — is
-     * deliberately NOT in this payload (I10). The form stopped offering those
-     * fields, so `v.madeDate ?? null` would blank a cost somebody typed
-     * before the section was removed, on every subsequent edit. The columns
-     * keep whatever they hold; nothing writes them.
+     * Provenance — made date, cost, impressions, last used — is deliberately
+     * NOT in this payload (I10). The form stopped offering those fields, so
+     * `v.madeDate ?? null` would blank a cost somebody typed before the
+     * section was removed, on every subsequent edit. The columns keep whatever
+     * they hold; nothing writes them.
+     *
+     * VENDOR IS THE EXCEPTION and is written, because the Ordered status needs
+     * it: a tool on order from nobody in particular is half a record (I11).
      */
     await auditedUpdate(actor, tooling, id, {
       toolType: v.toolType,
       name: v.name,
-      location: v.location,
+      location: v.location ?? null,
+      // Vendor only. The other four provenance columns are still not written
+      // by this action — see the note above (I10, I11).
+      vendor: v.vendor ?? null,
       size: v.size ?? null,
       colour: v.colour ?? null,
       ink: v.ink ?? null,

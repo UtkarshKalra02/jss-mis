@@ -41,8 +41,8 @@ import { client } from "./reference";
  *
  * THE FIELD THIS TABLE EXISTS FOR IS `location`. The register is consulted far
  * more often to answer "where is the die for X" than for anything else, which
- * is why location is NOT NULL, why it appears in the grid without opening a
- * row, and why the whole register works on a phone.
+ * is why it is required on everything that has arrived, why it appears in the
+ * grid without opening a row, and why the whole register works on a phone.
  *
  * NO ISSUE/RETURN WORKFLOW (I5). `status` is set by hand. A checkout system
  * would be a daily-discipline burden nobody agreed to carry, and a half-kept
@@ -111,8 +111,21 @@ export const tooling = pgTable(
     ink: text(),
     pantoneNo: text(),
 
-    /** Rack / almirah / shelf. The most-read field in the whole table. */
-    location: text().notNull(),
+    /**
+     * Rack / almirah / shelf. The most-read field in the whole table.
+     *
+     * NULLABLE FOR EXACTLY ONE REASON (I11): a tool that has been ordered from
+     * a vendor and has not arrived has no location, and that is a fact rather
+     * than missing data. The CHECK below requires it for every other status,
+     * so the moment somebody marks a die as In House the database refuses to
+     * save without saying where it went — the receiving step enforces itself
+     * rather than relying on discipline.
+     *
+     * This is F8's shape exactly: nullable in the schema for one narrow,
+     * documented case, required at every other point, and rendered as a
+     * sentence ("On order") rather than a blank cell wherever it is null.
+     */
+    location: text(),
 
     condition: toolConditionEnum().notNull().default("Good"),
     status: toolStatusEnum().notNull().default("In House"),
@@ -166,8 +179,16 @@ export const tooling = pgTable(
     ),
     check("tooling_cost_non_negative", sql`${t.cost} is null or ${t.cost} >= 0`),
 
-    /** A blank location is the one thing that makes this register useless. */
-    check("tooling_location_not_blank", sql`length(trim(${t.location})) > 0`),
+    /**
+     * A blank location is the one thing that makes this register useless —
+     * unless the tool is not here yet (I11). Ordered rows may have none; every
+     * other status must, and it may never be whitespace.
+     */
+    check(
+      "tooling_location_present_unless_ordered",
+      sql`(${t.status} = 'Ordered' and (${t.location} is null or length(trim(${t.location})) > 0))
+          or (${t.location} is not null and length(trim(${t.location})) > 0)`,
+    ),
     check("tooling_name_not_blank", sql`length(trim(${t.name})) > 0`),
   ],
 );

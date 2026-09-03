@@ -180,6 +180,20 @@ const SCHEMA_EXPECTATIONS: {
     sql: sql`select 1 from information_schema.columns
              where table_name = 'job_card' and column_name = 'machine_detail'`,
   },
+  {
+    what: "tool_status includes 'Ordered'",
+    since: "0022_tool_status_ordered",
+    sql: sql`select 1 from pg_enum e
+             join pg_type t on t.oid = e.enumtypid
+             where t.typname = 'tool_status' and e.enumlabel = 'Ordered'`,
+  },
+  {
+    what: "tooling.location is nullable",
+    since: "0023_tooling_location_optional_when_ordered",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'tooling' and column_name = 'location'
+               and is_nullable = 'YES'`,
+  },
 ];
 
 async function checkSchema() {

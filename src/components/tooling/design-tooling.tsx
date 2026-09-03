@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ToolingRow } from "@/modules/tooling/queries";
 import { TOOL_TYPE_LABELS } from "@/modules/tooling/validation";
+import { locationLabel } from "@/modules/tooling/location";
 
 /**
  * The Job Kitting attached to one design (decisions I8, I10).
@@ -48,7 +49,7 @@ export function DesignTooling({ tools, canAdd }: { tools: ToolingRow[]; canAdd: 
               </span>
               <span>{t.name}</span>
               {/* The two facts somebody opened this screen to learn. */}
-              <span className="font-medium">{t.location}</span>
+              <span className="font-medium">{locationLabel(t)}</span>
               <span
                 className={cn(
                   t.condition === "Damaged" && "text-overdue",

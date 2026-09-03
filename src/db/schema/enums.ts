@@ -200,6 +200,18 @@ export const toolConditionEnum = pgEnum("tool_condition", [
  * is half-kept is worse than none because it looks authoritative.
  */
 export const toolStatusEnum = pgEnum("tool_status", [
+  /**
+   * Ordered from a vendor and not yet in the building.
+   *
+   * RECEIVING A TOOL IS AN EDIT, NOT A NEW RECORD (I11). Punit creates the row
+   * when the die is ordered — vendor filled, location genuinely unknown — and
+   * edits the SAME row to In House when it arrives. A second record would give
+   * one physical die two numbers, and the number is written on the metal.
+   *
+   * First in the list because it comes first in a tool's life, and enum order
+   * is what an ORDER BY status would follow.
+   */
+  "Ordered",
   "In House",
   "With Vendor",
   "Issued to Floor",

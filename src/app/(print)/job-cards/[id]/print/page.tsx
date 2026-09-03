@@ -15,6 +15,7 @@ import {
 import { getJobCard } from "@/modules/job-cards/queries";
 import { gangInfoFor } from "@/modules/press-runs/queries";
 import { toolingForDesign } from "@/modules/tooling/queries";
+import { locationLabel } from "@/modules/tooling/location";
 
 export const metadata: Metadata = { title: "Job card · print" };
 
@@ -228,7 +229,7 @@ export default async function JobCardPrintPage({
                     <span className="font-bold tabular-nums">{t.toolNo}</span> · {t.name} ·{" "}
                     {/* Where it is kept: the one thing somebody sent to fetch a
                         die actually needs off this sheet (I8). */}
-                    <span className="font-bold">{t.location}</span>
+                    <span className="font-bold">{locationLabel(t)}</span>
                     {t.condition !== "Good" ? ` · ${t.condition}` : ""}
                   </li>
                 ))}
