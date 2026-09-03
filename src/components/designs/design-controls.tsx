@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useActionState, useEffect } from "react";
+import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -155,15 +154,6 @@ export function DesignDelete({
   designCode: string;
 }) {
   const [state, formAction] = useActionState(deleteDesignAction, initialState);
-  const router = useRouter();
-
-  /* The row this page reads has just gone, so the page cannot re-render (G11).
-     next/navigation's redirect() is NOT usable inside the action: it works by
-     throwing, and every one of these actions has a try/catch that would report
-     the successful removal as a failure. */
-  useEffect(() => {
-    if (state.ok && state.redirectTo) router.push(state.redirectTo);
-  }, [state.ok, state.redirectTo, router]);
 
   return (
     <section className="border-overdue/30 rounded-lg border p-4">

@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -125,13 +124,7 @@ export function JobCardStatusPanel({
  * distinction the tooling register draws between Scrapped and removed.
  */
 export function RemoveJobCardCard({ id, jcNo }: { id: string; jcNo: string }) {
-  const router = useRouter();
   const [state, formAction] = useActionState(removeJobCardAction, initialState);
-
-  // The page reads a row that has just gone (G11).
-  useEffect(() => {
-    if (state.ok && state.redirectTo) router.push(state.redirectTo);
-  }, [state.ok, state.redirectTo, router]);
 
   return (
     <section className="border-overdue/30 rounded-lg border p-4">

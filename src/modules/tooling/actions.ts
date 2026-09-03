@@ -2,6 +2,7 @@
 
 import { eq, isNull, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
@@ -40,6 +41,28 @@ const ok = (message?: string, redirectTo?: string): FormState => ({
   redirectTo,
 });
 const fail = (error: string): FormState => ({ ok: false, error });
+
+/**
+ * Where to send somebody after removing the row the page was showing.
+ *
+ * A SERVER REDIRECT, not a destination returned to the client (J13). The
+ * earlier fix returned `redirectTo` and let a useEffect push to it, and that
+ * loses a race it cannot win: a server action re-renders the current route
+ * before the client effect commits, the page calls notFound() against a row
+ * that has just gone, and the confirmation for removing something is a 404.
+ * Returning the destination only made the 404 shorter.
+ *
+ * `redirect()` works by throwing, which is why G11 avoided it — every one of
+ * these actions has a try/catch that would report the successful removal as a
+ * failure. `unstable_rethrow` in the catch is the answer to that: it lets
+ * Next's own control-flow errors through and leaves real errors to be handled.
+ *
+ * The message rides in the query string, and the app shell turns it into a
+ * toast, so the confirmation survives the navigation.
+ */
+function removedTo(path: string, message: string): never {
+  redirect(`${path}?removed=${encodeURIComponent(message)}`);
+}
 
 async function requireToolingWriter(): Promise<Actor> {
   const user = await requireAccess("tooling", "write");
@@ -110,6 +133,7 @@ export async function createToolingAction(
     revalidate(row.id, row.designId);
     return ok(`${row.toolNo} added.`, `/tooling/${row.id}`);
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not add that tool.");
   }
 }
@@ -172,6 +196,7 @@ export async function updateToolingAction(
     revalidate(id, v.designId ?? existing.designId);
     return ok("Saved.");
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not save those changes.");
   }
 }
@@ -217,8 +242,9 @@ export async function removeToolingAction(
     await auditedSoftDelete(actor, tooling, id);
 
     revalidate(id, existing.designId);
-    return ok(`${existing.toolNo} removed from the register.`, "/tooling");
+    removedTo("/tooling", `${existing.toolNo} removed from the register.`);
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not remove that tool.");
   }
 }

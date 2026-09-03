@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
@@ -44,6 +45,28 @@ const ok = (message?: string, redirectTo?: string): FormState => ({
   redirectTo,
 });
 const fail = (error: string): FormState => ({ ok: false, error });
+
+/**
+ * Where to send somebody after removing the row the page was showing.
+ *
+ * A SERVER REDIRECT, not a destination returned to the client (J13). The
+ * earlier fix returned `redirectTo` and let a useEffect push to it, and that
+ * loses a race it cannot win: a server action re-renders the current route
+ * before the client effect commits, the page calls notFound() against a row
+ * that has just gone, and the confirmation for removing something is a 404.
+ * Returning the destination only made the 404 shorter.
+ *
+ * `redirect()` works by throwing, which is why G11 avoided it — every one of
+ * these actions has a try/catch that would report the successful removal as a
+ * failure. `unstable_rethrow` in the catch is the answer to that: it lets
+ * Next's own control-flow errors through and leaves real errors to be handled.
+ *
+ * The message rides in the query string, and the app shell turns it into a
+ * toast, so the confirmation survives the navigation.
+ */
+function removedTo(path: string, message: string): never {
+  redirect(`${path}?removed=${encodeURIComponent(message)}`);
+}
 
 /** ADMIN and PLANNER build press runs. Everyone else can only look (H6). */
 async function requireRunWriter(): Promise<Actor> {
@@ -112,6 +135,7 @@ export async function createRunForJobCardAction(
     revalidate(run.id, card.poItemId);
     return ok(`${run.runNo} started, with ${card.jcNo} on it.`, `/press-runs/${run.id}`);
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not start that press run.");
   }
 }
@@ -154,6 +178,7 @@ export async function addJobCardToRunAction(
     revalidate(pressRunId, card.poItemId);
     return ok(`${card.jcNo} added to ${run.runNo}.`);
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not add it to that run.");
   }
 }
@@ -184,6 +209,7 @@ export async function removeJobCardFromRunAction(
     revalidate(runId, card.poItemId);
     return ok(`${card.jcNo} removed from the run.`);
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not remove it from the run.");
   }
 }
@@ -218,6 +244,7 @@ export async function updateRunAction(
     revalidate(v.id);
     return ok("Run updated.");
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not update that run.");
   }
 }
@@ -252,8 +279,9 @@ export async function removeRunAction(
     await auditedSoftDelete(actor, pressRun, id);
 
     revalidate(id);
-    return ok(`${run.runNo} removed.`, "/items");
+    removedTo("/items", `${run.runNo} removed.`);
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not remove that run.");
   }
 }

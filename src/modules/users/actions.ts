@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAccess, requireActiveUser } from "@/auth/guard";
 import type { Role } from "@/auth/roles";
@@ -39,6 +40,28 @@ const ok = (message?: string, redirectTo?: string): FormState => ({
   redirectTo,
 });
 const fail = (error: string): FormState => ({ ok: false, error });
+
+/**
+ * Where to send somebody after removing the row the page was showing.
+ *
+ * A SERVER REDIRECT, not a destination returned to the client (J13). The
+ * earlier fix returned `redirectTo` and let a useEffect push to it, and that
+ * loses a race it cannot win: a server action re-renders the current route
+ * before the client effect commits, the page calls notFound() against a row
+ * that has just gone, and the confirmation for removing something is a 404.
+ * Returning the destination only made the 404 shorter.
+ *
+ * `redirect()` works by throwing, which is why G11 avoided it — every one of
+ * these actions has a try/catch that would report the successful removal as a
+ * failure. `unstable_rethrow` in the catch is the answer to that: it lets
+ * Next's own control-flow errors through and leaves real errors to be handled.
+ *
+ * The message rides in the query string, and the app shell turns it into a
+ * toast, so the confirmation survives the navigation.
+ */
+function removedTo(path: string, message: string): never {
+  redirect(`${path}?removed=${encodeURIComponent(message)}`);
+}
 
 /**
  * User administration.
@@ -105,6 +128,7 @@ export async function createUserAction(
     revalidatePath("/admin/users");
     return ok(`${parsed.data.name} added. Set a password before they can sign in.`);
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not add the user.");
   }
 }
@@ -148,6 +172,7 @@ export async function updateUserAction(
     revalidatePath(`/admin/users/${id}`);
     return ok("Saved.");
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not save the changes.");
   }
 }
@@ -177,6 +202,7 @@ export async function setActiveAction(
     revalidatePath(`/admin/users/${id}`);
     return ok(makeActive ? `${target.name} can sign in again.` : `${target.name} deactivated.`);
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not change the account status.");
   }
 }
@@ -216,6 +242,7 @@ export async function setPasswordAction(
         : `Temporary password set for ${target.name}. They will be asked to choose their own at next sign-in.`,
     );
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not set the password.");
   }
 }
@@ -240,8 +267,9 @@ export async function deleteUserAction(
     await auditedSoftDelete(actor, appUser, id);
 
     revalidatePath("/admin/users");
-    return ok(`${target.name} removed.`, "/admin/users");
+    removedTo("/admin/users", `${target.name} removed.`);
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not remove the user.");
   }
 }
@@ -298,6 +326,7 @@ export async function changeOwnPasswordAction(
 
     return ok("Password changed.");
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not change your password.");
   }
 }

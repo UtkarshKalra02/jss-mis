@@ -2,6 +2,7 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
@@ -218,6 +219,7 @@ export async function createPurchaseOrderAction(
       redirectTo: `/purchase-orders/${created.id}`,
     });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not save the purchase order.");
   }
 }
@@ -268,6 +270,7 @@ export async function updatePoHeaderAction(
     revalidatePath(`/purchase-orders/${id}`);
     return ok({ message: "Saved." });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not save the changes.");
   }
 }
@@ -317,6 +320,7 @@ export async function addPoItemAction(
     revalidatePath(`/purchase-orders/${purchaseOrderId}`);
     return ok({ message: `${created.itemCode} added.` });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not add the item.");
   }
 }
@@ -362,6 +366,7 @@ export async function updatePoItemAction(
     revalidatePath(`/items/${id}`);
     return ok({ message: "Saved." });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not save the item.");
   }
 }
@@ -395,13 +400,19 @@ export async function removePoItemAction(
     await auditedSoftDelete(actor, poItem, id);
 
     revalidatePath(`/purchase-orders/${existing.purchaseOrderId}`);
-    // Back to the order. The item's own screen reads a row that no longer
-    // exists, so returning without a destination 404s the confirmation (G11).
-    return ok({
-      message: `${existing.itemCode} removed.`,
-      redirectTo: `/purchase-orders/${existing.purchaseOrderId}`,
-    });
+    /*
+     * Back to the order, by SERVER redirect (J13). The item's own screen reads
+     * a row that no longer exists, and returning a destination for the client
+     * to push to loses a race it cannot win — the route re-renders and calls
+     * notFound() before the effect commits.
+     */
+    redirect(
+      `/purchase-orders/${existing.purchaseOrderId}?removed=${encodeURIComponent(
+        `${existing.itemCode} removed.`,
+      )}`,
+    );
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not remove the item.");
   }
 }
@@ -451,6 +462,7 @@ export async function setPoItemCancelledAction(
         : `${existing.itemCode} reinstated.`,
     });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not change the item.");
   }
 }
@@ -521,6 +533,7 @@ export async function setPurchaseOrderCancelledAction(
         : `${existing.internalNo} reinstated.`,
     });
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not change the purchase order.");
   }
 }

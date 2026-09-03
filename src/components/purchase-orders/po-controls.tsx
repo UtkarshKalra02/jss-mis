@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useId } from "react";
+import { useActionState, useId } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -346,15 +345,6 @@ export function PoItemControls({
 }) {
   const [cancelState, cancelAction] = useActionState(setPoItemCancelledAction, initialState);
   const [removeState, removeAction] = useActionState(removePoItemAction, initialState);
-
-  const router = useRouter();
-
-  /* Removing the item leaves this page reading a row that no longer exists, so
-     it has to go back to the order (G11). Cancelling does NOT redirect — a
-     cancelled item is still there and still worth looking at. */
-  useEffect(() => {
-    if (removeState.ok && removeState.redirectTo) router.push(removeState.redirectTo);
-  }, [removeState.ok, removeState.redirectTo, router]);
 
   const cancelled = status === "Cancelled";
 

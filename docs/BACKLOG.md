@@ -126,7 +126,7 @@ the boundary.
 
 ---
 
-## ~~Removing a record 404s the screen it was removed from~~ — FIXED
+## ~~Removing a record 404s the screen it was removed from~~ — FIXED TWICE
 
 Found 25 Aug 2026 while fixing the same bug in Delegation (decision G11). **Fixed on 2 Sep
 2026, on FOUR screens rather than three** — a fourth instance turned up when the bug was
@@ -147,6 +147,13 @@ that some page reads by id", not "which detail screens have a Remove button".
 
 Cancelling deliberately does NOT redirect anywhere. A cancelled item, PO or challan is
 still there and still worth looking at; only removal makes the page unreadable.
+
+**The 2 Sep fix did not work, and the bug was reported again on 3 Sep.** Returning a
+destination for a `useEffect` to push to loses a race against the server action's own
+re-render of the current route — the page calls `notFound()` and React commits that before
+the effect runs. The real fix is a server `redirect()` with `unstable_rethrow` in the
+catch, applied to all eight remove actions. See **J13**, which supersedes G11's prescription
+while keeping its diagnosis.
 
 The fix is the one already applied in `src/modules/delegation/actions.ts`: return
 `ok(message, "/clients")` from the delete action and push to it from the control component,

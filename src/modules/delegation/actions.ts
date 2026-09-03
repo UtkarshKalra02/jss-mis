@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
@@ -67,6 +68,28 @@ const ok = (message?: string, redirectTo?: string): FormState => ({
   redirectTo,
 });
 const fail = (error: string): FormState => ({ ok: false, error });
+
+/**
+ * Where to send somebody after removing the row the page was showing.
+ *
+ * A SERVER REDIRECT, not a destination returned to the client (J13). The
+ * earlier fix returned `redirectTo` and let a useEffect push to it, and that
+ * loses a race it cannot win: a server action re-renders the current route
+ * before the client effect commits, the page calls notFound() against a row
+ * that has just gone, and the confirmation for removing something is a 404.
+ * Returning the destination only made the 404 shorter.
+ *
+ * `redirect()` works by throwing, which is why G11 avoided it — every one of
+ * these actions has a try/catch that would report the successful removal as a
+ * failure. `unstable_rethrow` in the catch is the answer to that: it lets
+ * Next's own control-flow errors through and leaves real errors to be handled.
+ *
+ * The message rides in the query string, and the app shell turns it into a
+ * toast, so the confirmation survives the navigation.
+ */
+function removedTo(path: string, message: string): never {
+  redirect(`${path}?removed=${encodeURIComponent(message)}`);
+}
 
 async function requireDelegationUser(): Promise<Actor & { viewer: Viewer }> {
   const user = await requireAccess("delegation", "write");
@@ -147,6 +170,7 @@ export async function createTaskAction(
     revalidate();
     return ok("Task delegated.");
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not create that task.");
   }
 }
@@ -199,6 +223,7 @@ export async function updateStatusAction(
     revalidate(v.id);
     return ok("Saved.");
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not save that change.");
   }
 }
@@ -249,6 +274,7 @@ export async function updateDefinitionAction(
     revalidate(v.id);
     return ok("Task updated.");
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not update that task.");
   }
 }
@@ -293,6 +319,7 @@ export async function cancelTaskAction(
     // can still show it. Only removal makes the page unreachable.
     return ok("Task withdrawn. It no longer counts on the scorecard.");
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not cancel that task.");
   }
 }
@@ -340,6 +367,7 @@ export async function reassignTaskAction(
     revalidate(v.id);
     return ok("Task reassigned. The change is recorded against both people.");
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not reassign that task.");
   }
 }
@@ -381,8 +409,9 @@ export async function removeTaskAction(
 
     revalidate(id);
     // Back to the list, because this page no longer has anything to show.
-    return ok("Task removed.", "/delegation");
+    removedTo("/delegation", "Task removed.");
   } catch (error) {
+    unstable_rethrow(error);
     return fail(error instanceof Error ? error.message : "Could not remove that task.");
   }
 }

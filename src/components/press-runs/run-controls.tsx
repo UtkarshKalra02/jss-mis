@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -65,14 +64,9 @@ export function AddToRunControl({
   jcNo: string;
   runs: RunOption[];
 }) {
-  const router = useRouter();
   const [addState, addAction] = useActionState(addJobCardToRunAction, initialState);
   const [createState, createAction] = useActionState(createRunForJobCardAction, initialState);
   const [mode, setMode] = useState<"existing" | "new">(runs.length > 0 ? "existing" : "new");
-
-  useEffect(() => {
-    if (createState.ok && createState.redirectTo) router.push(createState.redirectTo);
-  }, [createState.ok, createState.redirectTo, router]);
 
   return (
     <div className="mt-3 rounded-md border p-3">
@@ -227,12 +221,7 @@ export function RemoveFromRunButton({ jobCardId }: { jobCardId: string }) {
  * the click rather than after, but the server is the enforcement.
  */
 export function RemoveRunCard({ run, memberCount }: { run: PressRunRow; memberCount: number }) {
-  const router = useRouter();
   const [state, formAction] = useActionState(removeRunAction, initialState);
-
-  useEffect(() => {
-    if (state.ok && state.redirectTo) router.push(state.redirectTo);
-  }, [state.ok, state.redirectTo, router]);
 
   return (
     <section className="border-overdue/30 rounded-lg border p-4">

@@ -1763,3 +1763,41 @@ sentence rather than a constraint name.
 card is removed, because the sheet carrying it may already be lying on a press, and a second
 card bearing a number somebody has seen on a different job is worse than a gap in the series
 (C7).
+
+**J13 — Removing a row redirects on the SERVER. The client-side push it replaces could
+not work, and G11 was wrong about how to fix this.**
+
+G11 diagnosed the bug correctly — a page that calls `notFound()` when its row is missing
+will 404 the moment somebody removes that row from it — and prescribed the wrong remedy:
+return a `redirectTo` in the action's result, and have a `useEffect` in the control push to
+it. Every remove action in the system was written that way.
+
+**It loses a race it cannot win.** A server action re-renders the current route as part of
+its response. That render calls `notFound()` against a row that has just gone, and React
+commits it before the effect that would have navigated away ever runs. Returning a
+destination did not prevent the 404; it only made it shorter. Delegation had it worst,
+because its `revalidate()` also revalidated `/delegation/<id>` — the page being removed
+from — so the re-render was requested explicitly.
+
+The fix is `redirect()` inside the action. G11 avoided it for a real reason: it works by
+throwing, and every one of these actions has a `try/catch` that would have caught the throw
+and reported the successful removal as a failure. **The answer to that is
+`unstable_rethrow(error)` as the first line of the catch** — Next's own control-flow errors
+pass through, and genuine errors are still handled. It is now the first line of every catch
+in every action file, not only the removes, so a future `redirect()` or `notFound()` in any
+of them cannot be swallowed.
+
+**Eight actions converted**: client, design, user, PO item, delegation task, tooling, press
+run and job card. The dead `useEffect` pushes are deleted rather than left — a pattern that
+looks like it works is how the next person writes a ninth one.
+
+**Create actions keep returning `redirectTo`, and that is not the same thing.** Navigating
+to a row that was just created is a navigation to a page that exists; nothing re-renders a
+missing row, and there is no race. Only removal had the problem.
+
+**The confirmation survives the redirect** as `?removed=<message>`, which the app shell
+turns into a toast (section 7 asks for a toast on save). `ActionToast` is mounted once in
+`(app)/layout.tsx` rather than on each list a removal can land on: eight identical
+six-line additions is seven chances to forget one, and the one forgotten would swallow the
+message silently. It strips the parameter afterwards, so a refresh does not repeat the
+toast and a shared link does not carry it.

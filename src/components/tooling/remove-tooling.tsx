@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useActionState, useEffect } from "react";
+import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -21,12 +20,7 @@ const initialState: FormState = { ok: false, error: null };
  * (G11).
  */
 export function RemoveToolingCard({ toolNo, toolId }: { toolNo: string; toolId: string }) {
-  const router = useRouter();
   const [state, formAction] = useActionState(removeToolingAction, initialState);
-
-  useEffect(() => {
-    if (state.ok && state.redirectTo) router.push(state.redirectTo);
-  }, [state.ok, state.redirectTo, router]);
 
   return (
     <section className="border-overdue/30 rounded-lg border p-4">

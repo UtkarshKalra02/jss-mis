@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { requireActiveUser } from "@/auth/guard";
 import { allowedResources } from "@/auth/roles";
 import { Wordmark } from "@/components/brand/logo";
+import { ActionToast } from "@/components/shell/action-toast";
 import { SidebarNav } from "@/components/shell/sidebar-nav";
 import { TopBar } from "@/components/shell/top-bar";
 
@@ -54,6 +56,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           allowed={allowed}
         />
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 md:px-6">
+          {/* Turns `?removed=` into a toast after a removal redirect (J13).
+              Mounted once here rather than on every list a removal can land
+              on — the one nobody remembered to add would swallow the
+              confirmation silently. Suspense because it reads search params. */}
+          <Suspense fallback={null}>
+            <ActionToast />
+          </Suspense>
           {children}
         </main>
       </div>
