@@ -1712,3 +1712,54 @@ why it is typed rather than pulled from the design.
 The check list is **recorded, not enforced**. Nothing refuses to print a card with all three
 boxes clear, because the paper form never did either. It is the kitting gate in miniature,
 and building the gate on top of it is a separate decision in `BACKLOG.md`.
+
+**J12 — A released job card can be cancelled, held or removed. Until now it could be
+none of those.**
+
+`job_card_status` has carried five values since the schema was written — Planned, In
+Process, On Hold, Completed, Cancelled — and **nothing in the application ever wrote the
+column.** Every card released said `Planned` for the rest of its life, the Job Cards list's
+"open only" filter excluded nothing, and a card raised by mistake was permanent.
+
+That is worse than an omission, because J3 was built on the assumption it was not true. The
+second-card warning exists to make an accidental release recoverable, and there was nothing
+to recover it with.
+
+**Cancel is the ordinary answer; removal is not.** The distinction is the one the tooling
+register already draws between Scrapped and removed (I-series), and it holds for the same
+reason:
+
+| | Cancel | Remove |
+|---|---|---|
+| What it says | the card was raised and the job was dropped | the row should never have been typed |
+| Frequency | normal — plans change, clients defer | rare |
+| Number | kept | consumed, never reissued |
+| History | stays | off every screen, row soft-deleted |
+
+Cancel therefore sits in the status panel and **not** beside the destructive action. Putting
+it next to Remove would make somebody hesitate over the safe answer and reach for the unsafe
+one.
+
+**A cancelled card stops counting toward the second-card warning.** A card raised and then
+withdrawn did not run, and warning "this item already has a card" on the strength of one
+somebody deliberately cancelled is how a warning stops being read (J3).
+
+**Removal is refused in two cases, both because it would contradict something physical:**
+
+- **Run figures are recorded against it.** Final quantity and wastage are the record of a
+  press run, and the card being a mistake does not unhappen the run. Same shape as
+  `removePoItemAction` refusing once anything has been dispatched (F21).
+- **It is on a press run.** Removing it would shrink a plate under whoever is looking at the
+  run screen. `removeJobCardFromRunAction` already exists and is one click, so the refusal
+  names it (H6).
+
+**Moving off On Hold clears the hold reason**, or a card reads as running while still
+displaying why it was stopped — the rule F16 applies when a design moves off Approved. The
+database already required the reason in the first place: `job_card_hold_reason_required` is
+a CHECK, so the rule holds for a psql session too (F11), and the form's message is a
+sentence rather than a constraint name.
+
+**The number is never reissued in either case.** `JC-2026-0007` stays consumed after its
+card is removed, because the sheet carrying it may already be lying on a press, and a second
+card bearing a number somebody has seen on a different job is worse than a gap in the series
+(C7).

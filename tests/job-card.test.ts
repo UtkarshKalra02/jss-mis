@@ -369,3 +369,97 @@ describe("transcribing the run figures back off the paper", () => {
     });
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Unreleasing — cancel and remove (J12)                                       */
+/* -------------------------------------------------------------------------- */
+
+describe("taking back a card that should not have been released", () => {
+  it("stops counting toward the second-card warning once cancelled", async () => {
+    await inRollback(async (tx) => {
+      const { itemId } = await makeItem(tx);
+      const card = await release(tx, itemId);
+
+      expect(await liveCardCountFor(itemId, tx)).toBe(1);
+
+      await auditedUpdate(SYSTEM_ACTOR, jobCard, card.id, { status: "Cancelled" }, tx);
+
+      // A card raised and then withdrawn did not run. Warning "this item
+      // already has a card" on the strength of one somebody deliberately
+      // cancelled is how a warning stops being read.
+      expect(await liveCardCountFor(itemId, tx)).toBe(0);
+    });
+  });
+
+  it("keeps a cancelled card, its number and its history", async () => {
+    await inRollback(async (tx) => {
+      const { itemId } = await makeItem(tx);
+      const card = await release(tx, itemId);
+      await auditedUpdate(SYSTEM_ACTOR, jobCard, card.id, { status: "Cancelled" }, tx);
+
+      const read = await getJobCard(card.id, tx);
+      expect(read).not.toBeNull();
+      expect(read!.status).toBe("Cancelled");
+      expect(read!.jcNo).toBe(card.jcNo);
+    });
+  });
+
+  it("is refused by the database if put On Hold with no reason", async () => {
+    await inRollback(async (tx) => {
+      const { itemId } = await makeItem(tx);
+      const card = await release(tx, itemId);
+
+      // The form refuses this too. The CHECK is what makes it true for a psql
+      // session as well (F11) — a card on hold with no reason is one nobody
+      // can unblock.
+      const failed = await expectFailure(tx, (sp) =>
+        sp.execute(sql`update job_card set status = 'On Hold' where id = ${card.id}`),
+      );
+
+      expect(failed.threw).toBe(true);
+      expect(failed.message).toContain("job_card_hold_reason_required");
+    });
+  });
+
+  it("accepts On Hold once a reason is given", async () => {
+    await inRollback(async (tx) => {
+      const { itemId } = await makeItem(tx);
+      const card = await release(tx, itemId);
+
+      await auditedUpdate(
+        SYSTEM_ACTOR,
+        jobCard,
+        card.id,
+        { status: "On Hold", holdReason: "Waiting on the party's board" },
+        tx,
+      );
+
+      const read = await getJobCard(card.id, tx);
+      expect(read!.status).toBe("On Hold");
+      expect(read!.holdReason).toBe("Waiting on the party's board");
+    });
+  });
+
+  it("removes a card by soft delete, leaving the number consumed", async () => {
+    await inRollback(async (tx) => {
+      const { itemId } = await makeItem(tx);
+      const card = await release(tx, itemId);
+
+      await auditedSoftDelete(SYSTEM_ACTOR, jobCard, card.id, tx);
+
+      // Off every screen (non-negotiable 7 — soft delete only).
+      expect(await getJobCard(card.id, tx)).toBeNull();
+      expect(await jobCardsForItem(itemId, tx)).toHaveLength(0);
+
+      // The row and its number survive, so the series cannot reissue it: the
+      // sheet carrying it may already be lying on a press (C7).
+      const rows = (
+        await tx.execute(sql`select jc_no, deleted_at from job_card where id = ${card.id}`)
+      ).rows as { jc_no: string; deleted_at: string | null }[];
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.jc_no).toBe(card.jcNo);
+      expect(rows[0]!.deleted_at).not.toBeNull();
+    });
+  });
+});

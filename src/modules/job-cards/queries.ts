@@ -219,6 +219,11 @@ export async function getJobCardRecord(id: string, runner: Runner = db) {
  * Drives the second-card warning (J3). Not a constraint: spec section 3 says a
  * PO item may have several job cards for repeat and split runs, so this counts
  * in order to ask a question, never to refuse.
+ *
+ * CANCELLED CARDS ARE NOT COUNTED (J12). A cancelled card is one that was
+ * raised and then withdrawn — it did not run, and warning "this item already
+ * has a card" on the strength of one somebody deliberately cancelled would
+ * make the warning noise, which is how a warning stops being read.
  */
 export async function liveCardCountFor(
   poItemId: string,
@@ -232,6 +237,7 @@ export async function liveCardCountFor(
       and(
         eq(jobCard.poItemId, poItemId),
         LIVE,
+        ne(jobCard.status, "Cancelled"),
         excludeId ? ne(jobCard.id, excludeId) : undefined,
       ),
     );

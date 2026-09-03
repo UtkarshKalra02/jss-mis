@@ -6,6 +6,10 @@ import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
 import { ExecutionForm } from "@/components/job-cards/execution-form";
 import { JobCardForm } from "@/components/job-cards/job-card-form";
+import {
+  JobCardStatusPanel,
+  RemoveJobCardCard,
+} from "@/components/job-cards/job-card-status";
 import { Button } from "@/components/ui/button";
 import { formatCommittedDate, formatDate, formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -30,9 +34,10 @@ export const metadata: Metadata = { title: "Job card · JSS MIS" };
  * that assembly on a monitor while `/job-cards/[id]/print` is the same
  * assembly on A4.
  *
- * There is no sidebar entry, on the same reasoning as the press run screen
- * (H5): a card is reached from the job it belongs to, and a list of every card
- * ever printed answers no question anybody has.
+ * Reached from the Job Cards list, from the item it belongs to, or from a
+ * press run. It briefly had no list screen at all, on the press run's
+ * reasoning (H5) — that was wrong for a document the floor works from daily,
+ * and the list now exists.
  */
 export default async function JobCardPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireAccess("job_card");
@@ -274,6 +279,19 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
         )}
       </div>
 
+      {/* Where the card is, and the way back out of one raised by mistake
+          (J12). Above the edit form, because "cancel this" is a far more
+          common thing to want than "correct the sheet size". */}
+      {canWrite ? (
+        <div className="mt-6">
+          <JobCardStatusPanel
+            id={card.id}
+            status={card.status}
+            holdReason={card.holdReason}
+          />
+        </div>
+      ) : null}
+
       {/* Correcting the card BEFORE it goes to the floor. Deliberately separate
           from the transcription above, so a wastage figure typed a week later
           cannot post a stale copy of the plan over a correction (J6). */}
@@ -289,6 +307,12 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
             runSelected={cardFab}
           />
         </section>
+      ) : null}
+
+      {canWrite ? (
+        <div className="mt-6">
+          <RemoveJobCardCard id={card.id} jcNo={card.jcNo} />
+        </div>
       ) : null}
     </div>
   );

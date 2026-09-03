@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
-import { auditedInsert, auditedUpdate, type Actor } from "@/db/audit";
+import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
 import { jobCard } from "@/db/schema";
 import { allocateNumber, todayIST } from "@/lib/numbering";
 
@@ -13,6 +13,7 @@ import { syncJobCardFabrication } from "@/modules/fabrication/write";
 import { getJobCardRecord, liveCardCountFor, releasableItem } from "./queries";
 import {
   parseExecutionForm,
+  parseJobCardStatusForm,
   parsePlanForm,
   parseReleaseForm,
   runSelectionsFrom,
@@ -303,6 +304,127 @@ export async function updateJobCardExecutionAction(
     return ok("Run figures saved.");
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Could not save those figures.");
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Unreleasing — cancel, hold, remove                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Moves a card's status: Planned, In Process, On Hold, Completed, Cancelled.
+ *
+ * THIS EXISTED IN THE ENUM AND NOWHERE ELSE (J12). `job_card_status` has
+ * carried all five values since the schema was written, and until now nothing
+ * in the application could set any of them — every card ever released said
+ * `Planned` for the rest of its life, and a card raised by mistake was
+ * permanent. The second-card warning (J3) was built to make an accidental
+ * release recoverable and there was nothing to recover it with.
+ *
+ * CANCEL IS THE ORDINARY ANSWER, not removal. A cancelled card was genuinely
+ * raised: it has a number, it may have been printed and carried to a press,
+ * and the plan changing afterwards is a normal event rather than a typing
+ * mistake. It keeps its number and its place in the history, and drops out of
+ * the open list and the second-card count.
+ *
+ * Moving OFF On Hold clears the reason. A card that reads as running while
+ * still displaying why it was stopped is worse than one with no reason at all
+ * — the same rule F16 applies when a design moves off Approved.
+ */
+export async function setJobCardStatusAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireJobCardWriter();
+
+    const parsed = parseJobCardStatusForm(formData);
+    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
+    const v = parsed.data;
+
+    const existing = await getJobCardRecord(v.id);
+    if (!existing) return fail("That job card is no longer in the system.");
+
+    if (existing.status === v.status && v.status !== "On Hold") {
+      return ok("Nothing to change.");
+    }
+
+    await auditedUpdate(actor, jobCard, v.id, {
+      status: v.status,
+      holdReason: v.status === "On Hold" ? (v.holdReason ?? null) : null,
+    });
+
+    revalidatePath(`/job-cards/${v.id}`);
+    revalidatePath("/job-cards");
+    revalidatePath(`/items/${existing.poItemId}`);
+
+    return ok(
+      v.status === "Cancelled"
+        ? `${existing.jcNo} cancelled. It keeps its number and stays in the history.`
+        : `${existing.jcNo} moved to ${v.status}.`,
+    );
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Could not change that status.");
+  }
+}
+
+/**
+ * Removes a job card from the system (soft delete, non-negotiable 7).
+ *
+ * FOR A CARD THAT SHOULD NEVER HAVE BEEN TYPED, and nothing else. A job that
+ * was planned and then dropped is `Cancelled`, which is a fact worth keeping;
+ * removal says the row itself was a mistake and takes it off every screen.
+ * Worded on the screen to steer towards cancelling, the same way the tooling
+ * register steers towards Scrapped and Lost (I-series).
+ *
+ * The NUMBER IS NOT REISSUED. `JC-2026-0007` stays consumed after its card is
+ * removed, because it may already be printed and lying on a press, and a
+ * second card carrying a number somebody has seen on a different job is worse
+ * than a gap in the series (C7).
+ *
+ * REFUSED IN TWO CASES, both because removal would contradict something that
+ * physically happened:
+ *
+ *   - Run figures have been transcribed against it. Final quantity and wastage
+ *     are the record of a press run, and the card being a mistake does not
+ *     unhappen the run. Cancel instead. Same shape as removePoItemAction
+ *     refusing once anything has been dispatched (F21).
+ *   - It is on a press run. Removing it would shrink a plate under whoever is
+ *     looking at the run screen. Take it off the run first — that action
+ *     already exists and is one click (H6).
+ */
+export async function removeJobCardAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireJobCardWriter();
+    const id = String(formData.get("id") ?? "");
+
+    const existing = await getJobCardRecord(id);
+    if (!existing) return fail("That job card is no longer in the system.");
+
+    if (existing.finalQty !== null || existing.wastageQty !== null) {
+      return fail(
+        `${existing.jcNo} has run figures recorded against it and cannot be removed — that is the record of a press run. Cancel it instead, which keeps the history.`,
+      );
+    }
+
+    if (existing.pressRunId !== null) {
+      return fail(
+        `${existing.jcNo} is on a press run. Take it off the run first, then remove it — otherwise the plate changes size under whoever is looking at it.`,
+      );
+    }
+
+    await auditedSoftDelete(actor, jobCard, id);
+
+    revalidatePath("/job-cards");
+    revalidatePath(`/items/${existing.poItemId}`);
+    revalidatePath("/stage-update");
+
+    return ok(`${existing.jcNo} removed. Its number stays consumed.`, "/job-cards");
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Could not remove that job card.");
   }
 }
 

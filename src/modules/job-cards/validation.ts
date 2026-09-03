@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { supplyByEnum } from "@/db/schema/enums";
+import { jobCardStatusEnum, supplyByEnum } from "@/db/schema/enums";
 
 /**
  * Job card form contracts.
@@ -244,4 +244,41 @@ export function runSelectionsFrom(input: {
     optionId,
     valueId: input.fabricationValueIds[i]?.length ? input.fabricationValueIds[i]! : null,
   }));
+}
+
+export const jobCardStatuses = jobCardStatusEnum.enumValues;
+
+/**
+ * Moving a card's status, including cancelling it.
+ *
+ * `holdReason` is required for On Hold and refused everywhere else. The
+ * database enforces the first half already — `job_card_hold_reason_required`
+ * is a CHECK — and this turns a constraint-violation string into a sentence
+ * naming the field, the same way the tooling form does for a self-replacing
+ * tool.
+ *
+ * The mirror of that rule is the one easy to forget: moving OFF On Hold must
+ * CLEAR the reason, or a card reads as running while still displaying why it
+ * was stopped. Same shape as F16 clearing approved_at when a design moves off
+ * Approved.
+ */
+export const jobCardStatusSchema = z
+  .object({
+    id: z.uuid(),
+    status: z.enum(jobCardStatuses),
+    holdReason: absentOrBlank(z.string().trim().max(500)),
+  })
+  .refine((v) => v.status !== "On Hold" || (v.holdReason?.length ?? 0) > 0, {
+    message: "Say why it is on hold — a card on hold with no reason is one nobody can unblock.",
+    path: ["holdReason"],
+  });
+
+export type JobCardStatusInput = z.infer<typeof jobCardStatusSchema>;
+
+export function parseJobCardStatusForm(formData: FormData) {
+  return jobCardStatusSchema.safeParse({
+    id: formData.get("id"),
+    status: formData.get("status"),
+    holdReason: formData.get("holdReason"),
+  });
 }
