@@ -12,7 +12,7 @@ import { allocateNumber, todayIST } from "@/lib/numbering";
 import { syncJobCardFabrication } from "@/modules/fabrication/write";
 import { getPressRun as getRun } from "@/modules/press-runs/queries";
 
-import { getJobCardRecord, liveCardCountFor, releasableItem } from "./queries";
+import { getJobCardRecord, releasableItem } from "./queries";
 import {
   parseExecutionForm,
   parseJobCardStatusForm,
@@ -484,8 +484,3 @@ export async function removeJobCardAction(
   }
 }
 
-/** Exposed for the release form, which asks before it warns. */
-export async function cardCountForItem(poItemId: string): Promise<number> {
-  await requireAccess("job_card");
-  return liveCardCountFor(poItemId);
-}

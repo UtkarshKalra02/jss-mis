@@ -194,6 +194,12 @@ const SCHEMA_EXPECTATIONS: {
              where table_name = 'tooling' and column_name = 'location'
                and is_nullable = 'YES'`,
   },
+  {
+    what: "press_run carries the shared sheet",
+    since: "0024_press_run_shared_sheet",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'press_run' and column_name = 'paper_size'`,
+  },
 ];
 
 async function checkSchema() {
