@@ -1880,3 +1880,70 @@ date, cost, impressions and last used are still not written by any action.
 reconciliation. It is one more value on a field somebody sets by hand — which is all I5
 ever permitted, and the reason it permitted it: a half-kept workflow is worse than none
 because it still reads as authoritative.
+
+**J15 — A ganged plate gets its own printed sheet, and the run owns what the jobs share.**
+
+Punit regularly combines small jobs from different clients onto one sheet — three
+hotel-amenity soap wrappers that would each waste most of a plate alone. Until now that
+produced two or three job cards for one trip through the press, and the floor had to work
+out for itself that they were the same sheet.
+
+**NOTHING ABOUT OWNERSHIP CHANGES.** Each client's design is approved and tracked
+separately, each item keeps its own job card, its own committed date and its own OTD. H1
+through H7 stand exactly as built. This is one printed document over the top of them, and a
+place to put the facts they share.
+
+**`press_run` gains the sheet: paper, plate, supply and machine, plus one set of run
+figures.** They are on the run rather than the cards because a ganged run has ONE of each by
+definition, and holding them per card would let two cards on one plate disagree about what
+they are printing on — the wrong one being whichever nobody updated, which is the failure I7
+removed `design.die_id` to avoid.
+
+**THE RESOLUTION RULE, AND IT ONLY GOES ONE WAY: when a card is on a run, the RUN wins.**
+Not merged, not preferred-when-blank, not a fallback — any of those gives two answers to
+"what am I printing on". A ganged card's own paper and plate columns go dormant; the card
+screen says so and stops offering the inputs, and the card's own print resolves through the
+run and labels the block *"Paper detail — from run PR-2026-0004"*. `resolvedSheet()` is the
+only place that resolution happens, because a second copy is how the sheet somebody reads
+stops matching the sheet somebody printed.
+
+**What the run sheet prints, and why it is split that way:**
+
+| | |
+|---|---|
+| Once, shared | the paper block, the plate and supply arrangement, the machine |
+| Per job | client, item, quantity, and its **own** fabrication checklist with its own captured detail |
+| Blank | one set of final quantity, wastage and remarks, plus ruled space for a per-client split |
+
+The per-job fabrication is not a formality. H2 deliberately refused to make ganged cards
+share a stage precisely because they diverge the moment they come off the press — one to
+lamination, another straight to die-cut — and a sheet that printed one finishing list would
+be asserting the thing the schema took care not to be true.
+
+**The split is space on the page, not a form.** The press produced a number of sheets; how
+that divides between the clients on it is a question that often does not need answering.
+Where it does, somebody writes it on the sheet and types it into the run's remarks. Building
+a split-quantity workflow nobody has asked to maintain is how a feature grows a form, and
+the per-card figures are still there for anybody who wants to record it properly.
+
+**Ganging moved to release time.** It was previously reachable only after a card existed,
+from the Item Tracker's job cards panel — which was the only place a card was visible at all
+(H6). But the decision is made AT release: Preeti looks at a small job and asks whether it
+goes on its own plate. Asking afterwards means the card is raised standalone and then
+corrected. The choice — its own sheet, an existing recent run, or a new one — is on the
+release form and writes **in the same transaction as the card**, because a card that was
+meant to join a plate and did not is worse than no card: it prints its own sheet and the
+press gets two documents for one run.
+
+**Individual job card printing is unchanged, and a one-member run reads as an ordinary
+sheet.** This is additive. What did change is that a ganged card's screen offers the run
+sheet as the primary print and says the run is the document the press works from — printing
+both is the duplication this removes.
+
+`press_run.machine` from H1 is left in place as free text, readable where a row predates
+`machine_id`, and nothing writes it any more. Dropping it would be a second destructive
+migration a day after 0021, for a column that costs nothing where it is.
+
+`updateRunAction` and `RunDetailsForm` are removed, superseded by `updateRunSheetAction` and
+`RunSheetForm`. Two forms writing overlapping halves of one row is how the halves stop
+agreeing.

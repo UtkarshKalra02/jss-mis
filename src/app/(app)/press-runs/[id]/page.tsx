@@ -4,10 +4,13 @@ import { notFound } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
-import { RemoveRunCard, RunDetailsForm } from "@/components/press-runs/run-controls";
+import { RemoveRunCard } from "@/components/press-runs/run-controls";
+import { RunExecutionForm, RunSheetForm } from "@/components/press-runs/run-sheet-form";
+import { Button } from "@/components/ui/button";
 import { RemoveFromRunButton } from "@/components/press-runs/run-controls";
 import { formatDate, formatQty } from "@/lib/format";
 import { getPressRun, getRunMembers } from "@/modules/press-runs/queries";
+import { machineOptions } from "@/modules/job-cards/queries";
 
 export const metadata: Metadata = { title: "Press run · JSS MIS" };
 
@@ -36,7 +39,7 @@ export default async function PressRunPage({ params }: { params: Promise<{ id: s
   const run = await getPressRun(id);
   if (!run) notFound();
 
-  const members = await getRunMembers(id);
+  const [members, machines] = await Promise.all([getRunMembers(id), machineOptions()]);
   const clients = new Set(members.map((m) => m.clientId));
 
   return (
@@ -45,7 +48,15 @@ export default async function PressRunPage({ params }: { params: Promise<{ id: s
         ← Item tracker
       </Link>
 
-      <h1 className="page-title mt-2 tabular-nums">{run.runNo}</h1>
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
+        <h1 className="page-title tabular-nums">{run.runNo}</h1>
+
+        {/* ONE document for what is physically one print run (J15). Every job
+            on the plate keeps its own card; this is a sheet over the top. */}
+        <Button asChild size="sm" variant="outline">
+          <Link href={`/press-runs/${run.id}/print`}>Print run sheet</Link>
+        </Button>
+      </div>
       <p className="text-muted-foreground mt-1 text-[13px]">
         Printed {formatDate(run.runDate)}
         {run.machine ? ` · ${run.machine}` : ""} · {members.length} job
@@ -114,7 +125,11 @@ export default async function PressRunPage({ params }: { params: Promise<{ id: s
 
       {canWrite ? (
         <div className="mt-8 space-y-6">
-          <RunDetailsForm run={run} />
+          <RunSheetForm run={run} machines={machines} />
+          <div className="mt-6">
+            <RunExecutionForm run={run} />
+          </div>
+
           <RemoveRunCard run={run} memberCount={members.length} />
         </div>
       ) : null}

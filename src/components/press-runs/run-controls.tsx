@@ -10,7 +10,6 @@ import {
   createRunForJobCardAction,
   removeJobCardFromRunAction,
   removeRunAction,
-  updateRunAction,
   type FormState,
 } from "@/modules/press-runs/actions";
 import type { PressRunRow, RunOption } from "@/modules/press-runs/queries";
@@ -150,58 +149,17 @@ export function AddToRunControl({
   );
 }
 
-/** The run's own details. Free text machine, because no machine master exists. */
-export function RunDetailsForm({ run }: { run: PressRunRow }) {
-  const [state, formAction] = useActionState(updateRunAction, initialState);
+/*
+ * RunDetailsForm removed (J15).
+ *
+ * It edited a run's date, free-text machine and notes — the whole of what a
+ * press run held before it carried the shared sheet. `RunSheetForm` in
+ * run-sheet-form.tsx supersedes it: same three fields plus the paper, plate
+ * and supply arrangement every job on the plate shares. Two forms writing
+ * overlapping halves of one row is how the halves stop agreeing.
+ */
 
-  return (
-    <section className="rounded-lg border p-4">
-      <h2 className="text-sm font-medium">Run details</h2>
-      <form action={formAction} className="mt-3 space-y-4">
-        <input type="hidden" name="id" value={run.id} />
 
-        <div className="flex flex-wrap gap-4">
-          <label className="text-[12px]">
-            <span className="text-muted-foreground block">Run date</span>
-            <input
-              type="date"
-              name="runDate"
-              required
-              defaultValue={run.runDate}
-              className="border-input bg-background mt-1 h-9 rounded-md border px-2 text-[13px]"
-            />
-          </label>
-          <label className="text-[12px]">
-            <span className="text-muted-foreground block">Machine</span>
-            <input
-              type="text"
-              name="machine"
-              defaultValue={run.machine ?? ""}
-              placeholder="e.g. Komori 4-colour"
-              className="border-input bg-background mt-1 h-9 rounded-md border px-2 text-[13px]"
-            />
-          </label>
-        </div>
-
-        <label className="block text-[12px]">
-          <span className="text-muted-foreground block">Notes</span>
-          <textarea
-            name="notes"
-            rows={2}
-            maxLength={500}
-            defaultValue={run.notes ?? ""}
-            className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-[13px]"
-          />
-        </label>
-
-        <Submit label="Save" variant="outline" />
-        <Feedback state={state} />
-      </form>
-    </section>
-  );
-}
-
-/** Takes one job card off the run, back to the ordinary un-ganged state. */
 export function RemoveFromRunButton({ jobCardId }: { jobCardId: string }) {
   const [state, formAction] = useActionState(removeJobCardFromRunAction, initialState);
 

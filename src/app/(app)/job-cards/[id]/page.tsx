@@ -20,6 +20,8 @@ import {
   printedChecklist,
 } from "@/modules/fabrication/queries";
 import { getJobCard, machineOptions } from "@/modules/job-cards/queries";
+import { getPressRun } from "@/modules/press-runs/queries";
+import { resolvedSheet } from "@/modules/press-runs/sheet";
 import { toolingForDesign } from "@/modules/tooling/queries";
 import { locationLabel } from "@/modules/tooling/location";
 
@@ -57,6 +59,14 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
 
   const designFab = card.designId ? await designSelections(card.designId) : new Map();
   const checklist = printedChecklist(vocabulary, designFab, cardFab);
+
+  // The run wins while a card is ganged (J15), so the screen reads what will
+  // actually print rather than the card's own dormant columns.
+  const run = card.pressRunId ? await getPressRun(card.pressRunId) : null;
+  const sheet = resolvedSheet(
+    card,
+    run ? { ...run, machineName: run.machineName ?? run.machine } : null,
+  );
 
   const applying = checklist.filter((l) => l.applies);
 
@@ -96,9 +106,19 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
           </span>
         </div>
 
-        <Button asChild size="sm" variant="outline">
-          <Link href={`/job-cards/${card.id}/print`}>Print job card</Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* A ganged card's floor document is the RUN sheet — printing both
+              is the duplication this feature removes (J15). The card's own
+              print stays available and says so on the page. */}
+          {card.pressRunId ? (
+            <Button asChild size="sm">
+              <Link href={`/press-runs/${card.pressRunId}/print`}>Print run sheet</Link>
+            </Button>
+          ) : null}
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/job-cards/${card.id}/print`}>Print job card</Link>
+          </Button>
+        </div>
       </div>
 
       <p className="text-muted-foreground mt-1 text-[13px]">
@@ -157,15 +177,15 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
         <Fact
           label="Machine"
           value={
-            card.machineName
-              ? `${card.machineName}${card.machineSheetSize ? ` · ${card.machineSheetSize}` : ""}`
+            sheet.machineName
+              ? `${sheet.machineName}${sheet.machineSheetSize ? ` · ${sheet.machineSheetSize}` : ""}`
               : null
           }
         />
-        <Fact label="Plate / Job ID" value={card.plateJobId} />
+        <Fact label="Plate / Job ID" value={sheet.plateJobId} />
 
-        <Fact label="Paper supplied by" value={card.paperSupplyBy} />
-        <Fact label="Plate supplied by" value={card.plateSupplyBy} />
+        <Fact label="Paper supplied by" value={sheet.paperSupplyBy} />
+        <Fact label="Plate supplied by" value={sheet.plateSupplyBy} />
         <Fact label="Card raised" value={formatDate(card.createdAt)} />
       </dl>
 
@@ -173,14 +193,27 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
         <section className="rounded-lg border p-4">
           <h2 className="text-sm font-medium">Paper</h2>
           <p className="text-muted-foreground mt-1 text-[12px]">
-            The parent sheet this run prints on, typed on the card — not the design&rsquo;s
-            finished size.
+            {sheet.fromRun ? (
+              <>
+                Shared with every job on run{" "}
+                <Link href={`/press-runs/${card.pressRunId}`} className="hover:underline">
+                  {sheet.runNo}
+                </Link>
+                , and edited there. This card&rsquo;s own paper fields are ignored while it
+                is ganged.
+              </>
+            ) : (
+              <>
+                The parent sheet this run prints on, typed on the card — not the design&rsquo;s
+                finished size.
+              </>
+            )}
           </p>
           <dl className="mt-3 grid gap-x-8 gap-y-3 text-[13px] sm:grid-cols-2">
-            <Fact label="Size" value={card.paperSize} />
-            <Fact label="GSM" value={card.paperGsm} />
-            <Fact label="Matt / gloss" value={card.paperFinish} />
-            <Fact label="Sheets / ream" value={formatQty(card.sheetsPerReam)} />
+            <Fact label="Size" value={sheet.paperSize} />
+            <Fact label="GSM" value={sheet.paperGsm} />
+            <Fact label="Matt / gloss" value={sheet.paperFinish} />
+            <Fact label="Sheets / ream" value={formatQty(sheet.sheetsPerReam)} />
             <Fact label="No. of colours" value={card.execNoOfColours} />
             <Fact label="Planning" value={card.execPlanning} />
           </dl>
@@ -306,6 +339,7 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
             machines={machines}
             runOptions={runOptions}
             runSelected={cardFab}
+            gangedOn={run ? { id: run.id, runNo: run.runNo } : null}
           />
         </section>
       ) : null}

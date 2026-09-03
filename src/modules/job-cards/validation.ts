@@ -100,6 +100,20 @@ export const releaseSchema = z.object({
   fabricationValueIds: z.array(z.string().trim()).default([]),
 
   /**
+   * Ganging, decided while the card is raised (J15).
+   *
+   * It used to be reachable only after the card existed, from the Item
+   * Tracker's job cards panel — which was the only place a card was visible at
+   * all (H6). But the decision is made at release: Preeti looks at a small job
+   * and asks whether it goes on its own plate or joins somebody else's sheet.
+   * Asking afterwards means the card is raised standalone and then corrected.
+   *
+   * Absent means standalone, which is the overwhelming majority (H1).
+   */
+  gangPressRunId: absentOrBlank(z.uuid()),
+  gangNewRun: absentOrBlank(z.literal("1")),
+
+  /**
    * The second-card acknowledgement (J3).
    *
    * A repeat or split run is legitimate — spec section 3 says a PO item may
@@ -190,6 +204,8 @@ export function parseReleaseForm(formData: FormData) {
     notes: formData.get("notes"),
     fabricationOptionIds: formData.getAll("fabricationOptionId").map(String),
     fabricationValueIds: formData.getAll("fabricationValueId").map(String),
+    gangPressRunId: formData.get("gangPressRunId"),
+    gangNewRun: formData.get("gangNewRun"),
     confirmSecondCard: formData.get("confirmSecondCard"),
   });
 }

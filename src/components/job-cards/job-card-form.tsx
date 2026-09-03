@@ -134,6 +134,8 @@ export function JobCardForm({
   runSelected,
   hasExistingCard,
   startOpen,
+  gangedOn,
+  recentRuns,
 }: {
   mode: "release" | "edit";
   poItemId?: string;
@@ -147,6 +149,17 @@ export function JobCardForm({
   hasExistingCard?: boolean;
   /** True on /job-cards/new, where the whole page IS the form. */
   startOpen?: boolean;
+  /**
+   * The run this card is ganged onto, when it is on one.
+   *
+   * The sheet then belongs to the RUN and is edited there (J15), so this form
+   * stops offering paper, plate, supply and machine rather than presenting
+   * inputs whose values would be ignored. A form that accepts a value it will
+   * not use is worse than one that does not ask.
+   */
+  gangedOn?: { id: string; runNo: string } | null;
+  /** Recent plates this job could join, for the release form (J15, H5). */
+  recentRuns?: { id: string; runNo: string; runDate: string; machine: string | null; cardCount: number }[];
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(
@@ -154,6 +167,8 @@ export function JobCardForm({
     initialState,
   );
   const [open, setOpen] = useState(mode === "edit" || startOpen === true);
+  const [gang, setGang] = useState<"none" | "existing" | "new">("none");
+  const [gangRunId, setGangRunId] = useState("");
   const [runValues, setRunValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(runOptions.map((o) => [o.id, runSelected.get(o.id)?.valueId ?? ""])),
   );
@@ -262,27 +277,34 @@ export function JobCardForm({
             defaultValue={card?.plannedDate}
           />
 
-          <SupplySelect
-            name="paperSupplyBy"
-            label="Paper supplied by"
-            defaultValue={card?.paperSupplyBy}
-          />
-          <SupplySelect
-            name="plateSupplyBy"
-            label="Plate supplied by"
-            defaultValue={card?.plateSupplyBy}
-          />
+          {!gangedOn ? (
+            <>
+              <SupplySelect
+                name="paperSupplyBy"
+                label="Paper supplied by"
+                defaultValue={card?.paperSupplyBy}
+              />
+              <SupplySelect
+                name="plateSupplyBy"
+                label="Plate supplied by"
+                defaultValue={card?.plateSupplyBy}
+              />
+            </>
+          ) : null}
 
-          <Field
-            name="plateJobId"
-            label="Plate / Job ID"
-            placeholder="As the platemaker gave it"
-            defaultValue={card?.plateJobId}
-          />
+          {!gangedOn ? (
+            <Field
+              name="plateJobId"
+              label="Plate / Job ID"
+              placeholder="As the platemaker gave it"
+              defaultValue={card?.plateJobId}
+            />
+          ) : null}
 
           {/* A tick list, because the press master exists — it has been on the
-              paper card all along (J10). */}
-          <label className="block">
+              paper card all along (J10). Hidden while ganged: one plate runs
+              on one press, and that is the run's fact (J15). */}
+          <label className={gangedOn ? "hidden" : "block"}>
             <span className="text-[13px] font-medium">Machine</span>
             <select name="machineId" defaultValue={card?.machineId ?? ""} className={inputClass}>
               <option value="">Not decided yet</option>
@@ -301,11 +323,19 @@ export function JobCardForm({
         {/* ---------------------------------------------------------------- */}
         <section>
           <h4 className="text-sm font-medium">Paper detail</h4>
-          <p className="text-muted-foreground mt-1 text-[12px]">
-            The parent sheet this run prints on, not the finished size of the job. Typed per
-            card, because it is a decision made out of whatever stock is in the building.
-          </p>
-          <div className="mt-2 grid gap-4 sm:grid-cols-3">
+          {gangedOn ? (
+            <p className="text-muted-foreground mt-1 text-[12px]">
+              This job is ganged onto run <span className="font-medium">{gangedOn.runNo}</span>,
+              which owns the sheet — size, GSM, finish, plate, supply and machine are entered
+              once on the run and shared by every job on it. Edit them there.
+            </p>
+          ) : (
+            <p className="text-muted-foreground mt-1 text-[12px]">
+              The parent sheet this run prints on, not the finished size of the job. Typed per
+              card, because it is a decision made out of whatever stock is in the building.
+            </p>
+          )}
+          <div className={gangedOn ? "hidden" : "mt-2 grid gap-4 sm:grid-cols-3"}>
             <Field
               name="paperSize"
               label="Size"
@@ -384,6 +414,72 @@ export function JobCardForm({
                 </label>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {/* Ganging, decided here rather than after the card exists (J15).
+            Only on release: an existing card's plate is changed from the run
+            screen, where the rest of the plate is visible. */}
+        {mode === "release" && recentRuns ? (
+          <section>
+            <h4 className="text-sm font-medium">Sheet</h4>
+            <p className="text-muted-foreground mt-1 text-[12px]">
+              A small job can share one sheet with another client&rsquo;s to save paper and
+              plate. Each keeps its own card, quantity and delivery — only the sheet is
+              shared.
+            </p>
+
+            <div className="mt-2 space-y-2">
+              {(
+                [
+                  ["none", "Its own sheet"],
+                  ["existing", "Add to a recent press run"],
+                  ["new", "Start a new press run"],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="gangChoice"
+                    checked={gang === value}
+                    onChange={() => setGang(value)}
+                    className="accent-primary size-4"
+                    disabled={value === "existing" && recentRuns.length === 0}
+                  />
+                  <span className="text-[13px]">
+                    {label}
+                    {value === "existing" && recentRuns.length === 0 ? (
+                      <span className="text-muted-foreground"> — none in the last 30 days</span>
+                    ) : null}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {gang === "existing" ? (
+              <select
+                value={gangRunId}
+                onChange={(e) => setGangRunId(e.target.value)}
+                aria-label="Which press run"
+                className={`${inputClass} max-w-md`}
+              >
+                <option value="">Choose a run…</option>
+                {recentRuns.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.runNo} · {r.runDate}
+                    {r.machine ? ` · ${r.machine}` : ""} · {r.cardCount} job
+                    {r.cardCount === 1 ? "" : "s"}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+
+            {/* Posted as hidden fields so the action reads one shape whichever
+                choice was made. */}
+            {gang === "existing" && gangRunId ? (
+              <input type="hidden" name="gangPressRunId" value={gangRunId} />
+            ) : null}
+            {gang === "new" ? <input type="hidden" name="gangNewRun" value="1" /> : null}
           </section>
         ) : null}
 

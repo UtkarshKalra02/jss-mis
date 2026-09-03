@@ -13,7 +13,8 @@ import {
   type PrintedFabricationLine,
 } from "@/modules/fabrication/queries";
 import { getJobCard } from "@/modules/job-cards/queries";
-import { gangInfoFor } from "@/modules/press-runs/queries";
+import { gangInfoFor, getPressRun } from "@/modules/press-runs/queries";
+import { resolvedSheet } from "@/modules/press-runs/sheet";
 import { toolingForDesign } from "@/modules/tooling/queries";
 import { locationLabel } from "@/modules/tooling/location";
 
@@ -60,6 +61,17 @@ export default async function JobCardPrintPage({
   const designFab = card.designId ? await designSelections(card.designId) : new Map();
   const checklist = printedChecklist(vocabulary, designFab, cardFab);
   const gang = gangs.get(id);
+
+  /*
+   * THE RUN WINS (J15). A ganged card prints the sheet it is actually on, not
+   * whatever its own columns happen to hold — two answers to "what am I
+   * printing on" is the failure I7 removed design.die_id to avoid.
+   */
+  const run = card.pressRunId ? await getPressRun(card.pressRunId) : null;
+  const sheet = resolvedSheet(
+    card,
+    run ? { ...run, machineName: run.machineName ?? run.machine } : null,
+  );
 
   // The paper form runs its fabrication list in two columns. Split down the
   // middle so the sheet reads the way the one it replaces does.
@@ -152,6 +164,11 @@ export default async function JobCardPrintPage({
             {gang.others > 0
               ? ` together with ${gang.others} other job${gang.others === 1 ? "" : "s"}. Do not treat the sheet as this job alone.`
               : "."}
+            {" "}
+            <span className="font-bold">
+              The run sheet for {gang.runNo} is the document the press works from; this card
+              covers only this client&rsquo;s job.
+            </span>
           </p>
         ) : null}
 
@@ -160,19 +177,19 @@ export default async function JobCardPrintPage({
         {/* ---------------------------------------------------------------- */}
         <section className="print-avoid-break print-box mt-2 px-2 py-1.5">
           <div className="grid grid-cols-3 gap-x-4">
-            <SupplyBy label="Paper supply by" value={card.paperSupplyBy} />
-            <SupplyBy label="Plate supply by" value={card.plateSupplyBy} />
+            <SupplyBy label="Paper supply by" value={sheet.paperSupplyBy} />
+            <SupplyBy label="Plate supply by" value={sheet.plateSupplyBy} />
             <div>
               <p className="print-label">Plate / job ID</p>
-              <p className="print-value mt-0.5">{card.plateJobId ?? "—"}</p>
+              <p className="print-value mt-0.5">{sheet.plateJobId ?? "—"}</p>
             </div>
           </div>
 
           <p className="mt-2 flex items-baseline gap-2 border-t border-neutral-400 pt-1.5">
             <span className="print-section-title">Machine</span>
             <span className="print-value">
-              {card.machineName ?? "—"}
-              {card.machineSheetSize ? ` · ${card.machineSheetSize}` : ""}
+              {sheet.machineName ?? "—"}
+              {sheet.machineSheetSize ? ` · ${sheet.machineSheetSize}` : ""}
             </span>
           </p>
         </section>
@@ -181,13 +198,15 @@ export default async function JobCardPrintPage({
         {/* Paper detail — the PARENT SHEET, not the finished size            */}
         {/* ---------------------------------------------------------------- */}
         <section className="print-avoid-break print-box mt-2 px-2 py-1.5">
-          <h2 className="print-section-title mb-1.5">Paper detail</h2>
+          <h2 className="print-section-title mb-1.5">
+            Paper detail{sheet.fromRun ? ` — from run ${sheet.runNo}` : ""}
+          </h2>
           <div className="grid grid-cols-5 gap-x-4">
-            <Slot label="Size" value={card.paperSize} />
-            <Slot label="GSM" value={card.paperGsm} />
-            <Slot label="Matt / gloss" value={card.paperFinish} />
-            <Slot label="Sheets / ream" value={formatQty(card.sheetsPerReam)} />
-            <Slot label="Remarks" value={card.paperRemarks} />
+            <Slot label="Size" value={sheet.paperSize} />
+            <Slot label="GSM" value={sheet.paperGsm} />
+            <Slot label="Matt / gloss" value={sheet.paperFinish} />
+            <Slot label="Sheets / ream" value={formatQty(sheet.sheetsPerReam)} />
+            <Slot label="Remarks" value={sheet.paperRemarks} />
           </div>
         </section>
 

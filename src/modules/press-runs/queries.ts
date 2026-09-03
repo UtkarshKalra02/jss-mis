@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
-import { client, jobCard, poItem, pressRun, purchaseOrder } from "@/db/schema";
+import { client, design, jobCard, machine, poItem, pressRun, purchaseOrder } from "@/db/schema";
 
 /**
  * Reads for press runs (ganging).
@@ -19,7 +19,27 @@ export type PressRunRow = {
   id: string;
   runNo: string;
   runDate: string;
+  /** Free text from H1, kept readable for rows that predate machine_id. */
   machine: string | null;
+  machineId: string | null;
+  machineName: string | null;
+  machineSheetSize: string | null;
+
+  /** The sheet, shared by every job on the plate (J15). */
+  paperSize: string | null;
+  paperGsm: string | null;
+  paperFinish: string | null;
+  sheetsPerReam: number | null;
+  paperRemarks: string | null;
+  plateJobId: string | null;
+  paperSupplyBy: string | null;
+  plateSupplyBy: string | null;
+
+  /** One set for the whole plate, blank on the printed sheet (J15). */
+  finalQty: number | null;
+  wastageQty: number | null;
+  executionRemarks: string | null;
+
   notes: string | null;
 };
 
@@ -33,9 +53,27 @@ export async function getPressRun(
       runNo: pressRun.runNo,
       runDate: pressRun.runDate,
       machine: pressRun.machine,
+      machineId: pressRun.machineId,
+      machineName: machine.name,
+      machineSheetSize: machine.sheetSize,
+
+      paperSize: pressRun.paperSize,
+      paperGsm: pressRun.paperGsm,
+      paperFinish: pressRun.paperFinish,
+      sheetsPerReam: pressRun.sheetsPerReam,
+      paperRemarks: pressRun.paperRemarks,
+      plateJobId: pressRun.plateJobId,
+      paperSupplyBy: pressRun.paperSupplyBy,
+      plateSupplyBy: pressRun.plateSupplyBy,
+
+      finalQty: pressRun.finalQty,
+      wastageQty: pressRun.wastageQty,
+      executionRemarks: pressRun.executionRemarks,
+
       notes: pressRun.notes,
     })
     .from(pressRun)
+    .leftJoin(machine, eq(machine.id, pressRun.machineId))
     .where(and(eq(pressRun.id, id), isNull(pressRun.deletedAt)))
     .limit(1);
 
@@ -51,6 +89,10 @@ export type RunMember = {
   poItemId: string;
   itemCode: string;
   itemName: string;
+  orderedQty: number;
+  /** Each member keeps its OWN design, and therefore its own finishing (H2). */
+  designId: string | null;
+  designCode: string | null;
   clientId: string;
   clientCode: string;
   clientName: string;
@@ -78,6 +120,9 @@ export async function getRunMembers(id: string, runner: Runner = db): Promise<Ru
       poItemId: poItem.id,
       itemCode: poItem.itemCode,
       itemName: poItem.itemName,
+      orderedQty: poItem.orderedQty,
+      designId: poItem.designId,
+      designCode: design.designCode,
       clientId: client.id,
       clientCode: client.code,
       clientName: client.name,
@@ -86,6 +131,7 @@ export async function getRunMembers(id: string, runner: Runner = db): Promise<Ru
     .innerJoin(poItem, eq(poItem.id, jobCard.poItemId))
     .innerJoin(purchaseOrder, eq(purchaseOrder.id, poItem.purchaseOrderId))
     .innerJoin(client, eq(client.id, purchaseOrder.clientId))
+    .leftJoin(design, eq(design.id, poItem.designId))
     .where(and(eq(jobCard.pressRunId, id), isNull(jobCard.deletedAt)))
     .orderBy(asc(client.name), asc(poItem.itemCode));
 }

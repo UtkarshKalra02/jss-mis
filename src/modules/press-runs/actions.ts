@@ -10,7 +10,7 @@ import { jobCard, pressRun } from "@/db/schema";
 import { allocateNumber } from "@/lib/numbering";
 
 import { getJobCard, getPressRun, getRunMembers } from "./queries";
-import { parseRunForm, parseRunUpdate } from "./validation";
+import { parseRunExecution, parseRunForm, parseRunSheet } from "./validation";
 
 /**
  * Press run writes (ganging).
@@ -214,40 +214,15 @@ export async function removeJobCardFromRunAction(
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Edit and remove the run itself                                              */
-/* -------------------------------------------------------------------------- */
-
-export async function updateRunAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  try {
-    const actor = await requireRunWriter();
-
-    const parsed = parseRunUpdate(formData);
-    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
-    const v = parsed.data;
-
-    const run = await getPressRun(v.id);
-    if (!run) return fail("That press run no longer exists.");
-
-    // The run NUMBER is not re-allocated when the date moves. It was issued,
-    // it may already be written on a plate bag, and renumbering documents
-    // after the fact is how two pieces of paper end up disagreeing (C7).
-    await auditedUpdate(actor, pressRun, v.id, {
-      runDate: v.runDate,
-      machine: v.machine ?? null,
-      notes: v.notes ?? null,
-    });
-
-    revalidate(v.id);
-    return ok("Run updated.");
-  } catch (error) {
-    unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not update that run.");
-  }
-}
+/*
+ * updateRunAction removed (J15), superseded by updateRunSheetAction.
+ *
+ * It wrote a run's date, free-text machine and notes. A run now carries the
+ * paper, plate and supply arrangement every job on the plate shares, and one
+ * action writing a subset of that row alongside another writing the rest is
+ * how the two halves stop agreeing. `parseRunUpdate` and `updateRunSchema` go
+ * with it.
+ */
 
 /**
  * Soft-deletes a run.
@@ -258,6 +233,85 @@ export async function updateRunAction(
  * one-click way to lose the record that a plate was shared. Empty it first,
  * which is a deliberate act per card.
  */
+/**
+ * The sheet, entered once for the whole plate (J15).
+ *
+ * Supersedes `updateRunAction`'s narrow edit: a run now carries the paper,
+ * plate and machine that every job on it shares, so the run screen is where
+ * they are typed. The run NUMBER is never re-allocated when the date moves —
+ * it may already be written on a plate bag (C7).
+ */
+export async function updateRunSheetAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireRunWriter();
+
+    const parsed = parseRunSheet(formData);
+    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
+    const v = parsed.data;
+
+    const run = await getPressRun(v.id);
+    if (!run) return fail("That press run no longer exists.");
+
+    await auditedUpdate(actor, pressRun, v.id, {
+      runDate: v.runDate,
+      machineId: v.machineId ?? null,
+      notes: v.notes ?? null,
+      paperSize: v.paperSize ?? null,
+      paperGsm: v.paperGsm ?? null,
+      paperFinish: v.paperFinish ?? null,
+      sheetsPerReam: v.sheetsPerReam ?? null,
+      paperRemarks: v.paperRemarks ?? null,
+      plateJobId: v.plateJobId ?? null,
+      paperSupplyBy: v.paperSupplyBy ?? null,
+      plateSupplyBy: v.plateSupplyBy ?? null,
+    });
+
+    revalidate(v.id);
+    return ok("Run sheet saved.");
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(error instanceof Error ? error.message : "Could not save the run sheet.");
+  }
+}
+
+/**
+ * What came off the plate, transcribed after the run.
+ *
+ * Deliberately separate from the sheet above, on J6's reasoning: somebody
+ * typing a wastage figure a week later must not post a stale copy of the paper
+ * spec back over a correction.
+ */
+export async function updateRunExecutionAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireRunWriter();
+
+    const parsed = parseRunExecution(formData);
+    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
+    const v = parsed.data;
+
+    const run = await getPressRun(v.id);
+    if (!run) return fail("That press run no longer exists.");
+
+    await auditedUpdate(actor, pressRun, v.id, {
+      finalQty: v.finalQty ?? null,
+      wastageQty: v.wastageQty ?? null,
+      executionRemarks: v.executionRemarks ?? null,
+    });
+
+    revalidate(v.id);
+    return ok("Run figures saved.");
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(error instanceof Error ? error.message : "Could not save those figures.");
+  }
+}
+
 export async function removeRunAction(
   _prev: FormState,
   formData: FormData,

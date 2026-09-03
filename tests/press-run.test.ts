@@ -6,11 +6,14 @@ import { jobCard, poItem, pressRun, purchaseOrder } from "@/db/schema";
 import { allocateNumber, financialYearStart } from "@/lib/numbering";
 import {
   gangInfoFor,
+  getPressRun,
   getRunMembers,
   recentRuns,
 } from "@/modules/press-runs/queries";
 
-import { inRollback, uniq } from "./helpers";
+import { resolvedSheet } from "@/modules/press-runs/sheet";
+
+import { expectFailure, inRollback, uniq } from "./helpers";
 
 /**
  * Press runs — ganging (decision H1).
@@ -287,6 +290,171 @@ describe("the run picker (H5)", () => {
 
       const offered = await recentRuns(tx);
       expect(offered.find((r) => r.id === run.id)!.cardCount).toBe(2);
+    });
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The shared sheet, and which one wins (J15)                                  */
+/* -------------------------------------------------------------------------- */
+
+describe("resolving which sheet a card prints on", () => {
+  const cardOwn = {
+    paperSize: 'CARD 20" x 30"',
+    paperGsm: "250",
+    paperFinish: "Gloss",
+    sheetsPerReam: 500,
+    paperRemarks: "card remark",
+    plateJobId: "CARD-PLATE",
+    paperSupplyBy: "Press",
+    plateSupplyBy: "Press",
+    machineName: "SM-72 — 2 Colour",
+    machineSheetSize: '20" x 28.5"',
+  };
+
+  const runSheet = {
+    runNo: "PR-2026-0004",
+    paperSize: 'RUN 25" x 36"',
+    paperGsm: "100",
+    paperFinish: "Matt",
+    sheetsPerReam: 300,
+    paperRemarks: "run remark",
+    plateJobId: "RUN-PLATE",
+    paperSupplyBy: "Party",
+    plateSupplyBy: "Party",
+    machineName: "SM-72 — 6 Colour",
+    machineSheetSize: '20" x 28.5"',
+  };
+
+  it("uses the card's own sheet when it is not ganged", () => {
+    const sheet = resolvedSheet({ ...cardOwn, pressRunId: null }, null);
+    expect(sheet.fromRun).toBe(false);
+    expect(sheet.paperSize).toBe('CARD 20" x 30"');
+    expect(sheet.runNo).toBeNull();
+  });
+
+  it("lets the RUN win in full when the card is ganged", () => {
+    const sheet = resolvedSheet({ ...cardOwn, pressRunId: "run-1" }, runSheet);
+
+    // Not merged, not preferred-when-blank, not a fallback. One direction, or
+    // there are two answers to "what am I printing on" (J15).
+    expect(sheet.fromRun).toBe(true);
+    expect(sheet.paperSize).toBe('RUN 25" x 36"');
+    expect(sheet.paperGsm).toBe("100");
+    expect(sheet.plateJobId).toBe("RUN-PLATE");
+    expect(sheet.paperSupplyBy).toBe("Party");
+    expect(sheet.machineName).toBe("SM-72 — 6 Colour");
+    expect(sheet.runNo).toBe("PR-2026-0004");
+  });
+
+  it("does NOT fall back to the card when the run's field is empty", () => {
+    // The card says 250 GSM and the run says nothing. The honest answer is
+    // nothing: the run owns the sheet, and a blank on it is a gap to fill on
+    // the run rather than a reason to read a dormant column.
+    const sparse = { ...runSheet, paperGsm: null, plateJobId: null };
+    const sheet = resolvedSheet({ ...cardOwn, pressRunId: "run-1" }, sparse);
+
+    expect(sheet.paperGsm).toBeNull();
+    expect(sheet.plateJobId).toBeNull();
+  });
+
+  it("uses the card when it names a run that could not be loaded", () => {
+    // A soft-deleted run, say. Better the card's own values than nothing.
+    const sheet = resolvedSheet({ ...cardOwn, pressRunId: "gone" }, null);
+    expect(sheet.fromRun).toBe(false);
+    expect(sheet.paperSize).toBe('CARD 20" x 30"');
+  });
+});
+
+describe("the press run as a document", () => {
+  it("holds one sheet and one set of run figures for the whole plate", async () => {
+    await inRollback(async (tx) => {
+      const run = await auditedInsert(
+        SYSTEM_ACTOR,
+        pressRun,
+        {
+          runNo: await allocateNumber(tx, "PR", "2026-05-10"),
+          runDate: "2026-05-10",
+          paperSize: '25" x 36"',
+          paperGsm: "100",
+          sheetsPerReam: 300,
+          plateJobId: "PL-8891",
+          paperSupplyBy: "Party",
+          plateSupplyBy: "Press",
+        },
+        tx,
+      );
+
+      const read = await getPressRun(run.id, tx);
+      expect(read!.paperSize).toBe('25" x 36"');
+      expect(read!.sheetsPerReam).toBe(300);
+      expect(read!.paperSupplyBy).toBe("Party");
+
+      // Blank until somebody transcribes the printed run sheet (J4's rule,
+      // applied to the run rather than the card).
+      expect(read!.finalQty).toBeNull();
+      expect(read!.wastageQty).toBeNull();
+    });
+  });
+
+  it("refuses a negative run figure at the database", async () => {
+    await inRollback(async (tx) => {
+      const run = await auditedInsert(
+        SYSTEM_ACTOR,
+        pressRun,
+        {
+          runNo: await allocateNumber(tx, "PR", "2026-05-10"),
+          runDate: "2026-05-10",
+        },
+        tx,
+      );
+
+      const failed = await expectFailure(tx, (sp) =>
+        sp.execute(sql`update press_run set wastage_qty = -1 where id = ${run.id}`),
+      );
+
+      expect(failed.threw).toBe(true);
+      expect(failed.message).toContain("press_run_wastage_qty_non_negative");
+    });
+  });
+
+  it("gives every member its own design, so each can finish differently", async () => {
+    await inRollback(async (tx) => {
+      const a = await makeItem(tx, "Soap Co A");
+      const b = await makeItem(tx, "Soap Co B");
+
+      const run = await auditedInsert(
+        SYSTEM_ACTOR,
+        pressRun,
+        {
+          runNo: await allocateNumber(tx, "PR", "2026-05-10"),
+          runDate: "2026-05-10",
+        },
+        tx,
+      );
+
+      for (const item of [a, b]) {
+        await auditedInsert(
+          SYSTEM_ACTOR,
+          jobCard,
+          {
+            jcNo: await allocateNumber(tx, "JC", "2026-05-10"),
+            poItemId: item.poItemId,
+            pressRunId: run.id,
+            plannedQty: 500,
+          },
+          tx,
+        );
+      }
+
+      const members = await getRunMembers(run.id, tx);
+
+      // Cross-client on one plate is the entire point and is never flagged
+      // (H3). Each member carries its own design id, which is what lets the
+      // run sheet print a separate fabrication block per job (H2).
+      expect(members).toHaveLength(2);
+      expect(new Set(members.map((m) => m.clientId)).size).toBe(2);
+      expect(members.every((m) => "designId" in m)).toBe(true);
     });
   });
 });

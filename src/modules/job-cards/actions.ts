@@ -6,10 +6,11 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
 import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
-import { jobCard } from "@/db/schema";
+import { jobCard, pressRun } from "@/db/schema";
 import { allocateNumber, todayIST } from "@/lib/numbering";
 
 import { syncJobCardFabrication } from "@/modules/fabrication/write";
+import { getPressRun as getRun } from "@/modules/press-runs/queries";
 
 import { getJobCardRecord, liveCardCountFor, releasableItem } from "./queries";
 import {
@@ -193,12 +194,39 @@ export async function releaseJobCardAction(
        */
       await syncJobCardFabrication(actor, tx, card.id, runSelectionsFrom(v));
 
+      /*
+       * Ganging, in the SAME transaction as the card (J15).
+       *
+       * A card that was meant to join a plate and did not is worse than no
+       * card: it prints its own sheet, and the press gets two documents for
+       * one run. Either both happen or neither does.
+       */
+      if (v.gangPressRunId) {
+        const run = await getRun(v.gangPressRunId, tx);
+        if (!run) throw new Error("That press run no longer exists.");
+        await auditedUpdate(actor, jobCard, card.id, { pressRunId: run.id }, tx);
+      } else if (v.gangNewRun === "1") {
+        // The run takes its number from the card's own date, like every other
+        // document in the system (F10).
+        const run = await auditedInsert(
+          actor,
+          pressRun,
+          {
+            runNo: await allocateNumber(tx, "PR", cardDate),
+            runDate: v.plannedDate ?? cardDate,
+          },
+          tx,
+        );
+        await auditedUpdate(actor, jobCard, card.id, { pressRunId: run.id }, tx);
+      }
+
       return card;
     });
 
     revalidatePath("/items");
     revalidatePath(`/items/${v.poItemId}`);
     revalidatePath("/stage-update");
+    revalidatePath("/job-cards");
 
     return ok(`${row.jcNo} released.`, `/job-cards/${row.id}`);
   } catch (error) {

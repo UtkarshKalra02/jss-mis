@@ -105,6 +105,63 @@ export const pressRun = pgTable(
      */
     machine: text(),
 
+    /**
+     * Which press, as a foreign key (J15).
+     *
+     * `machine` above is the original free text from H1 and is left readable
+     * for any row that predates this. Nothing writes it any more; the screens
+     * prefer `machine_id` and fall back. Dropping it would be a second
+     * destructive migration a day after 0021, for a column that costs nothing
+     * where it is.
+     */
+    machineId: uuid().references(() => machine.id),
+
+    /* ---------------------------------------------------------------------- */
+    /* The sheet — shared by every job ganged onto it                          */
+    /* ---------------------------------------------------------------------- */
+
+    /**
+     * ONE sheet, entered once, for the whole plate (J15).
+     *
+     * These are the same facts `job_card` carries, and they are here because a
+     * ganged run has ONE of each: one parent sheet, one plate, one supply
+     * arrangement. Holding them per card would let two cards on one plate
+     * disagree about what they are printing on, and the wrong one would always
+     * be whichever nobody updated — the failure I7 removed design.die_id to
+     * avoid.
+     *
+     * THE RULE THAT KEEPS THEM HONEST: when a card is on a run, the RUN wins.
+     * A card's own paper and plate columns go dormant while it is ganged, one
+     * direction, no ambiguity. `resolvedSheet()` in the job-cards module is the
+     * only place that resolution happens.
+     */
+    paperSize: text(),
+    paperGsm: text(),
+    paperFinish: text(),
+    sheetsPerReam: integer(),
+    paperRemarks: text(),
+
+    plateJobId: text(),
+    paperSupplyBy: supplyByEnum(),
+    plateSupplyBy: supplyByEnum(),
+
+    /* ---------------------------------------------------------------------- */
+    /* Transcribed back from the printed run sheet                             */
+    /* ---------------------------------------------------------------------- */
+
+    /**
+     * ONE set of figures for the whole plate, not one per client.
+     *
+     * The press produced a number of sheets; how that divides between the
+     * clients on it is a separate question, and often does not need answering.
+     * Where it does, the per-card figures are still there and optional — the
+     * run sheet leaves space to write the split by hand and this remark is
+     * where it gets typed (J15).
+     */
+    finalQty: integer(),
+    wastageQty: integer(),
+    executionRemarks: text(),
+
     notes: text(),
   },
   (t) => [
@@ -112,6 +169,16 @@ export const pressRun = pgTable(
       .on(t.runNo)
       .where(sql`${t.deletedAt} is null`),
     index("press_run_date_idx").on(t.runDate),
+
+    check("press_run_final_qty_non_negative", sql`${t.finalQty} is null or ${t.finalQty} >= 0`),
+    check(
+      "press_run_wastage_qty_non_negative",
+      sql`${t.wastageQty} is null or ${t.wastageQty} >= 0`,
+    ),
+    check(
+      "press_run_sheets_per_ream_positive",
+      sql`${t.sheetsPerReam} is null or ${t.sheetsPerReam} > 0`,
+    ),
   ],
 );
 

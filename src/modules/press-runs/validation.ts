@@ -31,9 +31,85 @@ export const createRunSchema = z.object({
   notes: absentOrBlank(z.string().trim().max(500)),
 });
 
-export const updateRunSchema = createRunSchema.extend({
-  id: z.string().uuid(),
+/**
+ * The sheet, entered once for the whole plate (J15).
+ *
+ * The same fields a standalone job card carries, on the run instead — because
+ * a ganged run has ONE parent sheet, one plate and one supply arrangement, and
+ * holding them per card would let two cards on one plate disagree.
+ *
+ * The run figures are separate below, for the same reason the job card's are
+ * (J6): they are transcribed after the run by somebody who must not post a
+ * stale copy of the plan back with them.
+ */
+export const runSheetSchema = z.object({
+  id: z.uuid(),
+  runDate: isoDate,
+  machineId: absentOrBlank(z.uuid()),
+  notes: absentOrBlank(z.string().trim().max(500)),
+
+  paperSize: absentOrBlank(z.string().trim().max(120)),
+  paperGsm: absentOrBlank(z.string().trim().max(60)),
+  paperFinish: absentOrBlank(z.string().trim().max(60)),
+  sheetsPerReam: absentOrBlank(
+    z.coerce
+      .number()
+      .int("Sheets per ream must be a whole number.")
+      .positive("Sheets per ream must be more than zero.")
+      .max(9_999_999),
+  ),
+  paperRemarks: absentOrBlank(z.string().trim().max(500)),
+
+  plateJobId: absentOrBlank(z.string().trim().max(120)),
+  paperSupplyBy: absentOrBlank(z.enum(["Press", "Party"])),
+  plateSupplyBy: absentOrBlank(z.enum(["Press", "Party"])),
 });
+
+export function parseRunSheet(formData: FormData) {
+  return runSheetSchema.safeParse({
+    id: formData.get("id"),
+    runDate: formData.get("runDate"),
+    machineId: formData.get("machineId"),
+    notes: formData.get("notes"),
+    paperSize: formData.get("paperSize"),
+    paperGsm: formData.get("paperGsm"),
+    paperFinish: formData.get("paperFinish"),
+    sheetsPerReam: formData.get("sheetsPerReam"),
+    paperRemarks: formData.get("paperRemarks"),
+    plateJobId: formData.get("plateJobId"),
+    paperSupplyBy: formData.get("paperSupplyBy"),
+    plateSupplyBy: formData.get("plateSupplyBy"),
+  });
+}
+
+/**
+ * What came off the plate — ONE set for the whole run.
+ *
+ * The press produced a number of sheets; how that divides between the clients
+ * on it is a separate question that often does not need answering. Where it
+ * does, the run sheet leaves space to write the split by hand and the remark
+ * is where it gets typed.
+ */
+export const runExecutionSchema = z.object({
+  id: z.uuid(),
+  finalQty: absentOrBlank(
+    z.coerce.number().int().min(0, "Final quantity cannot be negative.").max(99_999_999),
+  ),
+  wastageQty: absentOrBlank(
+    z.coerce.number().int().min(0, "Wastage cannot be negative.").max(99_999_999),
+  ),
+  executionRemarks: absentOrBlank(z.string().trim().max(2000)),
+});
+
+export function parseRunExecution(formData: FormData) {
+  return runExecutionSchema.safeParse({
+    id: formData.get("id"),
+    finalQty: formData.get("finalQty"),
+    wastageQty: formData.get("wastageQty"),
+    executionRemarks: formData.get("executionRemarks"),
+  });
+}
+
 
 export function parseRunForm(formData: FormData) {
   return createRunSchema.safeParse({
@@ -43,11 +119,3 @@ export function parseRunForm(formData: FormData) {
   });
 }
 
-export function parseRunUpdate(formData: FormData) {
-  return updateRunSchema.safeParse({
-    id: formData.get("id"),
-    runDate: formData.get("runDate"),
-    machine: formData.get("machine"),
-    notes: formData.get("notes"),
-  });
-}

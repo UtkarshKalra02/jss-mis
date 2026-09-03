@@ -10,6 +10,7 @@ import { formatCommittedDate, formatDaysToCommitted, formatQty } from "@/lib/for
 import { cn } from "@/lib/utils";
 import { designSelections, fabricationVocabulary } from "@/modules/fabrication/queries";
 import { machineOptions, releasableItems } from "@/modules/job-cards/queries";
+import { recentRuns } from "@/modules/press-runs/queries";
 import { getItemDetail } from "@/modules/items/queries";
 
 export const metadata: Metadata = { title: "New job card · JSS MIS" };
@@ -141,11 +142,12 @@ async function ItemPicker({ query }: { query: string }) {
 }
 
 async function CardForm({ poItemId }: { poItemId: string }) {
-  const [items, machines, vocabulary, detail] = await Promise.all([
+  const [items, machines, vocabulary, detail, runs] = await Promise.all([
     releasableItems(""),
     machineOptions(),
     fabricationVocabulary(),
     getItemDetail(poItemId),
+    recentRuns(),
   ]);
 
   const item = items.find((i) => i.poItemId === poItemId);
@@ -196,6 +198,7 @@ async function CardForm({ poItemId }: { poItemId: string }) {
           machines={machines}
           runOptions={runOptions}
           runSelected={new Map()}
+          recentRuns={runs}
           startOpen
         />
       </div>
