@@ -1519,12 +1519,17 @@ disciplines lapse. The mitigation is visibility rather than enforcement: the Ite
 panel now renders even when empty and says "No job card yet", so an unreleased item is a
 thing somebody can see rather than a thing they have to remember.
 
-**J2 — `job_card` is its own resource, not part of `job_planning`.** ADMIN, PLANNER and
-ORDER_DESK write; ACCOUNTS, OWNER and FLOOR read. Punit releases cards and transcribes the
-run figures back off the paper, and neither of those is scheduling — folding the grant into
-`job_planning` would have handed him the Phase 4 planning board months early as a side
-effect of letting him print a card. Ajay reads it, because the sheet in his hand names a
-card he may want to look up.
+**J2 — `job_card` is its own resource, not part of `job_planning`.** ADMIN and **PLANNER**
+write; ORDER_DESK, ACCOUNTS, OWNER and FLOOR read. Folding the grant into `job_planning`
+would hand somebody the Phase 4 planning board as a side effect of letting them raise a
+card, so the two stay separately grantable. Ajay reads it, because the sheet in his hand
+names a card he may want to look up.
+
+> **Amended by J14 (3 Sep 2026).** This decision originally gave ORDER_DESK **write**, on
+> the reasoning that releasing a card was order-desk paperwork rather than scheduling. That
+> was wrong about what the decision *is* — see J14. Punit now reads job cards and does not
+> raise them. The half of J2 that still holds is the separate resource, and it holds for the
+> other half of its original reason.
 
 **J3 — A second card on the same item warns, and does not block.** Spec section 3 is
 explicit that a PO item may have several job cards, for repeat runs and split runs, while
@@ -1801,3 +1806,31 @@ turns into a toast (section 7 asks for a toast on save). `ActionToast` is mounte
 six-line additions is seven chances to forget one, and the one forgotten would swallow the
 message silently. It strips the parameter afterwards, so a refresh does not repeat the
 toast and a shared link does not carry it.
+
+**J14 — Raising a job card is a floor-planning decision, so it moved from Punit to
+Preeti.**
+
+`job_card` write is now ADMIN and PLANNER. ORDER_DESK reads. Nothing else about Punit's
+role changes: design creation, PO capture and the Job Kitting register are all still his.
+
+The reason is not "Preeti is more senior" or a tidier matrix. It is that the decision taken
+at release is **whether this job runs on its own plate, or gets combined with another
+client's small job onto one sheet.** Punit regularly has three or four hotel-amenity soap
+wrappers from different clients that would each waste most of a sheet alone. Deciding to
+gang them is a judgement about paper and plate cost and about what the press is doing that
+day — floor planning, not order-desk paperwork. J2 read the act as "raising a document"
+and missed what the document commits the factory to.
+
+`job_card` and `press_run` therefore carry the SAME grant, which they did not have to
+before. Ganging is now a choice made while raising a card (J15), so anybody who can raise
+one must be able to create the run it goes on. A split grant would have produced a person
+who can release a card and then cannot say what it runs with.
+
+The transcription action moves with it. Whoever raises the card is who chases the sheet
+back off the floor afterwards, and splitting those two across roles would leave the run
+figures belonging to nobody.
+
+**Punit does not lose sight of anything.** Read access covers the Job Cards list and every
+card's detail, so he can still answer "has the card for this design been raised, and what
+did it run?" — which is the question the order desk actually asks. What he cannot do is
+decide the answer.

@@ -114,13 +114,16 @@ export const ACCESS: Matrix = {
     tooling: "write",
 
     /**
-     * Punit writes job cards, though the Phase 4 planning board is not his.
-     * That is why `job_card` is its own resource rather than part of
-     * `job_planning` (J2): he releases a card so a job can go to the floor and
-     * transcribes the run figures back off the paper afterwards, and neither
-     * of those is scheduling.
+     * READ ONLY, since J14. Punit needs to see the cards raised against his
+     * designs; he does not raise them.
+     *
+     * J2 originally gave him write, on the reasoning that releasing a card was
+     * order-desk paperwork rather than scheduling. That was wrong about what
+     * the decision IS. Whether a job runs on its own plate or is combined with
+     * another client's small job onto one sheet is a floor-planning judgement
+     * about paper and plate cost, and it belongs with Preeti.
      */
-    job_card: "write",
+    job_card: "read",
 
     item_tracker: "read",
     // Read only: the ganged badge on the Item Tracker links to the run, so
@@ -147,6 +150,13 @@ export const ACCESS: Matrix = {
   PLANNER: {
     dashboard: "read",
     job_planning: "write",
+
+    /**
+     * Preeti raises job cards, transcribes the run figures, and decides what
+     * gets combined onto one sheet (J14). `job_card` and `press_run` carry the
+     * same grant deliberately: ganging is a decision made while raising a
+     * card, so anybody who can do one must be able to do the other.
+     */
     job_card: "write",
     press_run: "write",
     stage_update: "write",
