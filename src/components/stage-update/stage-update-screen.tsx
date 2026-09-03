@@ -32,13 +32,33 @@ import { StagePicker } from "./stage-picker";
 
 const initialState: FormState = { ok: false, error: null };
 
+/**
+ * The desktop form's id, so the backward-move confirmation can submit it.
+ *
+ * The confirmation lives in a dialog, and a dialog is portalled to the end of
+ * the document — so its button is NOT inside the form in the DOM, whatever the
+ * React tree says, and a submit button with no form around it submits nothing.
+ * Naming the form is what keeps F26 true: the click that confirms is still the
+ * click that submits, with no state flag arriving a render late.
+ */
+const FORM_ID = "stage-update-desktop";
+
 const inputClass =
   "border-input bg-background h-9 w-full rounded-md border px-2 text-[13px] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none";
 
-function Submit({ label, size }: { label: string; size?: "sm" | "lg" }) {
+function Submit({
+  label,
+  size,
+  form,
+}: {
+  label: string;
+  size?: "sm" | "lg";
+  /** Set when the button is rendered outside its form — see FORM_ID. */
+  form?: string;
+}) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" size={size} disabled={pending}>
+    <Button type="submit" size={size} form={form} disabled={pending}>
       {pending ? "Saving…" : label}
     </Button>
   );
@@ -181,6 +201,9 @@ function DesktopGrid({
       setSelected(new Set());
       setStageCode("");
       setRemarks("");
+      // The dialog would otherwise stay open over an empty selection, listing
+      // the items it had just moved as though they were still to be confirmed.
+      setConfirming(false);
     }
   }, [state]);
 
@@ -218,7 +241,7 @@ function DesktopGrid({
    * order — the per-row picker is where F4's precedence guides the choice.
    */
   return (
-    <form action={formAction}>
+    <form id={FORM_ID} action={formAction}>
       {chosen.map((r) => (
         <input key={r.poItemId} type="hidden" name="poItemId" value={r.poItemId} />
       ))}
@@ -346,7 +369,14 @@ function DesktopGrid({
                       toggle={toggle}
                       stageCode={stageCode}
                       onPick={(code) => {
-                        setSelected(new Set([group.row.poItemId]));
+                        // ADDS, never replaces. Ticking several rows and then
+                        // choosing a stage from one of their dropdowns is the
+                        // obvious way to use this screen, and replacing the
+                        // selection here threw the other rows away silently —
+                        // which made bulk select look like it did not exist.
+                        setSelected((current) =>
+                          new Set(current).add(group.row.poItemId),
+                        );
                         setStageCode(code);
                       }}
                     />
@@ -444,7 +474,11 @@ function DesktopGrid({
                             stageCode={stageCode}
                             inRun
                             onPick={(code) => {
-                              setSelected(new Set([row.poItemId]));
+                              // Adds, never replaces — same rule as a
+                              // standalone row above.
+                              setSelected((current) =>
+                                new Set(current).add(row.poItemId),
+                              );
                               setStageCode(code);
                             }}
                           />
@@ -461,6 +495,7 @@ function DesktopGrid({
       <BackwardConfirm
         open={confirming}
         onOpenChange={setConfirming}
+        formId={FORM_ID}
         rows={backwards}
         targetName={target?.name ?? ""}
         clients={[...clientsInSelection]}
@@ -552,9 +587,11 @@ function ItemRow({
  * express it gets worked around — but moving a job backwards is usually a
  * mis-click, so it is worth one question that names the items.
  *
- * The confirm button is a plain submit inside the same form, so the click that
- * confirms is the click that submits. Setting a flag and submitting separately
- * would send the previous render's values.
+ * The confirm button is a plain submit, so the click that confirms is the click
+ * that submits. Setting a flag and submitting separately would send the
+ * previous render's values. It reaches the form by name rather than by
+ * containment, because a dialog is portalled to the end of the document and is
+ * therefore outside the form in the DOM however the React tree reads.
  */
 function BackwardConfirm({
   open,
@@ -562,6 +599,7 @@ function BackwardConfirm({
   rows,
   targetName,
   clients,
+  formId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -569,6 +607,8 @@ function BackwardConfirm({
   targetName: string;
   /** Every client in the selection, so a cross-client move says so (H8). */
   clients: string[];
+  /** The form to submit. The dialog is portalled out of it (see FORM_ID). */
+  formId: string;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -608,7 +648,7 @@ function BackwardConfirm({
           <Button type="button" size="sm" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Submit label="Move backwards" size="sm" />
+          <Submit label="Move backwards" size="sm" form={formId} />
         </DialogFooter>
       </DialogContent>
     </Dialog>

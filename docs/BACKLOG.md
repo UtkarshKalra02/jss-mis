@@ -300,3 +300,32 @@ The dependency is the load-bearing part. A stock count that nothing decrements i
 that is right on the day it is typed and wrong every day after, and it looks exactly as
 authoritative on both — the same failure mode I5 refused for tooling issue/return, and A2
 flagged for the unmeasured stage targets.
+
+---
+
+## Component tests — the layer that currently has none
+
+Captured 3 Sep 2026, after two defects on Stage Update (J17).
+
+Server actions are tested against the real Neon database, and the rules most likely to be
+argued about are pure functions with fast tests of their own (F25, H8, E14). Between them
+sits the client component — the DOM wiring that decides which button submits which form and
+what a click does to the selection — and it has no test at all. Both Stage Update defects
+lived there, in code whose logic on either side was correct, and both were visible only by
+opening the screen.
+
+What is missing is a component-test stack: `jsdom` plus `@testing-library/react`, and a
+second vitest project so the DOM tests are not slowed by the database ones (the current
+config runs `fileParallelism: false` against a shared database, which is right for the
+tests it has and wrong for these).
+
+The two tests that would have caught J17 are worth writing first, as the shape of what
+follows:
+
+- tick two rows, choose a stage from ONE row's picker, and assert two `poItemId` fields
+  leave the form — not one;
+- select a backward move, click through the confirmation, and assert the action is called.
+
+Not built here, because adding a test stack is a decision about how the project is
+maintained rather than part of fixing a bug, and it should be taken deliberately.
+

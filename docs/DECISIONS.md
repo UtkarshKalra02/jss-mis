@@ -707,9 +707,10 @@ they are about to do. Enforcing it in the action would make rework impossible ra
 deliberate, and rework that the system refuses to record is rework that happens anyway and
 goes unrecorded.
 
-The confirmation dialog's confirm button is a plain submit inside the same form, so the
-click that confirms is the click that submits — the same trap as the duplicate-PO button
-in F20, where a state flag set on click arrives one submit late.
+The confirmation dialog's confirm button is a plain submit, so the click that confirms is
+the click that submits — the same trap as the duplicate-PO button in F20, where a state
+flag set on click arrives one submit late. It reaches the form by NAME (`form="..."`), not
+by containment; J17 explains why the original containment did not hold.
 
 **F27 — The phone view omits everything except the stage, deliberately.** Spec 6.7 asks for
 "card list, large tap targets, single stage dropdown, nothing else", and the omissions are
@@ -1989,3 +1990,40 @@ always production.
 The reason it was findable at all is that the schema check in `/api/health` had been
 extended two commits earlier — it named the three missing migrations instead of reporting a
 confident `upToDate: true`.
+
+---
+
+**J17 — Two defects on Stage Update, both in the one layer that had no test.**
+Reported from the live screen: bulk select appeared not to exist, and a backward move
+appeared to be blocked. Neither was a regression from H8's press-run collapse — both date
+from `c2c519a`, the original build of the screen, and H8 touched neither line.
+
+*Bulk select was built and then quietly undone by the row dropdown.* The server action has
+always taken an array of ids and written them in one transaction, and the toolbar has
+always offered a stage for the whole selection. But every per-row "Move to" picker called
+`setSelected(new Set([row.poItemId]))` — it REPLACED the selection with that single row.
+Ticking five rows and then choosing a stage from one of their dropdowns, which is the
+obvious way to use the screen, silently discarded four of them. The picker now ADDS to the
+selection instead. A single-row move is unchanged, because adding to an empty selection is
+selecting one.
+
+*The backward-move confirmation could not submit anything.* The rule was right in every
+layer that had a test — the action validates no direction (F26), `isBackwardMove()` only
+decides when to warn, and the phone view submits straight through — but on the desktop the
+confirm button sat inside a dialog, and a dialog is portalled to the end of the document.
+A `type="submit"` button with no form around it **in the DOM** submits nothing, whatever
+the React tree says. So a backward move could be selected, warned about and confirmed, and
+then nothing happened at all: not a block, not an error, just silence, which is what
+"blocked" looks like from the floor. The form now carries an id and the button names it.
+
+**The general rule:** a submit button rendered inside a portal must name its form. The same
+codebase gets this right in `quick-design-dialog.tsx` by putting the whole `<form>` inside
+the dialog, which is the better shape when the form is only the dialog's own fields — here
+the form wraps the entire grid, so naming is the only option.
+
+Both defects survived review because nothing renders this component. The action is tested
+against the real database, and the precedence and grouping rules are tested as pure
+functions (F25, H8) — the three places the logic was already correct. Every defect here
+lived in the DOM wiring between them, and the project has no jsdom and no
+testing-library. That gap is recorded in `docs/BACKLOG.md` rather than closed here,
+because adding a component-test stack is its own decision and not a bug fix.
