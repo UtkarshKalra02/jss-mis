@@ -1947,3 +1947,45 @@ migration a day after 0021, for a column that costs nothing where it is.
 `updateRunAction` and `RunDetailsForm` are removed, superseded by `updateRunSheetAction` and
 `RunSheetForm`. Two forms writing overlapping halves of one row is how the halves stop
 agreeing.
+
+**J16 — A migration that USES a new enum value in the transaction that added it works on
+the machine it was written on and nowhere else.**
+
+Migration 0022 adds `Ordered` to `tool_status`. Migration 0023 gives `tooling` a CHECK
+comparing `status = 'Ordered'`. Applied one at a time — which is how they were written,
+because each was generated and run in turn — both succeed. Applied together, Postgres
+refuses:
+
+```
+ERROR: unsafe use of new value "Ordered" of enum type tool_status
+```
+
+`drizzle-kit migrate` applies **every** pending migration in one transaction, so this fires
+on any database more than one migration behind. That is every database except the one the
+migrations were authored on. Production was three behind and failed — **silently**:
+drizzle-kit exited 1 with the spinner still on screen and printed no error at all, which is
+why it looked like nothing had happened rather than like a failure.
+
+**The fix is to compare as text.** `status = 'Ordered'` casts the literal to the enum type,
+which counts as using the value; `status::text = 'Ordered'` does not. The same trick is
+already used in `searchTooling`, where it was adopted for a different reason — a filter
+value from a URL should match nothing rather than throw an enum cast error. It turns out to
+be the general answer.
+
+0023 was **edited in place** rather than superseded by a new migration, because a new one
+could not help: any database replaying 0022 and 0023 together would still hit the error
+before reaching the fix. Every statement in it is now idempotent (`DROP CONSTRAINT IF
+EXISTS`, `DROP NOT NULL`), so a database that already applied the old version re-runs it
+harmlessly when the changed hash makes drizzle-kit treat it as pending. 0025 re-states the
+constraint so the meta snapshot matches the edited file; without it every future
+`db:generate` would emit the same diff forever.
+
+**The general rule, which is not obvious and cost an afternoon:** a migration must be
+correct when replayed from any earlier point, not merely when applied on top of the state
+that happened to exist while it was written. Applying migrations one at a time during
+development hides an entire class of ordering bug, and the first database to find it is
+always production.
+
+The reason it was findable at all is that the schema check in `/api/health` had been
+extended two commits earlier — it named the three missing migrations instead of reporting a
+confident `upToDate: true`.

@@ -184,9 +184,20 @@ export const tooling = pgTable(
      * unless the tool is not here yet (I11). Ordered rows may have none; every
      * other status must, and it may never be whitespace.
      */
+    /*
+     * COMPARED AS TEXT, and that is load-bearing rather than stylistic.
+     *
+     * `status = 'Ordered'` casts the literal to the enum type, which counts as
+     * USING a value that migration 0022 added — and Postgres refuses that in
+     * the same transaction that added it. It works when the two migrations are
+     * applied one at a time and fails on any database more than one migration
+     * behind, which is every database except the one they were written on.
+     * `::text` sidesteps it because no enum value is used. Same reasoning the
+     * tooling filters already use for the status query.
+     */
     check(
       "tooling_location_present_unless_ordered",
-      sql`(${t.status} = 'Ordered' and (${t.location} is null or length(trim(${t.location})) > 0))
+      sql`(${t.status}::text = 'Ordered' and (${t.location} is null or length(trim(${t.location})) > 0))
           or (${t.location} is not null and length(trim(${t.location})) > 0)`,
     ),
     check("tooling_name_not_blank", sql`length(trim(${t.name})) > 0`),

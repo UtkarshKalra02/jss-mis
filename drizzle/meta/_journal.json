@@ -176,6 +176,13 @@
       "when": 1788421676679,
       "tag": "0024_press_run_shared_sheet",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788425323713,
+      "tag": "0025_tooling_check_compares_status_as_text",
+      "breakpoints": true
     }
   ]
 }

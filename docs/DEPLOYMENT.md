@@ -327,6 +327,23 @@ To see how far behind production is, compare the timestamps in its
 apply the missing ones as in step 6. No redeploy is needed: additive columns
 come into existence and the running code picks them up.
 
+**`db:migrate` exits with no output and nothing is applied.** drizzle-kit can fail
+silently: the spinner stops, the shell prompt returns, the exit code is 1 and there
+is no error message anywhere. Do not read that as success. Check what actually
+landed:
+
+```bash
+DOTENV_CONFIG_PATH=.env.production.local npx drizzle-kit migrate
+```
+
+then compare the row count in `drizzle.__drizzle_migrations` against the number of
+files in `drizzle/`. To see the real error, replay the pending files by hand inside
+a transaction and roll it back — that surfaces the message drizzle-kit swallowed.
+
+The known cause of this so far is J16: a migration that USES a new enum value in the
+same transaction that added it. It passes when migrations are applied one at a time
+and fails on any database more than one behind.
+
 **The build fails with "Invalid environment".** One of the three variables is
 missing or empty in Vercel. Step 5.
 
