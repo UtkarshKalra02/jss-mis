@@ -17,7 +17,14 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "JSS MIS",
   description: "Order tracking for JSS The Print Zone",
-  icons: { icon: "/jss-logo.png" },
+  /*
+   * No `icons` here on purpose. The tab icon is `src/app/icon.png`, and the
+   * App Router's FILE conventions override anything declared in this object —
+   * which is why the `icons: { icon: "/jss-logo.png" }` that used to sit on
+   * this line never took effect: the scaffold's default `favicon.ico` was
+   * still in app/ and quietly won. Declaring it in two places is what let the
+   * dead one look like the live one.
+   */
 };
 
 export default function RootLayout({
