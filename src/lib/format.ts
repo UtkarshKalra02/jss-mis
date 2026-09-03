@@ -25,7 +25,14 @@ const inrPreciseFormatter = new Intl.NumberFormat("en-IN", {
 
 const numberFormatter = new Intl.NumberFormat("en-IN");
 
-/** ₹12,34,560 — lakh/crore grouping, no paise. */
+/**
+ * ₹12,34,560 — lakh/crore grouping, no paise.
+ *
+ * FOR TOTALS AND LIMITS, never for a per-unit rate. Rounding half a rupee off
+ * an order value of ₹13,499.50 is invisible; rounding it off a rate of ₹4.50
+ * prints ₹5, which is an 11% misstatement of the number somebody is checking
+ * against a purchase order. Use `formatINRPrecise` for anything per-unit.
+ */
 export function formatINR(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";
   const n = typeof value === "string" ? Number(value) : value;
@@ -33,7 +40,13 @@ export function formatINR(value: number | string | null | undefined): string {
   return inrFormatter.format(n);
 }
 
-/** ₹12,34,560.75 — for ledgers and invoices, where paise matter. */
+/**
+ * ₹12,34,560.75 — for ledgers, invoices, and every PER-UNIT RATE.
+ *
+ * Rates are `numeric(14,2)` and the forms accept `step="0.01"`, so the paise
+ * are real and stored. They were being rounded away only at the point of
+ * display, which made ₹4.50 read as ₹5 on the purchase order screen.
+ */
 export function formatINRPrecise(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";
   const n = typeof value === "string" ? Number(value) : value;

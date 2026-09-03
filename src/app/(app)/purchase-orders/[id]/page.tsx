@@ -16,7 +16,12 @@ import {
   listDesignOptions,
   listPoItems,
 } from "@/modules/purchase-orders/queries";
-import { formatCommittedDate, formatDaysToCommitted, formatINR, formatQty } from "@/lib/format";
+import {
+  formatCommittedDate,
+  formatDaysToCommitted,
+  formatINRPrecise,
+  formatQty,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Purchase order · JSS MIS" };
@@ -134,7 +139,7 @@ export default async function PurchaseOrderPage({
                       </span>
                     ) : null}
                   </td>
-                  <td className="px-3 text-right tabular-nums">{formatINR(item.rate)}</td>
+                  <td className="px-3 text-right tabular-nums">{formatINRPrecise(item.rate)}</td>
                   <td
                     className={cn(
                       "px-3",

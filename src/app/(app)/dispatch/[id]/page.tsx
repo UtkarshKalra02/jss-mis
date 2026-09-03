@@ -11,7 +11,7 @@ import {
   RemoveDispatchLine,
 } from "@/components/dispatches/dispatch-controls";
 import { StagePill } from "@/components/stages/stage-pill";
-import { formatDate, formatINR, formatQty } from "@/lib/format";
+import { formatDate, formatINRPrecise, formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   getDispatch,
@@ -119,7 +119,7 @@ export default async function DispatchDetailPage({
                   >
                     {formatQty(line.pendingQty)}
                   </td>
-                  <td className="px-3 text-right tabular-nums">{formatINR(line.rate)}</td>
+                  <td className="px-3 text-right tabular-nums">{formatINRPrecise(line.rate)}</td>
                   {canWrite && !cancelled ? (
                     <td className="px-3 text-right">
                       <RemoveDispatchLine

@@ -10,7 +10,7 @@ import {
   formatCommittedDate,
   formatDate,
   formatDaysToCommitted,
-  formatINR,
+  formatINRPrecise,
   formatQty,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -183,7 +183,7 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
         <div className="space-y-4">
           <Panel title="Order">
             <dl className="grid grid-cols-2 gap-3 text-[13px]">
-              <Figure label="Rate" value={formatINR(detail?.rate)} />
+              <Figure label="Rate" value={formatINRPrecise(detail?.rate)} />
               <Figure label="Job type" value={item.jobType} />
               <Figure label="Priority" value={item.priority} />
               <Figure label="Committed date basis" value={detail?.committedDateBasis ?? "—"} />
