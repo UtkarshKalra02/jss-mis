@@ -14,6 +14,7 @@ import {
 } from "@/modules/fabrication/queries";
 import { getJobCard } from "@/modules/job-cards/queries";
 import { gangInfoFor, getPressRun } from "@/modules/press-runs/queries";
+import { paperCount, paperQuantityLine } from "@/modules/job-cards/paper";
 import { resolvedSheet } from "@/modules/press-runs/sheet";
 import { toolingForDesign } from "@/modules/tooling/queries";
 import { locationLabel } from "@/modules/tooling/location";
@@ -72,6 +73,13 @@ export default async function JobCardPrintPage({
     card,
     run ? { ...run, machineName: run.machineName ?? run.machine } : null,
   );
+
+  // Derived here, never stored (J18) — see paperCount's comment.
+  const paper = paperCount({
+    qty: sheet.paperQty,
+    bundle: sheet.paperBundle,
+    parts: sheet.paperParts,
+  });
 
   // The paper form runs its fabrication list in two columns. Split down the
   // middle so the sheet reads the way the one it replaces does.
@@ -205,8 +213,16 @@ export default async function JobCardPrintPage({
             <Slot label="Size" value={sheet.paperSize} />
             <Slot label="GSM" value={sheet.paperGsm} />
             <Slot label="Matt / gloss" value={sheet.paperFinish} />
-            <Slot label="Sheets / ream" value={formatQty(sheet.sheetsPerReam)} />
+            <Slot label="Quantity" value={paperQuantityLine(sheet)} />
             <Slot label="Remarks" value={sheet.paperRemarks} />
+          </div>
+
+          {/* Both figures on the sheet the floor works from: the godown reads
+              the parent count, the cutter and the press read the other (J18). */}
+          <div className="mt-1.5 grid grid-cols-5 gap-x-4 border-t border-neutral-400 pt-1.5">
+            <Slot label="Parent sheets" value={formatQty(paper.parentSheets)} />
+            <Slot label="Parts" value={sheet.paperParts ? String(sheet.paperParts) : "1 (uncut)"} />
+            <Slot label="Press sheets" value={formatQty(paper.pressSheets)} />
           </div>
         </section>
 
@@ -265,8 +281,7 @@ export default async function JobCardPrintPage({
 
           <div className="mt-1 flex border-t border-neutral-400">
             <Cell label="No. of col." value={card.execNoOfColours} />
-            <Cell label="Size" value={card.execSize} />
-            <Cell label="Planning" value={card.execPlanning} grow />
+            <Cell label="Pantone" value={card.execPantone} grow />
           </div>
 
           {/* THE ONLY BLANK SECTION ON THE PAGE. These three do not exist when

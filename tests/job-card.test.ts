@@ -276,7 +276,9 @@ describe("the card, read back for the screen and the print", () => {
         plateJobId: "PL-8891",
         paperSize: '25" x 36"',
         paperGsm: "100",
-        sheetsPerReam: 300,
+        paperQty: 3,
+        paperBundle: "Ream" as const,
+        paperParts: 2,
       });
 
       const read = await getJobCard(card.id, tx);
@@ -297,7 +299,9 @@ describe("the card, read back for the screen and the print", () => {
       // The PARENT SHEET, typed on the card — not design.job_size, which is
       // the finished size of the carton. Different facts (J11).
       expect(read!.paperSize).toBe('25" x 36"');
-      expect(read!.sheetsPerReam).toBe(300);
+      expect(read!.paperQty).toBe(3);
+      expect(read!.paperBundle).toBe("Ream");
+      expect(read!.paperParts).toBe(2);
     });
   });
 

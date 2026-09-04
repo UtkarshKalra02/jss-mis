@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { paperBundleEnum } from "@/db/schema/enums";
+
 /**
  * Press run input validation.
  *
@@ -51,13 +53,23 @@ export const runSheetSchema = z.object({
   paperSize: absentOrBlank(z.string().trim().max(120)),
   paperGsm: absentOrBlank(z.string().trim().max(60)),
   paperFinish: absentOrBlank(z.string().trim().max(60)),
-  sheetsPerReam: absentOrBlank(
+  /** Bundles and what they are, the same pair the card carries (J18). */
+  paperQty: absentOrBlank(
     z.coerce
       .number()
-      .int("Sheets per ream must be a whole number.")
-      .positive("Sheets per ream must be more than zero.")
+      .int("Quantity must be a whole number of bundles.")
+      .positive("Quantity must be more than zero.")
       .max(9_999_999),
   ),
+  paperBundle: absentOrBlank(z.enum(paperBundleEnum.enumValues)),
+  paperParts: absentOrBlank(
+    z.coerce
+      .number()
+      .int("Parts must be a whole number.")
+      .positive("Parts must be at least one.")
+      .max(1_000),
+  ),
+
   paperRemarks: absentOrBlank(z.string().trim().max(500)),
 
   plateJobId: absentOrBlank(z.string().trim().max(120)),
@@ -66,7 +78,20 @@ export const runSheetSchema = z.object({
 });
 
 export function parseRunSheet(formData: FormData) {
-  return runSheetSchema.safeParse({
+  // Same pairing rule as the card's (J18): a quantity with no bundle is not a
+  // fact, and the check constraint refuses it either way.
+  return runSheetSchema
+    .superRefine((v, ctx) => {
+      if (v.paperQty !== undefined && v.paperBundle === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["paperBundle"],
+          message:
+            "Choose packet, ream or gross — a quantity on its own does not say how much paper.",
+        });
+      }
+    })
+    .safeParse({
     id: formData.get("id"),
     runDate: formData.get("runDate"),
     machineId: formData.get("machineId"),
@@ -74,7 +99,9 @@ export function parseRunSheet(formData: FormData) {
     paperSize: formData.get("paperSize"),
     paperGsm: formData.get("paperGsm"),
     paperFinish: formData.get("paperFinish"),
-    sheetsPerReam: formData.get("sheetsPerReam"),
+    paperQty: formData.get("paperQty"),
+    paperBundle: formData.get("paperBundle"),
+    paperParts: formData.get("paperParts"),
     paperRemarks: formData.get("paperRemarks"),
     plateJobId: formData.get("plateJobId"),
     paperSupplyBy: formData.get("paperSupplyBy"),

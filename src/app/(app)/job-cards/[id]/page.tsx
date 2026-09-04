@@ -21,6 +21,7 @@ import {
 } from "@/modules/fabrication/queries";
 import { getJobCard, machineOptions } from "@/modules/job-cards/queries";
 import { getPressRun } from "@/modules/press-runs/queries";
+import { PaperSheetFigures } from "@/components/job-cards/paper-sheet-figures";
 import { resolvedSheet } from "@/modules/press-runs/sheet";
 import { toolingForDesign } from "@/modules/tooling/queries";
 import { locationLabel } from "@/modules/tooling/location";
@@ -213,10 +214,25 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
             <Fact label="Size" value={sheet.paperSize} />
             <Fact label="GSM" value={sheet.paperGsm} />
             <Fact label="Matt / gloss" value={sheet.paperFinish} />
-            <Fact label="Sheets / ream" value={formatQty(sheet.sheetsPerReam)} />
+            <Fact
+              label="Quantity"
+              value={
+                sheet.paperQty !== null && sheet.paperBundle
+                  ? `${formatQty(sheet.paperQty)} ${sheet.paperBundle.toLowerCase()}${sheet.paperQty === 1 ? "" : "s"}`
+                  : null
+              }
+            />
             <Fact label="No. of colours" value={card.execNoOfColours} />
-            <Fact label="Planning" value={card.execPlanning} />
+            <Fact label="Pantone" value={card.execPantone} />
           </dl>
+
+          {/* Both figures, derived here rather than stored (J18). */}
+          <PaperSheetFigures
+            qty={sheet.paperQty}
+            bundle={sheet.paperBundle}
+            parts={sheet.paperParts}
+            className="mt-3"
+          />
           {card.designId ? (
             <p className="text-muted-foreground mt-3 text-[12px]">
               Design {card.designCode} — {card.designJobName}

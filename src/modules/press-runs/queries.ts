@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
 import { client, design, jobCard, machine, poItem, pressRun, purchaseOrder } from "@/db/schema";
+import type { PaperBundle } from "@/modules/job-cards/paper";
 
 /**
  * Reads for press runs (ganging).
@@ -29,7 +30,9 @@ export type PressRunRow = {
   paperSize: string | null;
   paperGsm: string | null;
   paperFinish: string | null;
-  sheetsPerReam: number | null;
+  paperQty: number | null;
+  paperBundle: PaperBundle | null;
+  paperParts: number | null;
   paperRemarks: string | null;
   plateJobId: string | null;
   paperSupplyBy: string | null;
@@ -60,7 +63,9 @@ export async function getPressRun(
       paperSize: pressRun.paperSize,
       paperGsm: pressRun.paperGsm,
       paperFinish: pressRun.paperFinish,
-      sheetsPerReam: pressRun.sheetsPerReam,
+      paperQty: pressRun.paperQty,
+      paperBundle: pressRun.paperBundle,
+      paperParts: pressRun.paperParts,
       paperRemarks: pressRun.paperRemarks,
       plateJobId: pressRun.plateJobId,
       paperSupplyBy: pressRun.paperSupplyBy,

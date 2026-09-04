@@ -141,6 +141,23 @@ export const supplyByEnum = pgEnum("supply_by", ["Press", "Party"]);
  */
 export const fabricationScopeEnum = pgEnum("fabrication_scope", ["Design", "Run", "None"]);
 
+/**
+ * How paper is counted when it is bought and issued.
+ *
+ * The floor does not order 500 sheets, it orders a ream. These are the three
+ * bundles the godown actually deals in, and each is a FIXED number of sheets —
+ * Packet 100, Ream 500, Gross 144 — which is why this is an enum and not free
+ * text with a number beside it.
+ *
+ * The multipliers live in `src/modules/job-cards/paper.ts`, typed against these
+ * values so a fourth bundle cannot be added here without one.
+ *
+ * This replaced `sheets_per_ream` on both `job_card` and `press_run` (J18).
+ * Two fields that each claimed to say how many sheets are in a ream could
+ * disagree, and the wrong one would always be whichever nobody updated.
+ */
+export const paperBundleEnum = pgEnum("paper_bundle", ["Packet", "Ream", "Gross"]);
+
 export const dispatchStatusEnum = pgEnum("dispatch_status", [
   "Draft",
   "Dispatched",

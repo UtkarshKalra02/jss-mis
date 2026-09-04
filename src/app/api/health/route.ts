@@ -200,6 +200,25 @@ const SCHEMA_EXPECTATIONS: {
     sql: sql`select 1 from information_schema.columns
              where table_name = 'press_run' and column_name = 'paper_size'`,
   },
+  {
+    what: "job_card.sheets_per_ream and exec_size are gone",
+    since: "0026_drop_sheets_per_ream_and_exec_size",
+    expect: "absent",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'job_card' and column_name in ('sheets_per_ream', 'exec_size')`,
+  },
+  {
+    what: "job_card.paper_bundle and exec_pantone",
+    since: "0027_paper_bundle_and_pantone",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'job_card' and column_name = 'paper_bundle'`,
+  },
+  {
+    what: "press_run.paper_bundle",
+    since: "0027_paper_bundle_and_pantone",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'press_run' and column_name = 'paper_bundle'`,
+  },
 ];
 
 async function checkSchema() {

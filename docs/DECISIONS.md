@@ -2027,3 +2027,60 @@ functions (F25, H8) — the three places the logic was already correct. Every de
 lived in the DOM wiring between them, and the project has no jsdom and no
 testing-library. That gap is recorded in `docs/BACKLOG.md` rather than closed here,
 because adding a component-test stack is its own decision and not a bug fix.
+
+---
+
+**J18 — Paper is counted in the bundles the godown deals in, and both sheet figures are
+shown.** The paper detail band asked for "sheets per ream", which is not how anybody on
+the floor talks: they order five packets or three reams. It now asks for a QUANTITY and a
+BUNDLE, and the bundle is an enum with fixed multipliers — Packet 100, Ream 500, Gross 144
+— held in `src/modules/job-cards/paper.ts` and typed as `Record<PaperBundle, number>`, so
+a fourth bundle cannot be added to the enum without a multiplier being added beside it.
+
+`sheets_per_ream` was REMOVED rather than kept alongside. Two fields that each claim to say
+how many sheets are in a ream can disagree, and the wrong one is always whichever nobody
+updated — the failure I7 removed `design.die_id` to avoid and J15 moved the sheet onto the
+run to avoid. The cost is real and accepted: mills that ship 480-sheet reams exist, and
+until that is common enough to earn a field it goes in Paper remarks.
+
+**A third field, `paper_parts`, is how many pieces each parent sheet is cut into.** Cutting
+happens BEFORE printing — the parent sheet is cut down to press size — so the arithmetic
+runs quantity × bundle = parent sheets, × parts = press sheets.
+
+**BOTH FIGURES ARE SHOWN, equally weighted, and neither is stored.** They are different
+facts for different people: parent sheets is what left the godown and is what costing and
+any future IMS will need; press sheets is the run length the press and the cutter work to.
+Showing only one leaves whoever needed the other doing the sum on a phone, which is the
+habit the band exists to remove. Both are derived by `paperCount()` wherever they appear,
+on non-negotiable 2's rule — a stored total is right until the first time somebody corrects
+the quantity, and looks equally authoritative afterwards.
+
+Quantity and bundle travel together or not at all. "5" with no bundle is not a fact, and it
+is refused in three places on purpose: a check constraint (`job_card_paper_bundle_required`,
+and the same on `press_run`) is what GUARANTEES it (non-negotiable 4), a zod refinement is
+what returns a sentence instead of a database error, and the form says it inline while the
+person can still fix it.
+
+All three columns went on `press_run` as well as `job_card`, because a ganged card's paper
+facts belong to the run (J15). One paper field behaving differently from the rest is
+precisely the bug that rule exists to prevent, and `resolvedSheet()` carries them like
+every other.
+
+**`exec_size` and `exec_planning` were dropped from the Job Execution band.** The size on
+that band duplicated the paper detail band's, and the planning note said what `planned_date`
+and the fabrication answers already say. The columns were dropped rather than hidden —
+there were no job cards and no press runs in any database when this landed, so nothing was
+lost, and a hidden column is a dead end of the kind the audit closed in `773cfa6`.
+
+**`exec_pantone` was added after No. of colours, and it is NOT `tooling.pantone_no`.** The
+register's Pantone identifies a physical ink or plate item and is searchable because
+somebody holding a job sheet needs to find the tool (I11). This one tells the press what to
+mix for THIS run, and it has to print whether or not a tooling row exists — which, for most
+cards, it does not. Two fields with one name would be worth arguing about; two facts that
+happen to share a vocabulary are not.
+
+The migration is split in two — `0026` drops, `0027` adds — because drizzle-kit cannot tell
+a dropped column from a renamed one without being asked, and the answer it needs cannot be
+given in a non-interactive shell. Two unambiguous migrations are also easier to read a year
+from now than one that both drops and adds.
+

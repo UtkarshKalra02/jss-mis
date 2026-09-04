@@ -12,6 +12,7 @@ import {
   printedChecklist,
   type PrintedFabricationLine,
 } from "@/modules/fabrication/queries";
+import { paperCount, paperQuantityLine } from "@/modules/job-cards/paper";
 import { getPressRun, getRunMembers } from "@/modules/press-runs/queries";
 
 export const metadata: Metadata = { title: "Press run · print" };
@@ -65,6 +66,9 @@ export default async function PressRunPrintPage({
     getRunMembers(id),
     fabricationVocabulary(),
   ]);
+
+  // Derived here, never stored (J18).
+  const paper = paperCount({ qty: run.paperQty, bundle: run.paperBundle, parts: run.paperParts });
 
   /*
    * One checklist per job on the plate. Design-scope answers come from that
@@ -134,8 +138,15 @@ export default async function PressRunPrintPage({
             <Slot label="Size" value={run.paperSize} />
             <Slot label="GSM" value={run.paperGsm} />
             <Slot label="Matt / gloss" value={run.paperFinish} />
-            <Slot label="Sheets / ream" value={formatQty(run.sheetsPerReam)} />
+            <Slot label="Quantity" value={paperQuantityLine(run)} />
             <Slot label="Remarks" value={run.paperRemarks} />
+          </div>
+
+          {/* One plate, one paper figure — every card on it shares these (J15, J18). */}
+          <div className="mt-1.5 grid grid-cols-5 gap-x-4 border-t border-neutral-400 pt-1.5">
+            <Slot label="Parent sheets" value={formatQty(paper.parentSheets)} />
+            <Slot label="Parts" value={run.paperParts ? String(run.paperParts) : "1 (uncut)"} />
+            <Slot label="Press sheets" value={formatQty(paper.pressSheets)} />
           </div>
 
           <div className="mt-2 grid grid-cols-3 gap-x-4 border-t border-neutral-400 pt-1.5">

@@ -170,12 +170,13 @@ export async function releaseJobCardAction(
           paperSize: v.paperSize ?? null,
           paperGsm: v.paperGsm ?? null,
           paperFinish: v.paperFinish ?? null,
-          sheetsPerReam: v.sheetsPerReam ?? null,
+          paperQty: v.paperQty ?? null,
+          paperBundle: v.paperBundle ?? null,
+          paperParts: v.paperParts ?? null,
           paperRemarks: v.paperRemarks ?? null,
 
           execNoOfColours: v.execNoOfColours ?? null,
-          execSize: v.execSize ?? null,
-          execPlanning: v.execPlanning ?? null,
+          execPantone: v.execPantone ?? null,
 
           fabricationRemarks: v.fabricationRemarks ?? null,
           notes: v.notes ?? null,
@@ -288,12 +289,13 @@ export async function updateJobCardPlanAction(
           paperSize: v.paperSize ?? null,
           paperGsm: v.paperGsm ?? null,
           paperFinish: v.paperFinish ?? null,
-          sheetsPerReam: v.sheetsPerReam ?? null,
+          paperQty: v.paperQty ?? null,
+          paperBundle: v.paperBundle ?? null,
+          paperParts: v.paperParts ?? null,
           paperRemarks: v.paperRemarks ?? null,
 
           execNoOfColours: v.execNoOfColours ?? null,
-          execSize: v.execSize ?? null,
-          execPlanning: v.execPlanning ?? null,
+          execPantone: v.execPantone ?? null,
 
           fabricationRemarks: v.fabricationRemarks ?? null,
           notes: v.notes ?? null,

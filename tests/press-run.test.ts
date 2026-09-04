@@ -303,7 +303,9 @@ describe("resolving which sheet a card prints on", () => {
     paperSize: 'CARD 20" x 30"',
     paperGsm: "250",
     paperFinish: "Gloss",
-    sheetsPerReam: 500,
+    paperQty: 5,
+    paperBundle: "Packet" as const,
+    paperParts: 2,
     paperRemarks: "card remark",
     plateJobId: "CARD-PLATE",
     paperSupplyBy: "Press",
@@ -317,7 +319,9 @@ describe("resolving which sheet a card prints on", () => {
     paperSize: 'RUN 25" x 36"',
     paperGsm: "100",
     paperFinish: "Matt",
-    sheetsPerReam: 300,
+    paperQty: 3,
+    paperBundle: "Ream" as const,
+    paperParts: 4,
     paperRemarks: "run remark",
     plateJobId: "RUN-PLATE",
     paperSupplyBy: "Party",
@@ -377,7 +381,9 @@ describe("the press run as a document", () => {
           runDate: "2026-05-10",
           paperSize: '25" x 36"',
           paperGsm: "100",
-          sheetsPerReam: 300,
+          paperQty: 3,
+          paperBundle: "Ream",
+          paperParts: 4,
           plateJobId: "PL-8891",
           paperSupplyBy: "Party",
           plateSupplyBy: "Press",
@@ -387,7 +393,9 @@ describe("the press run as a document", () => {
 
       const read = await getPressRun(run.id, tx);
       expect(read!.paperSize).toBe('25" x 36"');
-      expect(read!.sheetsPerReam).toBe(300);
+      expect(read!.paperQty).toBe(3);
+      expect(read!.paperBundle).toBe("Ream");
+      expect(read!.paperParts).toBe(4);
       expect(read!.paperSupplyBy).toBe("Party");
 
       // Blank until somebody transcribes the printed run sheet (J4's rule,

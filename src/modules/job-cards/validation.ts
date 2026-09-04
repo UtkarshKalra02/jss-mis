@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { jobCardStatusEnum, supplyByEnum } from "@/db/schema/enums";
+import { jobCardStatusEnum, paperBundleEnum, supplyByEnum } from "@/db/schema/enums";
 
 /**
  * Job card form contracts.
@@ -33,6 +33,31 @@ function absentOrBlank<T extends z.ZodType>(inner: T) {
 }
 
 export const supplyByValues = supplyByEnum.enumValues;
+export const paperBundleValues = paperBundleEnum.enumValues;
+
+/**
+ * Quantity and bundle travel together or not at all.
+ *
+ * The same rule as the `job_card_paper_bundle_required` check constraint, said
+ * again here so the person sees a sentence rather than a database error. Both
+ * exist on purpose: the constraint is what guarantees it (non-negotiable 4),
+ * this is what explains it.
+ *
+ * Applied at the parse sites rather than on `releaseSchema` itself, because a
+ * refined schema can no longer be `.extend()`ed and `planSchema` extends it.
+ */
+function withPaperPairing<T extends z.ZodObject>(schema: T) {
+  return schema.superRefine((value, ctx) => {
+    const v = value as { paperQty?: number; paperBundle?: string };
+    if (v.paperQty !== undefined && v.paperBundle === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["paperBundle"],
+        message: "Choose packet, ream or gross — a quantity on its own does not say how much paper.",
+      });
+    }
+  });
+}
 
 export const releaseSchema = z.object({
   poItemId: z.uuid("Choose an item."),
@@ -73,18 +98,31 @@ export const releaseSchema = z.object({
   paperSize: absentOrBlank(z.string().trim().max(120)),
   paperGsm: absentOrBlank(z.string().trim().max(60)),
   paperFinish: absentOrBlank(z.string().trim().max(60)),
-  sheetsPerReam: absentOrBlank(
+  /**
+   * How many BUNDLES, and of what. Sheets are derived, never typed (J18).
+   */
+  paperQty: absentOrBlank(
     z.coerce
       .number()
-      .int("Sheets per ream must be a whole number.")
-      .positive("Sheets per ream must be more than zero.")
+      .int("Quantity must be a whole number of bundles.")
+      .positive("Quantity must be more than zero.")
       .max(9_999_999),
   ),
+  paperBundle: absentOrBlank(z.enum(paperBundleValues)),
+
+  /** How many pieces each parent sheet is cut into. Blank means uncut. */
+  paperParts: absentOrBlank(
+    z.coerce
+      .number()
+      .int("Parts must be a whole number.")
+      .positive("Parts must be at least one.")
+      .max(1_000),
+  ),
+
   paperRemarks: absentOrBlank(z.string().trim().max(500)),
 
   execNoOfColours: absentOrBlank(z.string().trim().max(60)),
-  execSize: absentOrBlank(z.string().trim().max(120)),
-  execPlanning: absentOrBlank(z.string().trim().max(200)),
+  execPantone: absentOrBlank(z.string().trim().max(120)),
 
   fabricationRemarks: absentOrBlank(z.string().trim().max(1000)),
 
@@ -147,7 +185,7 @@ export type PlanInput = z.infer<typeof planSchema>;
 
 export function parsePlanForm(formData: FormData) {
   const base = parseReleaseForm(formData);
-  return planSchema.safeParse({
+  return withPaperPairing(planSchema).safeParse({
     ...(base.success ? base.data : {}),
     id: formData.get("id"),
     // Re-read the raw values: parseReleaseForm may have failed on poItemId,
@@ -166,11 +204,12 @@ export function parsePlanForm(formData: FormData) {
         "paperSize",
         "paperGsm",
         "paperFinish",
-        "sheetsPerReam",
+        "paperQty",
+        "paperBundle",
+        "paperParts",
         "paperRemarks",
         "execNoOfColours",
-        "execSize",
-        "execPlanning",
+        "execPantone",
         "fabricationRemarks",
         "notes",
       ].map((k) => [k, formData.get(k)]),
@@ -181,7 +220,7 @@ export function parsePlanForm(formData: FormData) {
 }
 
 export function parseReleaseForm(formData: FormData) {
-  return releaseSchema.safeParse({
+  return withPaperPairing(releaseSchema).safeParse({
     poItemId: formData.get("poItemId"),
     plannedDate: formData.get("plannedDate"),
     plannedQty: formData.get("plannedQty"),
@@ -195,11 +234,12 @@ export function parseReleaseForm(formData: FormData) {
     paperSize: formData.get("paperSize"),
     paperGsm: formData.get("paperGsm"),
     paperFinish: formData.get("paperFinish"),
-    sheetsPerReam: formData.get("sheetsPerReam"),
+    paperQty: formData.get("paperQty"),
+    paperBundle: formData.get("paperBundle"),
+    paperParts: formData.get("paperParts"),
     paperRemarks: formData.get("paperRemarks"),
     execNoOfColours: formData.get("execNoOfColours"),
-    execSize: formData.get("execSize"),
-    execPlanning: formData.get("execPlanning"),
+    execPantone: formData.get("execPantone"),
     fabricationRemarks: formData.get("fabricationRemarks"),
     notes: formData.get("notes"),
     fabricationOptionIds: formData.getAll("fabricationOptionId").map(String),

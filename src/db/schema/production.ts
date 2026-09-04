@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { baseColumns } from "./_shared";
-import { jobCardStatusEnum, supplyByEnum } from "./enums";
+import { jobCardStatusEnum, paperBundleEnum, supplyByEnum } from "./enums";
 import { poItem } from "./order";
 import { stage } from "./reference";
 import { appUser } from "./users";
@@ -138,7 +138,9 @@ export const pressRun = pgTable(
     paperSize: text(),
     paperGsm: text(),
     paperFinish: text(),
-    sheetsPerReam: integer(),
+    paperQty: integer(),
+    paperBundle: paperBundleEnum(),
+    paperParts: integer(),
     paperRemarks: text(),
 
     plateJobId: text(),
@@ -175,9 +177,12 @@ export const pressRun = pgTable(
       "press_run_wastage_qty_non_negative",
       sql`${t.wastageQty} is null or ${t.wastageQty} >= 0`,
     ),
+    check("press_run_paper_qty_positive", sql`${t.paperQty} is null or ${t.paperQty} > 0`),
+    check("press_run_paper_parts_positive", sql`${t.paperParts} is null or ${t.paperParts} > 0`),
+    // Same pairing rule as the card's — see job_card_paper_bundle_required.
     check(
-      "press_run_sheets_per_ream_positive",
-      sql`${t.sheetsPerReam} is null or ${t.sheetsPerReam} > 0`,
+      "press_run_paper_bundle_required",
+      sql`${t.paperQty} is null or ${t.paperBundle} is not null`,
     ),
   ],
 );
@@ -270,20 +275,45 @@ export const jobCard = pgTable(
     paperSize: text(),
     paperGsm: text(),
     paperFinish: text(),
-    sheetsPerReam: integer(),
+
+    /**
+     * How much paper, in the bundles the godown deals in (J18).
+     *
+     * `paper_qty` counts BUNDLES, not sheets — 5 means five packets or five
+     * reams depending on `paper_bundle`, and the two are meaningless apart,
+     * which the check constraint below enforces rather than leaves to the form.
+     *
+     * `paper_parts` is how many pieces each parent sheet is cut into before it
+     * reaches the press. 1 and null both mean uncut.
+     *
+     * NEITHER TOTAL IS STORED. Parent sheets and press sheets are both derived
+     * by `paperCount()` wherever they are shown, on non-negotiable 2's rule:
+     * a stored total is right until somebody corrects the quantity.
+     */
+    paperQty: integer(),
+    paperBundle: paperBundleEnum(),
+    paperParts: integer(),
+
     paperRemarks: text(),
 
     /**
      * The card's JOB EXECUTION band, minus the three that stay blank.
      *
-     * Number of colours, the size run, and the planning note are all decided
-     * before the sheet is printed and are therefore printed on it. Final
-     * quantity, wastage and the execution remark are the only things on the
-     * page left empty (J4).
+     * Number of colours and the Pantone shade are decided before the sheet is
+     * printed and are therefore printed on it. Final quantity, wastage and the
+     * execution remark are the only things on the page left empty (J4).
+     *
+     * `exec_size` and `exec_planning` were dropped in J18. The size on this
+     * band duplicated the paper detail band's, and the planning note said what
+     * `planned_date` and the fabrication answers already said.
+     *
+     * `exec_pantone` is free text and is NOT `tooling.pantone_no`. That one
+     * identifies a physical ink or plate in the register; this one tells the
+     * press what to mix for this run, and must print whether or not a tooling
+     * row exists — which for most cards it does not.
      */
     execNoOfColours: text(),
-    execSize: text(),
-    execPlanning: text(),
+    execPantone: text(),
 
     /** The card's Fabrication Detail remarks line. Printed, not hand-written. */
     fabricationRemarks: text(),
@@ -345,9 +375,15 @@ export const jobCard = pgTable(
       "job_card_wastage_qty_non_negative",
       sql`${t.wastageQty} is null or ${t.wastageQty} >= 0`,
     ),
+    check("job_card_paper_qty_positive", sql`${t.paperQty} is null or ${t.paperQty} > 0`),
+    check("job_card_paper_parts_positive", sql`${t.paperParts} is null or ${t.paperParts} > 0`),
+
+    // A quantity with no bundle is not a fact — 5 of what? The pair travels
+    // together or not at all, and the database says so rather than trusting
+    // every form that will ever write here.
     check(
-      "job_card_sheets_per_ream_positive",
-      sql`${t.sheetsPerReam} is null or ${t.sheetsPerReam} > 0`,
+      "job_card_paper_bundle_required",
+      sql`${t.paperQty} is null or ${t.paperBundle} is not null`,
     ),
   ],
 );

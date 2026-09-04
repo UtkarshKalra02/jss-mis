@@ -1,3 +1,5 @@
+import type { PaperBundle } from "@/modules/job-cards/paper";
+
 /**
  * Which sheet a job card is actually printing on.
  *
@@ -24,7 +26,9 @@ export type SheetFields = {
   paperSize: string | null;
   paperGsm: string | null;
   paperFinish: string | null;
-  sheetsPerReam: number | null;
+  paperQty: number | null;
+  paperBundle: PaperBundle | null;
+  paperParts: number | null;
   paperRemarks: string | null;
   plateJobId: string | null;
   paperSupplyBy: string | null;
@@ -49,7 +53,9 @@ export function resolvedSheet(
       paperSize: run.paperSize,
       paperGsm: run.paperGsm,
       paperFinish: run.paperFinish,
-      sheetsPerReam: run.sheetsPerReam,
+      paperQty: run.paperQty,
+      paperBundle: run.paperBundle,
+      paperParts: run.paperParts,
       paperRemarks: run.paperRemarks,
       plateJobId: run.plateJobId,
       paperSupplyBy: run.paperSupplyBy,
@@ -65,7 +71,9 @@ export function resolvedSheet(
     paperSize: card.paperSize,
     paperGsm: card.paperGsm,
     paperFinish: card.paperFinish,
-    sheetsPerReam: card.sheetsPerReam,
+    paperQty: card.paperQty,
+    paperBundle: card.paperBundle,
+    paperParts: card.paperParts,
     paperRemarks: card.paperRemarks,
     plateJobId: card.plateJobId,
     paperSupplyBy: card.paperSupplyBy,

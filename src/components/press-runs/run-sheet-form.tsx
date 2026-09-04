@@ -5,6 +5,7 @@ import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import type { MachineOption } from "@/components/job-cards/job-card-form";
+import { PaperQuantity } from "@/components/job-cards/paper-quantity";
 import {
   updateRunExecutionAction,
   updateRunSheetAction,
@@ -149,17 +150,20 @@ export function RunSheetForm({
         <Field name="plateJobId" label="Plate / Job ID" defaultValue={run.plateJobId} />
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-4">
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
         <Field name="paperSize" label="Sheet size" placeholder={'25" x 36"'} defaultValue={run.paperSize} />
         <Field name="paperGsm" label="GSM" placeholder="100" defaultValue={run.paperGsm} />
         <Field name="paperFinish" label="Matt / gloss" defaultValue={run.paperFinish} />
-        <Field
-          name="sheetsPerReam"
-          label="Sheets / ream"
-          type="number"
-          defaultValue={run.sheetsPerReam}
-        />
       </div>
+
+      {/* The same control the job card uses, so the plate and the cards on it
+          cannot disagree about the arithmetic (J18). */}
+      <PaperQuantity
+        className="mt-4"
+        qty={run.paperQty}
+        bundle={run.paperBundle}
+        parts={run.paperParts}
+      />
 
       <div className="mt-4 grid gap-4 sm:grid-cols-3">
         <SupplySelect

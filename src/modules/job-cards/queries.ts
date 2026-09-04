@@ -12,6 +12,7 @@ import {
   purchaseOrder,
 } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
+import type { PaperBundle } from "./paper";
 
 /**
  * Reads for job cards.
@@ -50,12 +51,13 @@ export type JobCardDetail = {
   paperSize: string | null;
   paperGsm: string | null;
   paperFinish: string | null;
-  sheetsPerReam: number | null;
+  paperQty: number | null;
+  paperBundle: PaperBundle | null;
+  paperParts: number | null;
   paperRemarks: string | null;
 
   execNoOfColours: string | null;
-  execSize: string | null;
-  execPlanning: string | null;
+  execPantone: string | null;
 
   fabricationRemarks: string | null;
 
@@ -132,12 +134,13 @@ export async function getJobCard(
       paperSize: jobCard.paperSize,
       paperGsm: jobCard.paperGsm,
       paperFinish: jobCard.paperFinish,
-      sheetsPerReam: jobCard.sheetsPerReam,
+      paperQty: jobCard.paperQty,
+      paperBundle: jobCard.paperBundle,
+      paperParts: jobCard.paperParts,
       paperRemarks: jobCard.paperRemarks,
 
       execNoOfColours: jobCard.execNoOfColours,
-      execSize: jobCard.execSize,
-      execPlanning: jobCard.execPlanning,
+      execPantone: jobCard.execPantone,
 
       fabricationRemarks: jobCard.fabricationRemarks,
 

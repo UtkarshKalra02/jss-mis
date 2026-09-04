@@ -13,6 +13,8 @@ import {
 import { supplyByValues } from "@/modules/job-cards/validation";
 import type { FabricationOptionRow, Selection } from "@/modules/fabrication/queries";
 
+import { PaperQuantity } from "./paper-quantity";
+
 const initialState: FormState = { ok: false, error: null };
 
 const inputClass =
@@ -34,11 +36,12 @@ export type JobCardPlanValues = {
   paperSize?: string | null;
   paperGsm?: string | null;
   paperFinish?: string | null;
-  sheetsPerReam?: number | null;
+  paperQty?: number | null;
+  paperBundle?: string | null;
+  paperParts?: number | null;
   paperRemarks?: string | null;
   execNoOfColours?: string | null;
-  execSize?: string | null;
-  execPlanning?: string | null;
+  execPantone?: string | null;
   fabricationRemarks?: string | null;
   notes?: string | null;
 };
@@ -348,16 +351,22 @@ export function JobCardForm({
               label="Matt / gloss"
               defaultValue={card?.paperFinish}
             />
-            <Field
-              name="sheetsPerReam"
-              label="Sheets / ream"
-              type="number"
-              defaultValue={card?.sheetsPerReam}
-            />
+
             <div className="sm:col-span-2">
               <Field name="paperRemarks" label="Remarks" defaultValue={card?.paperRemarks} />
             </div>
           </div>
+
+          {/* How much paper, in the bundles the godown deals in, and how many
+              pieces each parent sheet is cut into before it reaches the press.
+              Both sheet counts are worked out from these three and neither is
+              stored (J18). */}
+          <PaperQuantity
+            className={gangedOn ? "hidden" : "mt-4"}
+            qty={card?.paperQty}
+            bundle={card?.paperBundle}
+            parts={card?.paperParts}
+          />
         </section>
 
         {/* ---------------------------------------------------------------- */}
@@ -369,15 +378,22 @@ export function JobCardForm({
             Printed on the card. Final quantity, wastage and the run remark are the only
             things left blank on the page.
           </p>
-          <div className="mt-2 grid gap-4 sm:grid-cols-3">
+          <div className="mt-2 grid gap-4 sm:grid-cols-2">
             <Field
               name="execNoOfColours"
               label="No. of colours"
               placeholder="4/c"
               defaultValue={card?.execNoOfColours}
             />
-            <Field name="execSize" label="Size" defaultValue={card?.execSize} />
-            <Field name="execPlanning" label="Planning" defaultValue={card?.execPlanning} />
+            {/* NOT the tooling register's pantone_no, which identifies a
+                physical ink or plate. This is what the press must mix for this
+                run, and it prints whether or not a tooling row exists (J18). */}
+            <Field
+              name="execPantone"
+              label="Pantone"
+              placeholder="Pantone 485 C"
+              defaultValue={card?.execPantone}
+            />
           </div>
         </section>
 

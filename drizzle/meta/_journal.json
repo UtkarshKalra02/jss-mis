@@ -183,6 +183,20 @@
       "when": 1788425323713,
       "tag": "0025_tooling_check_compares_status_as_text",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788524580808,
+      "tag": "0026_drop_sheets_per_ream_and_exec_size",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1788524589537,
+      "tag": "0027_paper_bundle_and_pantone",
+      "breakpoints": true
     }
   ]
 }
