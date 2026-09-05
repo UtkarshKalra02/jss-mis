@@ -21,20 +21,26 @@ export function PaperSheetFigures({
   bundle,
   parts,
   className,
+  emptyText = "Enter a quantity and a bundle to see the sheet count.",
 }: {
   qty: number | null | undefined;
   bundle: string | null | undefined;
   parts: number | null | undefined;
   className?: string;
+  /**
+   * What to say when there is nothing to count. The default addresses somebody
+   * who can type; a read-only screen passes its own, because telling a reader
+   * to enter something into a page with no inputs is an instruction they
+   * cannot follow.
+   */
+  emptyText?: string;
 }) {
   const count = paperCount({ qty, bundle: (bundle as PaperBundle | null) ?? null, parts });
   const working = paperWorking({ qty, bundle: (bundle as PaperBundle | null) ?? null });
 
   if (count.parentSheets === null) {
     return (
-      <p className={cn("text-muted-foreground text-xs", className)}>
-        Enter a quantity and a bundle to see the sheet count.
-      </p>
+      <p className={cn("text-muted-foreground text-xs", className)}>{emptyText}</p>
     );
   }
 

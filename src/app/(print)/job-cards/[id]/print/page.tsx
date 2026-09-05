@@ -14,7 +14,7 @@ import {
 } from "@/modules/fabrication/queries";
 import { getJobCard } from "@/modules/job-cards/queries";
 import { gangInfoFor, getPressRun } from "@/modules/press-runs/queries";
-import { paperCount, paperQuantityLine } from "@/modules/job-cards/paper";
+import { paperCount, paperQuantityLine, partsLine } from "@/modules/job-cards/paper";
 import { resolvedSheet } from "@/modules/press-runs/sheet";
 import { toolingForDesign } from "@/modules/tooling/queries";
 import { locationLabel } from "@/modules/tooling/location";
@@ -221,7 +221,7 @@ export default async function JobCardPrintPage({
               the parent count, the cutter and the press read the other (J18). */}
           <div className="mt-1.5 grid grid-cols-5 gap-x-4 border-t border-neutral-400 pt-1.5">
             <Slot label="Parent sheets" value={formatQty(paper.parentSheets)} />
-            <Slot label="Parts" value={sheet.paperParts ? String(sheet.paperParts) : "1 (uncut)"} />
+            <Slot label="Parts" value={partsLine(sheet.paperParts)} />
             <Slot label="Press sheets" value={formatQty(paper.pressSheets)} />
           </div>
         </section>

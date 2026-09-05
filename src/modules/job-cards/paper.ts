@@ -124,3 +124,15 @@ export function paperQuantityLine({
   if (paperQty === null || !paperBundle) return null;
   return bundleWords(paperQty, paperBundle);
 }
+
+/**
+ * "1 (uncut)" or "2" — how many pieces the parent sheet is cut into.
+ *
+ * A blank parts box and a parts of 1 are the SAME FACT: the sheet is not cut.
+ * Printing them two different ways on the same card invites somebody to read a
+ * difference into it that is not there.
+ */
+export function partsLine(parts: number | null | undefined): string {
+  return parts !== null && parts !== undefined && parts > 1 ? String(parts) : "1 (uncut)";
+}
+

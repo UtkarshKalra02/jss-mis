@@ -4,6 +4,7 @@ import {
   paperCount,
   paperQuantityLine,
   paperWorking,
+  partsLine,
   SHEETS_PER_BUNDLE,
 } from "@/modules/job-cards/paper";
 
@@ -103,3 +104,19 @@ describe("how the figures explain themselves", () => {
     expect(paperQuantityLine({ paperQty: null, paperBundle: "Ream" })).toBeNull();
   });
 });
+
+describe("partsLine", () => {
+  it("says uncut the same way whether parts is blank or one", () => {
+    // The same fact. Two spellings of it on one card invites somebody to read
+    // a difference into it that is not there.
+    expect(partsLine(null)).toBe("1 (uncut)");
+    expect(partsLine(undefined)).toBe("1 (uncut)");
+    expect(partsLine(1)).toBe("1 (uncut)");
+  });
+
+  it("prints the count when the sheet really is cut", () => {
+    expect(partsLine(2)).toBe("2");
+    expect(partsLine(8)).toBe("8");
+  });
+});
+

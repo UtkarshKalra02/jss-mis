@@ -12,7 +12,7 @@ import {
   printedChecklist,
   type PrintedFabricationLine,
 } from "@/modules/fabrication/queries";
-import { paperCount, paperQuantityLine } from "@/modules/job-cards/paper";
+import { paperCount, paperQuantityLine, partsLine } from "@/modules/job-cards/paper";
 import { getPressRun, getRunMembers } from "@/modules/press-runs/queries";
 
 export const metadata: Metadata = { title: "Press run · print" };
@@ -145,7 +145,7 @@ export default async function PressRunPrintPage({
           {/* One plate, one paper figure — every card on it shares these (J15, J18). */}
           <div className="mt-1.5 grid grid-cols-5 gap-x-4 border-t border-neutral-400 pt-1.5">
             <Slot label="Parent sheets" value={formatQty(paper.parentSheets)} />
-            <Slot label="Parts" value={run.paperParts ? String(run.paperParts) : "1 (uncut)"} />
+            <Slot label="Parts" value={partsLine(run.paperParts)} />
             <Slot label="Press sheets" value={formatQty(paper.pressSheets)} />
           </div>
 

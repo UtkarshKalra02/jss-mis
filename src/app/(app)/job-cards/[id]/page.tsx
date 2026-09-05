@@ -232,6 +232,7 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
             bundle={sheet.paperBundle}
             parts={sheet.paperParts}
             className="mt-3"
+            emptyText="Paper quantity not recorded."
           />
           {card.designId ? (
             <p className="text-muted-foreground mt-3 text-[12px]">
