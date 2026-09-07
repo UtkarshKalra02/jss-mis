@@ -31,32 +31,59 @@ async function driverError(statement: ReturnType<typeof sql>): Promise<unknown> 
 }
 
 describe("a database error never reaches the screen", () => {
-  it("turns a missing column into the sentence that says what to do", async () => {
+  it("NAMES THE MISSING COLUMN — the only detail worth printing", async () => {
     // Exactly what an unmigrated database does to an insert naming paper_qty.
-    const error = await driverError(sql`select no_such_column_at_all from job_card limit 1`);
+    //
+    // This assertion is the one that matters and the one the first version of
+    // this file did not make. Postgres leaves the `column` field EMPTY for
+    // 42703 — it is populated for constraint violations, not for parse-time
+    // failures — so reading it produced "it has no something this screen
+    // writes", a sentence with a hole where the answer should have been. The
+    // test passed anyway, because it only checked the boilerplate around it.
+    const error = await driverError(
+      sql`insert into job_card (jc_no, no_such_column_at_all) values ('X', 1)`,
+    );
 
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const message = actionError(error, "Could not release that job card.");
     spy.mockRestore();
 
-    expect(message).toContain("behind the code");
+    expect(message).toContain("no_such_column_at_all");
+    expect(message).toContain("job_card");
     expect(message).toContain("/api/health");
 
-    // The whole point: no SQL and no parameters.
-    expect(message).not.toContain("select");
+    // The whole point: no statement and no parameters.
+    expect(message).not.toContain("values");
     expect(message).not.toContain("Failed query");
     expect(message.length).toBeLessThan(300);
   });
 
-  it("says nothing about a missing table beyond that it is missing", async () => {
+  it("names the missing table too", async () => {
     const error = await driverError(sql`select 1 from no_such_table_at_all`);
 
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const message = actionError(error, "Could not save that.");
     spy.mockRestore();
 
-    expect(message).toContain("behind the code");
+    expect(message).toContain("no_such_table_at_all");
+    expect(message).toContain("/api/health");
     expect(message).not.toContain("Failed query");
+  });
+
+  it("still reads as a sentence when Postgres said nothing quotable", () => {
+    // The branch that produced the broken grammar. A real Postgres 42703 always
+    // carries the identifier in its message, so this is a driver that has
+    // stopped doing that — rare, and it should still read as English.
+    const bare = { code: "42703" };
+
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const message = actionError(bare, "Could not save that.");
+    spy.mockRestore();
+
+    expect(message).toBe(
+      "The database does not match the code — it is missing something this screen writes. " +
+        "If migrations are pending, run them against it — /api/health lists which are missing.",
+    );
   });
 
   it("turns a check violation into a sentence, naming no row values", async () => {

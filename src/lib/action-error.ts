@@ -31,6 +31,11 @@ type PgLike = {
   constraint?: string;
   column?: string;
   table?: string;
+  /**
+   * Postgres's own message. Quoted ONLY for the schema-drift codes, where it
+   * names nothing but schema objects — see sentenceFor.
+   */
+  message?: string;
 };
 
 /**
@@ -74,24 +79,32 @@ function isDriverError(error: unknown): boolean {
 /**
  * A sentence for a database failure.
  *
- * The schema-drift case names the column and the table, because that is the one
- * database error where the reader can act on the detail: it means the migrations
- * have not been run against whichever database this app is pointed at. Nothing
- * else quotes anything the database said — `detail` in particular contains the
- * offending ROW VALUES, which is precisely what must not reach the screen.
+ * The schema-drift case quotes what Postgres said, because that is the one
+ * database error where the reader can act on the detail: it names the column
+ * that is missing, which is what says WHICH migration has not been run against
+ * whichever database this app is pointed at.
+ *
+ * IT COMES FROM THE MESSAGE, NOT FROM `column` OR `table`. Postgres leaves both
+ * of those fields empty for 42703 and 42P01 — they are populated for
+ * constraint violations, not for parse-time resolution failures — and reading
+ * them produced a sentence with a hole in it where the column name should have
+ * been. The message text for these two codes is safe to quote precisely because
+ * it contains nothing but identifiers: `column "paper_qty" of relation
+ * "job_card" does not exist`.
+ *
+ * Nothing else quotes anything the database said. `detail` in particular
+ * contains the offending ROW VALUES, which is what must not reach the screen.
  */
 function sentenceFor(pg: PgLike, fallback: string): string {
   switch (pg.code) {
     case UNDEFINED_COLUMN:
     case UNDEFINED_TABLE: {
-      const what = pg.column
-        ? `column "${pg.column}"`
-        : pg.table
-          ? `table "${pg.table}"`
-          : "something this screen writes";
+      const said = typeof pg.message === "string" ? pg.message.trim() : "";
+      const what = said !== "" ? `: ${said}` : " — it is missing something this screen writes";
+
       return (
-        `This database is behind the code — it has no ${what}. ` +
-        `Run the pending migrations against it; /api/health lists which are missing.`
+        `The database does not match the code${what}. ` +
+        `If migrations are pending, run them against it — /api/health lists which are missing.`
       );
     }
 

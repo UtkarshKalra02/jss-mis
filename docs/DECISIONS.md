@@ -2111,12 +2111,21 @@ chain, or by drizzle's own signature of carrying `query` and `params`. Five char
 exactly, because Node's errors carry codes too and `ECONNREFUSED` must not be reported as
 a schema problem.
 
-The schema-drift case (`42703`, `42P01`) is the one that names its detail — the column or
-table — because it is the one database error where the detail is what the reader acts on:
-it means the migrations have not been run against whichever database this app is pointed
-at, and the message says so and points at `/api/health`. Nothing else quotes anything
-Postgres said. `detail` in particular contains the offending row, which is exactly what
-must not be shown.
+The schema-drift case (`42703`, `42P01`) is the one that names its detail, because it is the
+one database error where the detail is what the reader acts on: it says WHICH column is
+missing, and therefore which migration has not been run against whichever database this app
+is pointed at. Nothing else quotes anything Postgres said. `detail` in particular contains
+the offending row, which is exactly what must not be shown.
+
+**The identifier comes from the message text, not from the `column` and `table` fields.**
+Postgres leaves both empty for `42703` and `42P01` — they are populated for constraint
+violations, not for parse-time resolution failures. The first version of this read those
+fields and put *"it has no something this screen writes"* on screen: no column name, and
+not a sentence. It shipped because the test asserted the boilerplate around the answer and
+not the answer, which is the more useful lesson of the two. The message text for these two
+codes is safe to quote precisely because it contains nothing but identifiers — `column
+"paper_qty" of relation "job_card" does not exist` — and the test now asserts the column
+name appears in what the reader sees.
 
 The real error, statement and parameters and all, goes to `console.error` — the server log
 is where it is useful and where it was missing.
