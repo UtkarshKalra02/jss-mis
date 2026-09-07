@@ -120,11 +120,36 @@ Error: Invalid environment.
 That is deliberate. A build that succeeds and then 500s on every request is
 worse than one that refuses to start.
 
-### 6. Deploy, then run the migrations
+### 6. Migrations and the deploy, in the right order
 
 The build does **not** run migrations. Applying schema changes automatically on
 every deploy means a rollback of the code cannot roll back the database, and a
 failed migration takes the site down with no obvious cause.
+
+**THE ORDER DEPENDS ON WHAT THE MIGRATION DOES, and this heading used to say
+just "deploy, then run the migrations", which is right for half of them and
+takes the site down for the other half.**
+
+| The migration | Order | Why |
+|---|---|---|
+| **Adds** a column, table or enum value | migrate **first**, then deploy | The running code ignores what it does not know about. The new code finds its columns already there the moment it starts. |
+| **Drops or renames** a column or table | deploy **first**, then migrate | The running code is still selecting those columns until the new build replaces it. Drop them underneath it and every screen that reads them 500s. |
+
+A migration that does both — `0031` created `job_card_item`, backfilled it and
+then dropped `job_card.po_item_id` — counts as a **drop**. Deploy first.
+
+This is not hypothetical. `0031` was run against production while the previous
+build was still serving, and Stage Update and the Item Tracker both went down
+immediately: their queries still named `job_card.po_item_id`, which had just
+stopped existing. The database was fine and nothing was lost — the fix was to
+push the already-written code. The data blast radius had been checked carefully
+and the DEPLOY blast radius had not been checked at all.
+
+**If a drop is unavoidable while the old build is live**, split it into two
+migrations a deploy apart: one that adds the new shape and backfills, and a
+later one that drops the old columns once nothing reads them. That is also how
+to keep a rollback survivable, since code can roll back and a dropped column
+cannot.
 
 Run them yourself, from your laptop, pointed at production. `drizzle.config.ts`
 reads `DOTENV_CONFIG_PATH`, so point it at the production env file rather than
