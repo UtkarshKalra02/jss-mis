@@ -493,3 +493,53 @@ export async function releasableItems(query = "", limit = 200): Promise<Releasab
     )
     .limit(limit);
 }
+
+/**
+ * The items a bulk release is about to put on one plate (J20).
+ *
+ * ONE QUERY, not `releasableItem()` in a loop. Five items meant five round
+ * trips to Neon over a websocket before anything was written, and the checks
+ * they feed are all-or-nothing anyway — there is no point discovering the
+ * fifth failure four queries after the first.
+ *
+ * Read through `v_po_item_status` for the same reason the single release is:
+ * `pending_qty` has exactly one definition (non-negotiable 2), and the
+ * quantity defaulted onto each row must be the number the Item Tracker shows.
+ *
+ * Missing ids are simply absent from the result. The caller compares what it
+ * asked for against what came back and names what it could not find, which is
+ * a better message than "one of those items is gone".
+ */
+export async function releasableItemsByIds(
+  poItemIds: readonly string[],
+  runner: Runner = db,
+): Promise<ReleasableItem[]> {
+  if (poItemIds.length === 0) return [];
+
+  const rows = await runner
+    .select({
+      poItemId: vPoItemStatus.poItemId,
+      itemCode: vPoItemStatus.itemCode,
+      itemName: vPoItemStatus.itemName,
+      clientCode: vPoItemStatus.clientCode,
+      clientName: vPoItemStatus.clientName,
+      pendingQty: vPoItemStatus.pendingQty,
+      committedDate: vPoItemStatus.committedDate,
+      currentStageName: vPoItemStatus.currentStageName,
+    })
+    .from(vPoItemStatus)
+    .where(inArray(vPoItemStatus.poItemId, [...poItemIds]));
+
+  // Live card counts for all of them at once, so J3's second-card question can
+  // be asked once for the batch rather than five times.
+  const counts = await runner
+    .select({ poItemId: jobCard.poItemId, n: count() })
+    .from(jobCard)
+    .where(and(inArray(jobCard.poItemId, [...poItemIds]), LIVE))
+    .groupBy(jobCard.poItemId);
+
+  const byItem = new Map(counts.map((c) => [c.poItemId, Number(c.n)]));
+
+  return rows.map((r) => ({ ...r, cardCount: byItem.get(r.poItemId) ?? 0 }));
+}
+

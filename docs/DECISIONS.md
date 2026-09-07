@@ -2135,3 +2135,54 @@ error objects, on the reasoning that the shape drizzle and the neon driver actua
 IS the thing under test. A hand-made fake would keep passing after the driver changed its
 error shape, which is precisely the moment this would start leaking again.
 
+---
+
+**J20 — Several job cards raised on one plate, in one submit. Still one card per item.**
+Asked for as *"multiple items in a single job card"*. Two questions settled what it actually
+was: do the items on one card move stage together (*"no, not necessarily"*), and does Stage
+Update show one row or three (*"three only"*). Those two answers describe `press_run`
+exactly — independent stages is H2, three rows is what three items with three stage
+histories already produce — so a multi-item job card would have been a second
+implementation of ganging under a different name, and the wrong one would always be
+whichever nobody updated (I7, J15).
+
+So the spine holds. `job_card.po_item_id` is still NOT NULL, one card still covers exactly
+one PO item (spec section 3, H1), and each card keeps its own JC number, committed date,
+stage history and OTD. What was actually missing was the RAISING: ganging was chosen one
+card at a time, so five items on one plate meant five passes through the form and only the
+first one created the run.
+
+`releaseGangAction` writes the run and every card in ONE transaction, all or nothing. A
+half-applied batch would leave a numbered plate holding some of the jobs it was meant to,
+with both the PR and the JC numbers already burnt.
+
+**Two or more, never one.** A plate holding a single job is an ordinary release and the
+single form does it better — the same threshold H8 uses before it collapses a run on Stage
+Update, and for the same reason: below two there is nothing to group and nothing to protect
+against.
+
+**One planned date for the whole plate, the run's.** One plate is one trip through the
+press. There is deliberately no per-item date field to disagree with it.
+
+**The sheet goes on the run and not on the cards.** J15's resolution rule only goes one
+way, so writing paper or plate onto these cards as well would manufacture the second answer
+to "what is this printing on" that the rule exists to prevent. A test asserts the cards'
+own paper columns are null and that `resolvedSheet()` reports `fromRun`.
+
+**What the form deliberately does NOT ask.** Fabrication answers, checklists, notes,
+colours, Pantone — all absent. Per item there is exactly one field, the quantity, because
+that is the only fact that genuinely differs. Five items' worth of everything else on one
+screen would be worse than the five passes this replaces, which would make it a slower way
+to do the thing it exists to speed up. Cards are raised here and edited individually after.
+
+**J3 is asked once for the batch**, naming every item it applies to. Five separate
+second-card questions is the tedium this removes. It warns and never blocks, because a
+split or repeat run is legitimate.
+
+The confirm button names its form. The dialog is portalled out of it, which is J17's bug
+exactly, and this is the first new screen written after that was understood.
+
+Items are re-read from `v_po_item_status` when the ids arrive in the URL, so a tab left
+open while somebody dispatched one of them does not offer a job with nothing left to make.
+The action checks again inside the transaction, which is where it actually matters.
+

@@ -13,10 +13,11 @@ import { allocateNumber, todayIST } from "@/lib/numbering";
 import { syncJobCardFabrication } from "@/modules/fabrication/write";
 import { getPressRun as getRun } from "@/modules/press-runs/queries";
 
-import { getJobCardRecord, releasableItem } from "./queries";
+import { getJobCardRecord, releasableItem, releasableItemsByIds } from "./queries";
 import {
   parseExecutionForm,
   parseJobCardStatusForm,
+  parseBulkReleaseForm,
   parsePlanForm,
   parseReleaseForm,
   runSelectionsFrom,
@@ -234,6 +235,146 @@ export async function releaseJobCardAction(
   } catch (error) {
     unstable_rethrow(error);
     return fail(actionError(error, "Could not release that job card."));
+  }
+}
+
+/**
+ * Raising several cards on one plate, in one submit (J20).
+ *
+ * THE SPINE IS UNTOUCHED. This writes N job cards, one per PO item, exactly as
+ * the single release does — each keeps its own JC number, its own committed
+ * date, its own stage history and its own OTD. What it adds is that they are
+ * all created already pointing at one `press_run`, which is what "these go on
+ * one plate" has meant since H1. There is no such thing as a job card covering
+ * several items, and this does not create one.
+ *
+ * ONE PLANNED DATE for every card, which is the run's date: one plate is one
+ * trip through the press.
+ *
+ * THE SHEET GOES ON THE RUN, NOT THE CARDS. J15's resolution rule only goes one
+ * way — when a card is on a run, the run wins — so writing paper or plate onto
+ * these cards as well would create the second answer that rule exists to
+ * prevent.
+ *
+ * ALL OR NOTHING. The run and every card commit together or none do. A
+ * half-applied batch would leave a numbered plate holding some of the jobs it
+ * was supposed to, and both the PR and the JC numbers already burnt.
+ */
+export async function releaseGangAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireJobCardWriter();
+
+    const parsed = parseBulkReleaseForm(formData);
+    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
+    const v = parsed.data;
+
+    const items = await releasableItemsByIds(v.poItemIds);
+    const byId = new Map(items.map((i) => [i.poItemId, i]));
+
+    // Everything that would stop this being written, gathered before anything
+    // is. Reporting the first failure and stopping would send somebody round
+    // the loop once per bad row.
+    const gone = v.poItemIds.filter((id) => !byId.has(id));
+    if (gone.length > 0) {
+      return fail(
+        `${gone.length} of those items ${gone.length === 1 ? "is" : "are"} no longer in the system. Reload and choose again.`,
+      );
+    }
+
+    const finished = items.filter((i) => i.pendingQty <= 0);
+    if (finished.length > 0) {
+      return fail(
+        `${finished.map((i) => i.itemCode).join(", ")} ${finished.length === 1 ? "has" : "have"} nothing left to make — the full ordered quantity has been dispatched.`,
+      );
+    }
+
+    /*
+     * J3, asked ONCE for the batch. A second card is legitimate — a split or a
+     * repeat run — so this warns and never blocks, and naming the items is the
+     * point: the person needs to see which of the five they are doubling up on.
+     */
+    const repeats = items.filter((i) => i.cardCount > 0);
+    if (v.confirmSecondCards !== "1" && repeats.length > 0) {
+      return {
+        ok: false,
+        error: null,
+        needsSecondCardConfirmation: true,
+        message:
+          `${repeats.map((i) => i.itemCode).join(", ")} already ` +
+          `${repeats.length === 1 ? "has a job card" : "have job cards"}. ` +
+          `A second one is for a split or repeat run — release ${v.poItemIds.length} anyway?`,
+      };
+    }
+
+    const run = await db.transaction(async (tx) => {
+      const created = await auditedInsert(
+        actor,
+        pressRun,
+        {
+          runNo: await allocateNumber(tx, "PR", v.runDate),
+          runDate: v.runDate,
+          machineId: v.machineId ?? null,
+
+          // The sheet, entered once and shared by every job on the plate (J15).
+          paperSize: v.paperSize ?? null,
+          paperGsm: v.paperGsm ?? null,
+          paperFinish: v.paperFinish ?? null,
+          paperQty: v.paperQty ?? null,
+          paperBundle: v.paperBundle ?? null,
+          paperParts: v.paperParts ?? null,
+          paperRemarks: v.paperRemarks ?? null,
+          plateJobId: v.plateJobId ?? null,
+          paperSupplyBy: v.paperSupplyBy ?? null,
+          plateSupplyBy: v.plateSupplyBy ?? null,
+
+          notes: v.notes ?? null,
+        },
+        tx,
+      );
+
+      for (const [at, poItemId] of v.poItemIds.entries()) {
+        const item = byId.get(poItemId)!;
+
+        await auditedInsert(
+          actor,
+          jobCard,
+          {
+            // Allocated inside the loop and inside the transaction, so the
+            // series stays gapless if any of this rolls back.
+            jcNo: await allocateNumber(tx, "JC", v.runDate),
+            poItemId,
+
+            // Blank means all of what is still owed, read through the view so
+            // there is one definition of pending (non-negotiable 2).
+            plannedQty: v.plannedQtys[at] ?? item.pendingQty,
+
+            // One date for the plate. Not per item, deliberately.
+            plannedDate: v.runDate,
+
+            pressRunId: created.id,
+          },
+          tx,
+        );
+      }
+
+      return created;
+    });
+
+    revalidatePath("/job-cards");
+    revalidatePath("/press-runs");
+    revalidatePath("/stage-update");
+    revalidatePath("/items");
+
+    return ok(
+      `${run.runNo} raised with ${v.poItemIds.length} jobs on it.`,
+      `/press-runs/${run.id}`,
+    );
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(actionError(error, "Could not raise those job cards."));
   }
 }
 

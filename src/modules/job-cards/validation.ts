@@ -338,3 +338,135 @@ export function parseJobCardStatusForm(formData: FormData) {
     holdReason: formData.get("holdReason"),
   });
 }
+
+/* -------------------------------------------------------------------------- */
+/* Raising several cards on one plate (J20)                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The bulk release: several items, one plate, one submit.
+ *
+ * A SEPARATE SCHEMA FROM `releaseSchema`, not an array of it, because the two
+ * describe different things. A single release fills in one card completely.
+ * This fills in the PLATE — which is a `press_run` (H1, J15) — and then only
+ * the two facts that genuinely differ per item: which item, and how many.
+ *
+ * Everything else a card can carry (fabrication answers, checklists, notes,
+ * colours, Pantone) is deliberately absent. Five items' worth of those on one
+ * screen is worse than five trips through the single form, which is the
+ * tedium this exists to remove. The cards are raised here and edited
+ * individually afterwards.
+ *
+ * ONE PLANNED DATE FOR THE WHOLE PLATE. One plate is one trip through the
+ * press, so the run's date is every card's planned date. There is no per-item
+ * date field to disagree with it.
+ */
+export const bulkReleaseSchema = z
+  .object({
+    /** The plate's date, and therefore every card's planned date. */
+    runDate: isoDate,
+
+    /**
+     * At least two. A plate holding one job is an ordinary release, and the
+     * single form does it better — the same threshold H8 uses before it
+     * collapses a run on Stage Update.
+     */
+    poItemIds: z
+      .array(z.uuid("Choose items from the list."))
+      .min(2, "Choose at least two items to put on one plate."),
+
+    /**
+     * Planned quantity per item, positionally matched to `poItemIds`.
+     *
+     * Parallel arrays, the same shape and the same reason as the fabrication
+     * answers (F20): a FormData carries repeated fields, not objects. Blank
+     * means "all of what is still owed", which the action fills in from the
+     * view so there is one definition of pending (non-negotiable 2).
+     */
+    plannedQtys: z.array(absentOrBlank(
+      z.coerce
+        .number()
+        .int("Quantity must be a whole number.")
+        .positive("Quantity must be more than zero.")
+        .max(99_999_999),
+    )),
+
+    machineId: absentOrBlank(z.uuid()),
+
+    paperSize: absentOrBlank(z.string().trim().max(120)),
+    paperGsm: absentOrBlank(z.string().trim().max(60)),
+    paperFinish: absentOrBlank(z.string().trim().max(60)),
+    paperQty: absentOrBlank(
+      z.coerce
+        .number()
+        .int("Quantity must be a whole number of bundles.")
+        .positive("Quantity must be more than zero.")
+        .max(9_999_999),
+    ),
+    paperBundle: absentOrBlank(z.enum(paperBundleValues)),
+    paperParts: absentOrBlank(
+      z.coerce
+        .number()
+        .int("Parts must be a whole number.")
+        .positive("Parts must be at least one.")
+        .max(1_000),
+    ),
+    paperRemarks: absentOrBlank(z.string().trim().max(500)),
+
+    plateJobId: absentOrBlank(z.string().trim().max(120)),
+    paperSupplyBy: absentOrBlank(z.enum(supplyByValues)),
+    plateSupplyBy: absentOrBlank(z.enum(supplyByValues)),
+
+    notes: absentOrBlank(z.string().trim().max(500)),
+
+    /** J3's second-card question, asked once for the whole batch. */
+    confirmSecondCards: absentOrBlank(z.literal("1")),
+  })
+  .superRefine((v, ctx) => {
+    // The two arrays are one table read column-wise. A length mismatch means
+    // the form and the action disagree about which quantity belongs to which
+    // item, and guessing at that would put a quantity on the wrong client's job.
+    if (v.plannedQtys.length !== v.poItemIds.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["plannedQtys"],
+        message: "Those items and quantities do not line up. Reload the page and try again.",
+      });
+    }
+
+    if (v.paperQty !== undefined && v.paperBundle === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["paperBundle"],
+        message: "Choose packet, ream or gross — a quantity on its own does not say how much paper.",
+      });
+    }
+  });
+
+export type BulkReleaseInput = z.infer<typeof bulkReleaseSchema>;
+
+export function parseBulkReleaseForm(formData: FormData) {
+  return bulkReleaseSchema.safeParse({
+    runDate: formData.get("runDate"),
+    poItemIds: formData.getAll("poItemId").map(String),
+    plannedQtys: formData.getAll("plannedQty").map(String),
+    ...Object.fromEntries(
+      [
+        "machineId",
+        "paperSize",
+        "paperGsm",
+        "paperFinish",
+        "paperQty",
+        "paperBundle",
+        "paperParts",
+        "paperRemarks",
+        "plateJobId",
+        "paperSupplyBy",
+        "plateSupplyBy",
+        "notes",
+        "confirmSecondCards",
+      ].map((k) => [k, formData.get(k)]),
+    ),
+  });
+}
+
