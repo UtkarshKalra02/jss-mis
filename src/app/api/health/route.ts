@@ -225,6 +225,15 @@ const SCHEMA_EXPECTATIONS: {
     expect: "absent",
     sql: sql`select 1 from information_schema.tables where table_name = 'design_process'`,
   },
+  {
+    // Seed data rather than schema, and worth checking for the same reason:
+    // a database missing it renders a job card that quietly omits a line the
+    // paper one has.
+    what: "the BINDING fabrication option",
+    since: "0029_binding_vocabulary",
+    sql: sql`select 1 from fabrication_option
+             where code = 'BINDING' and deleted_at is null`,
+  },
 ];
 
 async function checkSchema() {

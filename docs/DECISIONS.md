@@ -2259,3 +2259,40 @@ type's default, which is what all of them were doing anyway.
 `design_fabrication`'s partial unique index (F17) was documented by CONTRAST with
 `design_process`'s full one. That contrast is now history rather than a live comparison, so
 the comments say so instead of pointing at a table that is not there.
+
+---
+
+**J23 — BINDING is seeded, and the job card now covers the whole job rather than the press.**
+0019 seeded the paper card's Fabrication Detail block verbatim — all thirteen options, both
+columns — and recorded in its own header that BINDING was *"deliberately NOT seeded — out
+of scope by decision."* That scope was wrong. The card follows a job to the end, and a
+bound book that reaches the binder with no binding named is a question somebody has to walk
+across the floor to ask, which is the class of question this system exists to remove.
+
+Perfect, Side Stitch, Centre Stitch and Hard Bound, verbatim from the card.
+
+**It is a fabrication option, not a band of its own.** The paper form draws BINDING as a
+separate box above Fabrication Detail, and copying that layout into the schema would mean a
+second mechanism holding four tick boxes — a second place to look, a second thing to render
+on the print, a second write path. As an option it inherits everything already built: the
+design picker, the printed line carrying its answer, the design/run scope split, the audit
+wrapper.
+
+**Design scope.** How a book is bound is a property of the product, decided once and reused
+every order, exactly like lamination. It is not a fact about a particular run the way a die
+or a hybrid UV plate is (J8's distinction), so it belongs to the design.
+
+Sequence 140, after Side Pasting — binding is the last thing that happens to the job, and
+the printed card's two columns fill in sequence order.
+
+**0019 is NOT edited to correct its header.** Editing an applied migration changes its hash,
+which makes drizzle-kit treat it as pending and re-run it, and 0019's inserts are not
+idempotent — it would fail on a duplicate key. J16 edited 0023 in place precisely because
+every statement in it had been made idempotent first. This entry supersedes that header
+instead.
+
+The new migration uses `WHERE NOT EXISTS` rather than `ON CONFLICT`, because the unique
+index on `fabrication_option.code` is PARTIAL (C5) and `ON CONFLICT` only matches a partial
+index when the statement repeats its predicate. NOT EXISTS says the same thing without
+depending on that, and is replayable from any earlier point — J16's general rule.
+

@@ -71,6 +71,10 @@ describe("the vocabulary seeded from the paper card", () => {
         "BOX_PASTING_MANUAL",
         "LOCK_PASTING",
         "SIDE_PASTING",
+        // Last, because binding is the last thing that happens to the job
+        // (J23). 0019 left it out; the card follows a job to the end and so
+        // does this list now.
+        "BINDING",
       ]);
     });
   });
@@ -118,16 +122,28 @@ describe("the vocabulary seeded from the paper card", () => {
     });
   });
 
-  it("does not seed Binding, which was excluded", async () => {
+  it("seeds Binding with the paper card's four choices (J23)", async () => {
+    // This test asserted the opposite until J23. 0019 excluded Binding by
+    // decision and this pinned that decision; the decision changed, because a
+    // bound book reaching the binder with no binding named is a question
+    // somebody has to walk across the floor to ask.
     await inRollback(async (tx) => {
-      const rows = await tx
-        .select({ code: fabricationOption.code })
-        .from(fabricationOption)
-        .where(isNull(fabricationOption.deletedAt));
+      const vocabulary = await fabricationVocabulary(tx);
+      const binding = vocabulary.find((o) => o.code === "BINDING");
 
-      const codes = rows.map((r) => r.code);
-      expect(codes).not.toContain("BINDING");
-      expect(codes.some((c) => c.includes("STITCH"))).toBe(false);
+      expect(binding).toBeDefined();
+
+      // Verbatim from the card, in its order (A2).
+      expect(binding!.values.map((v) => v.value)).toEqual([
+        "Perfect",
+        "Side Stitch",
+        "Centre Stitch",
+        "Hard Bound",
+      ]);
+
+      // How a book is bound is a property of the product, reused every order —
+      // not a fact about one run the way a die is (J8).
+      expect(binding!.valueScope).toBe("Design");
     });
   });
 });
@@ -272,9 +288,10 @@ describe("the checklist as the job card prints it", () => {
 
       const lines = printedChecklist(vocabulary, await designSelections(d.id, tx), new Map());
 
-      // The paper form prints all thirteen lines; the shape is part of what
-      // the floor reads.
-      expect(lines).toHaveLength(13);
+      // Every option prints, applying or not: the shape of the list is part of
+      // what the floor reads. Thirteen from the Fabrication Detail block plus
+      // Binding (J23).
+      expect(lines).toHaveLength(14);
 
       const printed = lines.find((l) => l.code === "N_LAMINATION")!;
       expect(printed.applies).toBe(true);
