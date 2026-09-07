@@ -171,6 +171,20 @@ export function JobCardForm({
   );
   const [open, setOpen] = useState(mode === "edit" || startOpen === true);
   const [gang, setGang] = useState<"none" | "existing" | "new">("none");
+
+  /*
+   * Whether the sheet belongs to a run rather than to this card (J15).
+   *
+   * Already ganged, or about to join an EXISTING plate — in both cases that
+   * run owns the paper, plate and machine and this card's columns are never
+   * read. Offering the inputs anyway is how somebody types a sheet that is
+   * then silently ignored.
+   *
+   * "New run" is deliberately NOT here: what is typed becomes the new plate's
+   * sheet, because this is the first job on it and there is nothing to
+   * disagree with yet.
+   */
+  const sheetOnRun = Boolean(gangedOn) || gang === "existing";
   const [gangRunId, setGangRunId] = useState("");
   const [runValues, setRunValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(runOptions.map((o) => [o.id, runSelected.get(o.id)?.valueId ?? ""])),
@@ -280,7 +294,7 @@ export function JobCardForm({
             defaultValue={card?.plannedDate}
           />
 
-          {!gangedOn ? (
+          {!sheetOnRun ? (
             <>
               <SupplySelect
                 name="paperSupplyBy"
@@ -295,7 +309,7 @@ export function JobCardForm({
             </>
           ) : null}
 
-          {!gangedOn ? (
+          {!sheetOnRun ? (
             <Field
               name="plateJobId"
               label="Plate / Job ID"
@@ -307,7 +321,7 @@ export function JobCardForm({
           {/* A tick list, because the press master exists — it has been on the
               paper card all along (J10). Hidden while ganged: one plate runs
               on one press, and that is the run's fact (J15). */}
-          <label className={gangedOn ? "hidden" : "block"}>
+          <label className={sheetOnRun ? "hidden" : "block"}>
             <span className="text-[13px] font-medium">Machine</span>
             <select name="machineId" defaultValue={card?.machineId ?? ""} className={inputClass}>
               <option value="">Not decided yet</option>
@@ -332,13 +346,26 @@ export function JobCardForm({
               which owns the sheet — size, GSM, finish, plate, supply and machine are entered
               once on the run and shared by every job on it. Edit them there.
             </p>
+          ) : gang === "existing" ? (
+            /* Not typed here, because the run already has a sheet and would win
+               over anything entered (J15). Saying so beats a field that saves
+               and is then ignored. */
+            <p className="text-muted-foreground mt-1 text-[12px]">
+              The run you are joining owns the sheet — size, GSM, finish, plate, supply and
+              machine come from it. Edit them on the run if they are wrong.
+            </p>
+          ) : gang === "new" ? (
+            <p className="text-muted-foreground mt-1 text-[12px]">
+              This becomes the new plate&rsquo;s sheet, shared by every job added to it later.
+              The parent sheet it prints on, not the finished size of the job.
+            </p>
           ) : (
             <p className="text-muted-foreground mt-1 text-[12px]">
               The parent sheet this run prints on, not the finished size of the job. Typed per
               card, because it is a decision made out of whatever stock is in the building.
             </p>
           )}
-          <div className={gangedOn ? "hidden" : "mt-2 grid gap-4 sm:grid-cols-3"}>
+          <div className={sheetOnRun ? "hidden" : "mt-2 grid gap-4 sm:grid-cols-3"}>
             <Field
               name="paperSize"
               label="Size"
@@ -362,7 +389,7 @@ export function JobCardForm({
               Both sheet counts are worked out from these three and neither is
               stored (J18). */}
           <PaperQuantity
-            className={gangedOn ? "hidden" : "mt-4"}
+            className={sheetOnRun ? "hidden" : "mt-4"}
             qty={card?.paperQty}
             bundle={card?.paperBundle}
             parts={card?.paperParts}

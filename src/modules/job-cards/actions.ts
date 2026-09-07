@@ -147,6 +147,44 @@ export async function releaseJobCardAction(
 
     const cardDate = v.plannedDate ?? todayIST();
 
+    /*
+     * Is this card joining a plate as it is raised?
+     *
+     * IT DECIDES WHERE THE SHEET GOES. J15's resolution rule only goes one way
+     * — when a card is on a run, the run wins — so a ganged card's own paper
+     * and plate columns are never read. Writing the typed sheet onto the card
+     * anyway produced a silent loss: somebody filled in size, GSM and quantity,
+     * ticked "new run", saved, and the card printed a blank paper block,
+     * because the freshly created run had nothing on it and won anyway.
+     *
+     * So the sheet follows the rule instead of fighting it. Joining a NEW run
+     * moves what was typed onto that run, where it is read from. Joining an
+     * EXISTING run writes nothing, because that run already has a sheet and a
+     * second opinion about it is exactly what J15 exists to prevent — the form
+     * stops offering the fields in that case.
+     */
+    const gangingOnto = Boolean(v.gangPressRunId) || v.gangNewRun === "1";
+
+    /** The sheet, wherever it is about to be written. */
+    const sheet = {
+      paperSize: v.paperSize ?? null,
+      paperGsm: v.paperGsm ?? null,
+      paperFinish: v.paperFinish ?? null,
+      paperQty: v.paperQty ?? null,
+      paperBundle: v.paperBundle ?? null,
+      paperParts: v.paperParts ?? null,
+      paperRemarks: v.paperRemarks ?? null,
+      plateJobId: v.plateJobId ?? null,
+      paperSupplyBy: v.paperSupplyBy ?? null,
+      plateSupplyBy: v.plateSupplyBy ?? null,
+      machineId: v.machineId ?? null,
+    };
+
+    /** Nulls for every sheet field, for a card whose run owns them. */
+    const noSheet = Object.fromEntries(
+      Object.keys(sheet).map((k) => [k, null]),
+    ) as typeof sheet;
+
     const row = await db.transaction(async (tx) => {
       const card = await auditedInsert(
         actor,
@@ -158,24 +196,14 @@ export async function releaseJobCardAction(
           // one definition of pending (non-negotiable 2).
           plannedQty: v.plannedQty ?? item.pendingQty,
           plannedDate: v.plannedDate ?? null,
-          paperSupplyBy: v.paperSupplyBy ?? null,
-          plateSupplyBy: v.plateSupplyBy ?? null,
-          plateJobId: v.plateJobId ?? null,
-          machineId: v.machineId ?? null,
+          // The sheet lives on the run when there is one (J15).
+          ...(gangingOnto ? noSheet : sheet),
 
           // The pen-written half of the paper card (J11). A tick posts "on"
           // and an unticked box posts nothing at all, so absent means false.
           checklistPaper: v.checklistPaper === "on",
           checklistPlates: v.checklistPlates === "on",
           checklistColour: v.checklistColour === "on",
-
-          paperSize: v.paperSize ?? null,
-          paperGsm: v.paperGsm ?? null,
-          paperFinish: v.paperFinish ?? null,
-          paperQty: v.paperQty ?? null,
-          paperBundle: v.paperBundle ?? null,
-          paperParts: v.paperParts ?? null,
-          paperRemarks: v.paperRemarks ?? null,
 
           execNoOfColours: v.execNoOfColours ?? null,
           execPantone: v.execPantone ?? null,
@@ -217,6 +245,10 @@ export async function releaseJobCardAction(
           {
             runNo: await allocateNumber(tx, "PR", cardDate),
             runDate: v.plannedDate ?? cardDate,
+
+            // What was typed on the form becomes the new plate's sheet. It is
+            // the first job on it, so there is nothing to disagree with yet.
+            ...sheet,
           },
           tx,
         );

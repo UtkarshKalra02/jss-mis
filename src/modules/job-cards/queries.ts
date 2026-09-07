@@ -509,12 +509,23 @@ export async function releasableItems(query = "", limit = 200): Promise<Releasab
  * Missing ids are simply absent from the result. The caller compares what it
  * asked for against what came back and names what it could not find, which is
  * a better message than "one of those items is gone".
+ *
+ * THAT CONTRACT IS WHY THE IDS ARE FILTERED FIRST. These arrive in a URL, and
+ * `po_item_id in ('abc')` against a uuid column does not return no rows — it
+ * throws 22P02, which in a server component is an unhandled error and a 500
+ * page rather than the "choose again" message the caller already writes. An id
+ * that cannot exist is absent from the result, which is what the caller is
+ * already prepared for. Duplicates collapse for the same reason: asking twice
+ * is one question.
  */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function releasableItemsByIds(
   poItemIds: readonly string[],
   runner: Runner = db,
 ): Promise<ReleasableItem[]> {
-  if (poItemIds.length === 0) return [];
+  const ids = [...new Set(poItemIds.filter((id) => UUID.test(id)))];
+  if (ids.length === 0) return [];
 
   const rows = await runner
     .select({
@@ -528,14 +539,14 @@ export async function releasableItemsByIds(
       currentStageName: vPoItemStatus.currentStageName,
     })
     .from(vPoItemStatus)
-    .where(inArray(vPoItemStatus.poItemId, [...poItemIds]));
+    .where(inArray(vPoItemStatus.poItemId, ids));
 
   // Live card counts for all of them at once, so J3's second-card question can
   // be asked once for the batch rather than five times.
   const counts = await runner
     .select({ poItemId: jobCard.poItemId, n: count() })
     .from(jobCard)
-    .where(and(inArray(jobCard.poItemId, [...poItemIds]), LIVE))
+    .where(and(inArray(jobCard.poItemId, ids), LIVE))
     .groupBy(jobCard.poItemId);
 
   const byItem = new Map(counts.map((c) => [c.poItemId, Number(c.n)]));

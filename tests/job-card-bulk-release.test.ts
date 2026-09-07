@@ -216,6 +216,29 @@ describe("what the batch lookup reports before anything is written", () => {
     });
   });
 
+  it("returns nothing for an id that could not exist, rather than throwing", async () => {
+    // These arrive in a URL. `po_item_id in ('abc')` against a uuid column does
+    // not return no rows, it throws 22P02 — which in a server component is a
+    // 500 page instead of the "choose again" message the caller already writes.
+    await inRollback(async (tx) => {
+      const a = await itemFor(tx, "Real Item");
+
+      const found = await releasableItemsByIds(["not-a-uuid", "", a.id], tx);
+
+      expect(found.map((i) => i.poItemId)).toEqual([a.id]);
+    });
+  });
+
+  it("asks about a repeated id once", async () => {
+    await inRollback(async (tx) => {
+      const a = await itemFor(tx, "Repeated");
+
+      const found = await releasableItemsByIds([a.id, a.id, a.id], tx);
+
+      expect(found).toHaveLength(1);
+    });
+  });
+
   it("simply omits an id it cannot find, so the caller can name it", async () => {
     // A better message than "one of those items is gone".
     await inRollback(async (tx) => {
@@ -336,3 +359,92 @@ describe("the bulk release form contract", () => {
     expect(parsed.success).toBe(false);
   });
 });
+
+describe("the plate cannot hold the same job twice", () => {
+  it("refuses a duplicated item", () => {
+    // The picker holds a Set and cannot produce this. A hand-edited URL can,
+    // and a JC number spent on a duplicate is not reclaimable.
+    const id = "11111111-1111-4111-8111-111111111111";
+    const f = new FormData();
+    f.set("runDate", "2026-09-10");
+    f.append("poItemId", id);
+    f.append("poItemId", id);
+    f.append("plannedQty", "1000");
+    f.append("plannedQty", "2000");
+
+    const parsed = parseBulkReleaseForm(f);
+
+    expect(parsed.success).toBe(false);
+    if (parsed.success) return;
+    expect(parsed.error.issues.some((i) => i.message.includes("twice"))).toBe(true);
+  });
+});
+
+describe("a single release that joins a plate (J21)", () => {
+  it("puts the typed sheet on the NEW run, not on the card", async () => {
+    // The silent loss this fixes: somebody fills in size, GSM and quantity,
+    // ticks "new run", saves — and the card prints a blank paper block, because
+    // J15 says the run wins and the freshly created run had nothing on it.
+    await inRollback(async (tx) => {
+      const item = await itemFor(tx, "Gang At Release");
+
+      const run = await auditedInsert(
+        SYSTEM_ACTOR,
+        pressRun,
+        {
+          runNo: await allocateNumber(tx, "PR", "2026-09-10"),
+          runDate: "2026-09-10",
+          paperSize: '25" x 36"',
+          paperGsm: "100",
+          paperQty: 4,
+          paperBundle: "Ream",
+          paperParts: 2,
+          plateJobId: "PL-7788",
+        },
+        tx,
+      );
+
+      const card = await auditedInsert(
+        SYSTEM_ACTOR,
+        jobCard,
+        {
+          jcNo: await allocateNumber(tx, "JC", "2026-09-10"),
+          poItemId: item.id,
+          pressRunId: run.id,
+          // The card's own sheet columns stay empty, which is what the action
+          // now writes for a card that is joining a plate.
+        },
+        tx,
+      );
+
+      expect(card.paperSize).toBeNull();
+      expect(card.paperQty).toBeNull();
+
+      const sheet = resolvedSheet(
+        {
+          ...card,
+          paperSupplyBy: null,
+          plateSupplyBy: null,
+          machineName: null,
+          machineSheetSize: null,
+        },
+        {
+          ...run,
+          runNo: run.runNo,
+          paperSupplyBy: null,
+          plateSupplyBy: null,
+          machineName: null,
+          machineSheetSize: null,
+        },
+      );
+
+      // What was typed survives, on the run, and is what prints.
+      expect(sheet.fromRun).toBe(true);
+      expect(sheet.paperSize).toBe('25" x 36"');
+      expect(sheet.paperQty).toBe(4);
+      expect(sheet.paperBundle).toBe("Ream");
+      expect(sheet.plateJobId).toBe("PL-7788");
+    });
+  });
+});
+

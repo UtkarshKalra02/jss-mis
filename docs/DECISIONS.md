@@ -2186,3 +2186,38 @@ Items are re-read from `v_po_item_status` when the ids arrive in the URL, so a t
 open while somebody dispatched one of them does not offer a job with nothing left to make.
 The action checks again inside the transaction, which is where it actually matters.
 
+---
+
+**J21 — Three dead ends in job card release, found by looking for them.** None of the three
+was the failure that prompted the search — that one is a production database two migrations
+behind, and no amount of code fixes it — but the search was worth doing.
+
+**A card ganged at release silently discarded the sheet somebody had just typed.** The form
+offers paper, plate and machine at release, because at that moment the card is not on a run
+yet and `gangedOn` is null. Tick "new run", save, and J15's resolution rule takes over: the
+run wins, the run was created empty, and the card prints a blank paper block containing
+none of what was entered. It saved, it reported success, and it lost the input.
+
+The fix follows the rule rather than fighting it. Joining a NEW run moves the typed sheet
+onto that run — it is the first job on the plate, so there is nothing to disagree with yet.
+Joining an EXISTING run writes nothing to the card, and the form stops offering the fields
+and says the run owns them, because a field that saves and is then ignored is worse than no
+field. Only the `gangedOn` case was handled before; the two at-release cases were not.
+
+**`/job-cards/new?items=abc` was a 500.** The ids arrive in a URL, and `po_item_id in
+('abc')` against a uuid column does not return no rows — it throws `22P02`, which in a
+server component is an unhandled error and Next's error page, not the "choose again"
+message the caller already writes. `releasableItemsByIds()` now filters to well-formed ids
+first, which makes its documented contract — *missing ids are simply absent from the
+result* — true rather than aspirational.
+
+**The same item could be put on one plate twice.** The picker holds a `Set` and cannot
+produce it, but a hand-edited URL can, and the result is two numbered job cards for one
+job. A JC number spent on a duplicate is not reclaimable, so the schema refuses it, and
+duplicates collapse in the lookup for the same reason.
+
+The general point, which is the reason to record all three together: every one of them sits
+on a path that a test exercising the happy case walks straight past. Two of them are only
+reachable through a URL somebody typed, and the third only fires when two features that
+were correct on their own — the release form and J15's resolution rule — meet.
+

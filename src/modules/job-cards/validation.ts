@@ -426,6 +426,17 @@ export const bulkReleaseSchema = z
     // The two arrays are one table read column-wise. A length mismatch means
     // the form and the action disagree about which quantity belongs to which
     // item, and guessing at that would put a quantity on the wrong client's job.
+    // The same item twice would raise two numbered cards for one job on one
+    // plate. The picker cannot produce it — it holds a Set — but a hand-edited
+    // URL can, and a JC number spent on a duplicate is not reclaimable.
+    if (new Set(v.poItemIds).size !== v.poItemIds.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["poItemIds"],
+        message: "The same item is on that plate twice. Choose it once.",
+      });
+    }
+
     if (v.plannedQtys.length !== v.poItemIds.length) {
       ctx.addIssue({
         code: "custom",
