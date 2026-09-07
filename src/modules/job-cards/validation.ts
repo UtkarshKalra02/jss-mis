@@ -514,3 +514,46 @@ export function parseBulkReleaseForm(formData: FormData) {
   });
 }
 
+/* -------------------------------------------------------------------------- */
+/* Adding and removing the items a card covers (J25)                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Putting another item on a card that already exists.
+ *
+ * The quantity is optional and defaults to what is still owed on that item, the
+ * same rule the release form uses — read through the view so there is one
+ * definition of pending (non-negotiable 2).
+ */
+export const addCardItemSchema = z.object({
+  jobCardId: z.uuid(),
+  poItemId: z.uuid("Choose an item."),
+  plannedQty: absentOrBlank(
+    z.coerce
+      .number()
+      .int("Quantity must be a whole number.")
+      .positive("Quantity must be more than zero.")
+      .max(99_999_999),
+  ),
+});
+
+export function parseAddCardItemForm(formData: FormData) {
+  return addCardItemSchema.safeParse({
+    jobCardId: formData.get("jobCardId"),
+    poItemId: formData.get("poItemId"),
+    plannedQty: formData.get("plannedQty"),
+  });
+}
+
+export const removeCardItemSchema = z.object({
+  jobCardId: z.uuid(),
+  poItemId: z.uuid(),
+});
+
+export function parseRemoveCardItemForm(formData: FormData) {
+  return removeCardItemSchema.safeParse({
+    jobCardId: formData.get("jobCardId"),
+    poItemId: formData.get("poItemId"),
+  });
+}
+

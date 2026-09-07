@@ -1,11 +1,18 @@
 "use server";
 
+import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
-import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
+import {
+  auditedInsert,
+  auditedRestore,
+  auditedSoftDelete,
+  auditedUpdate,
+  type Actor,
+} from "@/db/audit";
 import { jobCard, jobCardItem, pressRun } from "@/db/schema";
 import { actionError } from "@/lib/action-error";
 import { allocateNumber, todayIST } from "@/lib/numbering";
@@ -22,9 +29,11 @@ import {
 import {
   parseExecutionForm,
   parseJobCardStatusForm,
+  parseAddCardItemForm,
   parseBulkReleaseForm,
   parsePlanForm,
   parseReleaseForm,
+  parseRemoveCardItemForm,
   cardSelectionsFrom,
 } from "./validation";
 
@@ -684,6 +693,167 @@ export async function removeJobCardAction(
   } catch (error) {
     unstable_rethrow(error);
     return fail(actionError(error, "Could not remove that job card."));
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* The items a card covers (J25)                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Putting another item on a card that already exists.
+ *
+ * THIS IS THE POINT OF J25. A repeat of the same printing used to cost a whole
+ * new card — the same paper, plate, machine, colours and fabrication typed
+ * again — and adding the item to the card that already describes the job is
+ * what the floor actually does.
+ *
+ * The card's specification is untouched. Only which items it covers changes,
+ * which is why this is a separate action from the plan form: a transcription or
+ * a plan edit must never carry an item list with it, the same reason J6 keeps
+ * the run figures on their own form.
+ *
+ * RESTORES A SOFT-DELETED ROW rather than inserting over it. The unique index
+ * is partial (C5), so a removed row is invisible to it and a plain insert would
+ * succeed — leaving two rows for one item on one card, one of them dead, and a
+ * quantity that depends on which one a query happens to read first.
+ */
+export async function addCardItemAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireJobCardWriter();
+
+    const parsed = parseAddCardItemForm(formData);
+    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
+    const v = parsed.data;
+
+    const card = await getJobCardRecord(v.jobCardId);
+    if (!card) return fail("That job card no longer exists.");
+
+    if (card.status === "Cancelled") {
+      return fail(`${card.jcNo} is cancelled. Reinstate it before adding work to it.`);
+    }
+
+    const item = await releasableItem(v.poItemId);
+    if (!item) return fail("That item is no longer in the system.");
+
+    if (item.pendingQty <= 0) {
+      return fail(
+        `${item.itemCode} has nothing left to make — the full ordered quantity has been dispatched.`,
+      );
+    }
+
+    const already = await jobCardItemIds(v.jobCardId);
+    if (already.includes(v.poItemId)) {
+      return fail(`${item.itemCode} is already on ${card.jcNo}.`);
+    }
+
+    await db.transaction(async (tx) => {
+      const [dead] = await tx
+        .select({ id: jobCardItem.id })
+        .from(jobCardItem)
+        .where(
+          and(eq(jobCardItem.jobCardId, v.jobCardId), eq(jobCardItem.poItemId, v.poItemId)),
+        )
+        .limit(1);
+
+      if (dead) {
+        await auditedRestore(actor, jobCardItem, dead.id, tx);
+        await auditedUpdate(
+          actor,
+          jobCardItem,
+          dead.id,
+          { plannedQty: v.plannedQty ?? item.pendingQty },
+          tx,
+        );
+        return;
+      }
+
+      await auditedInsert(
+        actor,
+        jobCardItem,
+        {
+          jobCardId: v.jobCardId,
+          poItemId: v.poItemId,
+          plannedQty: v.plannedQty ?? item.pendingQty,
+        },
+        tx,
+      );
+    });
+
+    revalidatePath(`/job-cards/${v.jobCardId}`);
+    revalidatePath(`/items/${v.poItemId}`);
+    revalidatePath("/job-cards");
+    revalidatePath("/items");
+
+    return ok(`${item.itemCode} added to ${card.jcNo}.`);
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(actionError(error, "Could not add that item to the card."));
+  }
+}
+
+/**
+ * Taking an item off a card.
+ *
+ * SOFT DELETE, never a hard one (non-negotiable 7). The row stays, so the audit
+ * log can still answer what the card covered last Tuesday.
+ *
+ * A card must keep at least one item. An empty card is a numbered document
+ * describing no job — it would print blank, appear on the grid with nothing in
+ * its item column, and its number is already spent. Removing the last item is
+ * removing the card, and that has its own action which says so.
+ */
+export async function removeCardItemAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireJobCardWriter();
+
+    const parsed = parseRemoveCardItemForm(formData);
+    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
+    const v = parsed.data;
+
+    const card = await getJobCardRecord(v.jobCardId);
+    if (!card) return fail("That job card no longer exists.");
+
+    const covered = await jobCardItemIds(v.jobCardId);
+    if (!covered.includes(v.poItemId)) return fail("That item is not on this card.");
+
+    if (covered.length <= 1) {
+      return fail(
+        `${card.jcNo} would be left covering no job at all. Remove the card itself instead.`,
+      );
+    }
+
+    const [row] = await db
+      .select({ id: jobCardItem.id })
+      .from(jobCardItem)
+      .where(
+        and(
+          eq(jobCardItem.jobCardId, v.jobCardId),
+          eq(jobCardItem.poItemId, v.poItemId),
+          isNull(jobCardItem.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!row) return fail("That item is not on this card.");
+
+    await auditedSoftDelete(actor, jobCardItem, row.id);
+
+    revalidatePath(`/job-cards/${v.jobCardId}`);
+    revalidatePath(`/items/${v.poItemId}`);
+    revalidatePath("/job-cards");
+    revalidatePath("/items");
+
+    return ok("Removed from this card.");
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(actionError(error, "Could not remove that item from the card."));
   }
 }
 

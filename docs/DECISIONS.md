@@ -2347,3 +2347,66 @@ it"; seen and unticked is "does not"; never seen is no row at all — which is h
 raised before this existed keeps deferring to its design instead of being silently emptied
 by a form that never showed the block.
 
+---
+
+**J25 — A job card covers one or more PO items. This supersedes spec section 3's spine
+rule.** *"One job card covers exactly ONE po_item"* is in the block headed "these are the
+spine — do not deviate", and it is now deviated from deliberately. It was raised three
+times before it was built, and pushed back on twice, on the grounds that a card grouping
+several items is what a press run already is. It is recorded here that the objection was
+made and overruled, and why the answer given makes it coherent rather than a duplicate of
+ganging.
+
+The need: a repeat of the same printing cost a whole new card — the same paper, plate,
+machine, colours and fabrication typed again. Adding the second item to the card that
+already describes the job is what the floor does on paper.
+
+**WHAT MAKES IT NOT A PRESS RUN.** A press run groups CARDS that share one plate, each
+still its own document with its own number. This groups ITEMS onto one document. The two
+coexist: a card covering two items can itself sit on a run with three other cards. What was
+asked and answered before building — items on one card do NOT move together, and Stage
+Update shows one row per item — is what keeps them distinct rather than redundant.
+
+**THE LOAD-BEARING HALF IS WHAT DID NOT MOVE.** Stage events, dispatch lines, committed
+dates and OTD still hang off `po_item`. So items sharing a card keep their own stage
+histories and diverge the moment they come off the press, one to lamination and another
+straight to die-cut — which is the constraint H2 refused to impose on ganged cards, for the
+same reason. The card says what is printed together. It does not merge what is owed
+separately, and the card screen says so in words, because a shared card looks like a shared
+deadline and is not one.
+
+`planned_qty` moved onto `job_card_item` because a card covering three items has three of
+them, and one column could only hold a total that agreed with none.
+
+**Cross-client needs no new exception.** C8's guard is on dispatch lines and invoice lines,
+which hang off the item, so a card carrying two clients' items breaks no document rule —
+the same position a press run is in (H3).
+
+**The migration backfills before it drops**, by hand, because drizzle-kit generates the
+create and the drops with nothing in between. Without it every card in the system forgets
+which job it is for. Soft-deleted cards are backfilled too: they keep their history
+(non-negotiable 7) and a removed card that forgot its item is unreadable in the audit log.
+
+**Adding and removing items is its own action and its own form.** A plan edit or a
+transcription must never carry an item list with it — the same reason J6 keeps the run
+figures separate, one submission quietly posting a stale copy of the other half.
+
+**A card may never be left covering nothing.** That would be a numbered document describing
+no job: it prints blank, shows an empty item column on the grid, and its number is already
+spent. Removing the last item is removing the card, which has its own action that says so.
+
+Adding an item RESTORES a soft-deleted row rather than inserting over it. The unique index
+is partial (C5), so a removed row is invisible to it and a plain insert would succeed —
+leaving two rows for one item on one card, one dead, and a quantity that depends on which
+one a query reads first. That is F17's resurrection problem in the other direction.
+
+**The printed card lists every item.** An operator who cannot see the second job will run
+the quantity for the first. Each line carries its own committed date, since they are owed
+separately however they are printed.
+
+The refactor and the feature were committed separately: the first moves every read and
+write onto the junction with no behaviour change, the second adds the controls. A raw-SQL
+correlated subquery aliasing `job_card jc` survived the first sweep — grepping for the
+drizzle column does not find hand-written SQL — and only the test suite caught it, which is
+the same class of miss H7 documents.
+

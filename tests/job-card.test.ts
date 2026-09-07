@@ -7,6 +7,7 @@ import { allocateNumber } from "@/lib/numbering";
 import {
   getJobCard,
   jobCardItemIds,
+  jobCardItems,
   jobCardsForItem,
   liveCardCountFor,
 } from "@/modules/job-cards/queries";
@@ -465,6 +466,131 @@ describe("taking back a card that should not have been released", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]!.jc_no).toBe(card.jcNo);
       expect(rows[0]!.deleted_at).not.toBeNull();
+    });
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* A card covering several items (J25)                                         */
+/* -------------------------------------------------------------------------- */
+
+describe("the items a job card covers", () => {
+  it("carries two items, each with its own quantity", async () => {
+    // The point of J25: a repeat of the same printing joins the card that
+    // already describes the job instead of costing a whole new one.
+    await inRollback(async (tx) => {
+      const { itemId: first } = await makeItem(tx);
+      const { itemId: second } = await makeItem(tx);
+
+      const card = await makeCardFor(tx, first, {}, 5000);
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        jobCardItem,
+        { jobCardId: card.id, poItemId: second, plannedQty: 1200 },
+        tx,
+      );
+
+      expect(await jobCardItemIds(card.id, tx)).toEqual([first, second]);
+
+      const rows = await tx
+        .select({ poItemId: jobCardItem.poItemId, plannedQty: jobCardItem.plannedQty })
+        .from(jobCardItem)
+        .where(eq(jobCardItem.jobCardId, card.id));
+
+      expect(new Map(rows.map((r) => [r.poItemId, r.plannedQty]))).toEqual(
+        new Map([
+          [first, 5000],
+          [second, 1200],
+        ]),
+      );
+    });
+  });
+
+  it("counts a shared card once against EACH item it covers", async () => {
+    // J3's second-card question reads this. An item on a shared card has a
+    // card, and must say so when somebody goes to raise another.
+    await inRollback(async (tx) => {
+      const { itemId: a } = await makeItem(tx);
+      const { itemId: b } = await makeItem(tx);
+
+      const card = await makeCardFor(tx, a, {}, 1000);
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        jobCardItem,
+        { jobCardId: card.id, poItemId: b, plannedQty: 1000 },
+        tx,
+      );
+
+      expect(await liveCardCountFor(a, tx)).toBe(1);
+      expect(await liveCardCountFor(b, tx)).toBe(1);
+    });
+  });
+
+  it("stops counting an item once it is taken off the card", async () => {
+    // Soft delete, so the audit log still answers what the card covered
+    // yesterday (non-negotiable 7) — but the live count must not include it.
+    await inRollback(async (tx) => {
+      const { itemId: a } = await makeItem(tx);
+      const { itemId: b } = await makeItem(tx);
+
+      const card = await makeCardFor(tx, a, {}, 1000);
+      const link = await auditedInsert(
+        SYSTEM_ACTOR,
+        jobCardItem,
+        { jobCardId: card.id, poItemId: b, plannedQty: 1000 },
+        tx,
+      );
+
+      await auditedSoftDelete(SYSTEM_ACTOR, jobCardItem, link.id, tx);
+
+      expect(await jobCardItemIds(card.id, tx)).toEqual([a]);
+      expect(await liveCardCountFor(b, tx)).toBe(0);
+      // The card itself is untouched and still covers its first job.
+      expect(await liveCardCountFor(a, tx)).toBe(1);
+    });
+  });
+
+  it("refuses the same item twice on one card", async () => {
+    // The partial unique index. Two rows for one item on one card would give a
+    // quantity that depends on which one a query read first.
+    await inRollback(async (tx) => {
+      const { itemId: a } = await makeItem(tx);
+      const card = await makeCardFor(tx, a, {}, 1000);
+
+      const result = await expectFailure(tx, (sp) =>
+        auditedInsert(
+          SYSTEM_ACTOR,
+          jobCardItem,
+          { jobCardId: card.id, poItemId: a, plannedQty: 500 },
+          sp,
+        ),
+      );
+
+      expect(result.message).toContain("job_card_item_key");
+    });
+  });
+
+  it("lists every item on the card, with the numbers the tracker shows", async () => {
+    await inRollback(async (tx) => {
+      const { itemId: a } = await makeItem(tx);
+      const { itemId: b } = await makeItem(tx);
+
+      const card = await makeCardFor(tx, a, {}, 5000);
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        jobCardItem,
+        { jobCardId: card.id, poItemId: b, plannedQty: 1200 },
+        tx,
+      );
+
+      const rows = await jobCardItems(card.id, tx);
+
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.plannedQty).toBe(5000);
+      expect(rows[1]!.plannedQty).toBe(1200);
+      // Read through v_po_item_status, so the card shows the same ordered
+      // quantity as the Item Tracker rather than a second opinion.
+      expect(rows[0]!.orderedQty).toBeGreaterThan(0);
     });
   });
 });

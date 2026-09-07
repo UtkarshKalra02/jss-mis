@@ -12,7 +12,7 @@ import {
   printedChecklist,
   type PrintedFabricationLine,
 } from "@/modules/fabrication/queries";
-import { getJobCard } from "@/modules/job-cards/queries";
+import { getJobCard, jobCardItems } from "@/modules/job-cards/queries";
 import { gangInfoFor, getPressRun } from "@/modules/press-runs/queries";
 import { paperCount, paperQuantityLine, partsLine } from "@/modules/job-cards/paper";
 import { resolvedSheet } from "@/modules/press-runs/sheet";
@@ -69,6 +69,8 @@ export default async function JobCardPrintPage({
    * printing on" is the failure I7 removed design.die_id to avoid.
    */
   const run = card.pressRunId ? await getPressRun(card.pressRunId) : null;
+  const items = await jobCardItems(id);
+
   const sheet = resolvedSheet(
     card,
     run ? { ...run, machineName: run.machineName ?? run.machine } : null,
@@ -160,6 +162,32 @@ export default async function JobCardPrintPage({
             <Cell label="To run" value={formatQty(card.plannedQty)} strong />
           </Row>
         </section>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* The other jobs on this card (J25)                                 */}
+        {/* ---------------------------------------------------------------- */}
+        {/* A card may cover several items. The block above describes the
+            first; everything else it is printed with is listed here, because
+            an operator who cannot see the second job will run the quantity for
+            the first. Each carries its own committed date, since they are owed
+            separately however they are printed. */}
+        {items.length > 1 ? (
+          <section className="print-avoid-break print-box mt-2">
+            <h2 className="print-section-title px-2 pt-1.5">
+              Also on this card — {items.length - 1} more job
+              {items.length === 2 ? "" : "s"}
+            </h2>
+
+            {items.slice(1).map((i, n) => (
+              <div key={i.poItemId} className="flex border-t border-neutral-400">
+                <Cell label={`${n + 2}. Client`} value={`${i.clientCode} — ${i.clientName}`} />
+                <Cell label="Item" value={`${i.itemCode} — ${i.itemName}`} grow />
+                <Cell label="Committed" value={formatCommittedDate(i.committedDate)} />
+                <Cell label="To run" value={formatQty(i.plannedQty)} strong />
+              </div>
+            ))}
+          </section>
+        ) : null}
 
         {/* Ganging. On the sheet because the operator has to know the plate is
             shared before it goes on the press — H2 keeps the JOBS independent,

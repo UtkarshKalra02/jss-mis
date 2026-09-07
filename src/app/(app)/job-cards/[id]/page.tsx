@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
+import { CardItems } from "@/components/job-cards/card-items";
 import { ExecutionForm } from "@/components/job-cards/execution-form";
 import { JobCardForm } from "@/components/job-cards/job-card-form";
 import {
@@ -19,7 +20,12 @@ import {
   jobCardSelections,
   printedChecklist,
 } from "@/modules/fabrication/queries";
-import { getJobCard, machineOptions } from "@/modules/job-cards/queries";
+import {
+  getJobCard,
+  jobCardItems,
+  machineOptions,
+  releasableItems,
+} from "@/modules/job-cards/queries";
 import { getPressRun } from "@/modules/press-runs/queries";
 import { PaperSheetFigures } from "@/components/job-cards/paper-sheet-figures";
 import { resolvedSheet } from "@/modules/press-runs/sheet";
@@ -50,6 +56,8 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const card = await getJobCard(id);
   if (!card) notFound();
+
+  const [items, addable] = await Promise.all([jobCardItems(id), releasableItems("")]);
 
   const [vocabulary, cardFab, tooling, machines] = await Promise.all([
     fabricationVocabulary(),
@@ -170,6 +178,17 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
           card wins — it is the document the floor works from — and the design is unchanged.
         </p>
       ) : null}
+
+      {/* Which jobs are printed on this card (J25). */}
+      <CardItems
+        jobCardId={card.id}
+        jcNo={card.jcNo}
+        items={items}
+        /* Already on the card is not addable — the action refuses it, and
+           offering it in the dropdown is an error somebody has to read. */
+        addable={addable.filter((a) => !items.some((i) => i.poItemId === a.poItemId))}
+        canWrite={canWrite}
+      />
 
       {/* The check list from the paper card's top-left corner (J11). */}
       <div className="mt-6 flex flex-wrap items-baseline gap-4 rounded-lg border px-4 py-3 text-[13px]">

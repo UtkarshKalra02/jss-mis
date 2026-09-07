@@ -226,6 +226,11 @@ const SCHEMA_EXPECTATIONS: {
     sql: sql`select 1 from information_schema.tables where table_name = 'design_process'`,
   },
   {
+    what: "job_card_item, and job_card.po_item_id gone",
+    since: "0031_job_card_covers_many_items",
+    sql: sql`select 1 from information_schema.tables where table_name = 'job_card_item'`,
+  },
+  {
     what: "job_card_fabrication.applies",
     since: "0030_job_card_fabrication_applies",
     sql: sql`select 1 from information_schema.columns
