@@ -10,6 +10,7 @@ import { db } from "@/db";
 import { auditedAppend, type Actor } from "@/db/audit";
 import { stage, stageEvent } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
+import { actionError } from "@/lib/action-error";
 
 export type FormState = { ok: boolean; error: string | null; message?: string };
 
@@ -139,6 +140,6 @@ export async function updateStageAction(
     );
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not update the stage.");
+    return fail(actionError(error, "Could not update the stage."));
   }
 }

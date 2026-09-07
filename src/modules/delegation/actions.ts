@@ -6,6 +6,7 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { requireAccess } from "@/auth/guard";
 import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
 import { delegationTask } from "@/db/schema";
+import { actionError } from "@/lib/action-error";
 import { todayIST } from "@/lib/dates";
 
 import {
@@ -171,7 +172,7 @@ export async function createTaskAction(
     return ok("Task delegated.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not create that task.");
+    return fail(actionError(error, "Could not create that task."));
   }
 }
 
@@ -224,7 +225,7 @@ export async function updateStatusAction(
     return ok("Saved.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save that change.");
+    return fail(actionError(error, "Could not save that change."));
   }
 }
 
@@ -275,7 +276,7 @@ export async function updateDefinitionAction(
     return ok("Task updated.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not update that task.");
+    return fail(actionError(error, "Could not update that task."));
   }
 }
 
@@ -320,7 +321,7 @@ export async function cancelTaskAction(
     return ok("Task withdrawn. It no longer counts on the scorecard.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not cancel that task.");
+    return fail(actionError(error, "Could not cancel that task."));
   }
 }
 
@@ -368,7 +369,7 @@ export async function reassignTaskAction(
     return ok("Task reassigned. The change is recorded against both people.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not reassign that task.");
+    return fail(actionError(error, "Could not reassign that task."));
   }
 }
 
@@ -412,6 +413,6 @@ export async function removeTaskAction(
     removedTo("/delegation", "Task removed.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not remove that task.");
+    return fail(actionError(error, "Could not remove that task."));
   }
 }

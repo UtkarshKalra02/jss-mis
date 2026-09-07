@@ -15,6 +15,7 @@ import {
   type Tx,
 } from "@/db/audit";
 import { design, designFabrication, designProcess, stage } from "@/db/schema";
+import { actionError } from "@/lib/action-error";
 import { allocateNumber } from "@/lib/numbering";
 import { syncDesignFabrication, unknownSelections } from "@/modules/fabrication/write";
 
@@ -213,7 +214,7 @@ export async function createDesignAction(
     return ok(`${created.designCode} — ${created.jobName} added.`, `/designs/${created.id}`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not add the design.");
+    return fail(actionError(error, "Could not add the design."));
   }
 }
 
@@ -271,7 +272,7 @@ export async function updateDesignAction(
     return ok("Saved.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the changes.");
+    return fail(actionError(error, "Could not save the changes."));
   }
 }
 
@@ -317,7 +318,7 @@ export async function setDesignApprovalAction(
     );
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not record the decision.");
+    return fail(actionError(error, "Could not record the decision."));
   }
 }
 
@@ -344,7 +345,7 @@ export async function setDesignActiveAction(
     );
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not change the status.");
+    return fail(actionError(error, "Could not change the status."));
   }
 }
 
@@ -383,7 +384,7 @@ export async function deleteDesignAction(
     removedTo("/designs", `${existing.designCode} removed.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not remove the design.");
+    return fail(actionError(error, "Could not remove the design."));
   }
 }
 
@@ -461,7 +462,7 @@ export async function createQuickDesignAction(
     };
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not create the design.");
+    return fail(actionError(error, "Could not create the design."));
   }
 }
 

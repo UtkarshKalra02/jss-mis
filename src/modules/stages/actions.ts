@@ -8,6 +8,7 @@ import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
 import { auditedUpdate, type Actor } from "@/db/audit";
 import { appSetting, stage } from "@/db/schema";
+import { actionError } from "@/lib/action-error";
 
 import { computeStageChanges } from "./diff";
 import { AT_RISK_SETTING_KEY, getAtRiskWindowDays, listStages } from "./queries";
@@ -89,7 +90,7 @@ export async function saveStagesAction(
     );
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the stages.");
+    return fail(actionError(error, "Could not save the stages."));
   }
 }
 
@@ -123,6 +124,6 @@ export async function saveAtRiskWindowAction(
     return ok(`At-risk window set to ${next} ${next === 1 ? "day" : "days"}.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the setting.");
+    return fail(actionError(error, "Could not save the setting."));
   }
 }

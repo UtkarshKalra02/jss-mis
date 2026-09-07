@@ -9,6 +9,7 @@ import type { Role } from "@/auth/roles";
 import { db } from "@/db";
 import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
 import { appUser } from "@/db/schema";
+import { actionError } from "@/lib/action-error";
 import { hashPassword, verifyPassword } from "@/lib/password";
 
 import { activeAdminCount, getUser, usernameTaken } from "./queries";
@@ -129,7 +130,7 @@ export async function createUserAction(
     return ok(`${parsed.data.name} added. Set a password before they can sign in.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not add the user.");
+    return fail(actionError(error, "Could not add the user."));
   }
 }
 
@@ -173,7 +174,7 @@ export async function updateUserAction(
     return ok("Saved.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the changes.");
+    return fail(actionError(error, "Could not save the changes."));
   }
 }
 
@@ -203,7 +204,7 @@ export async function setActiveAction(
     return ok(makeActive ? `${target.name} can sign in again.` : `${target.name} deactivated.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not change the account status.");
+    return fail(actionError(error, "Could not change the account status."));
   }
 }
 
@@ -243,7 +244,7 @@ export async function setPasswordAction(
     );
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not set the password.");
+    return fail(actionError(error, "Could not set the password."));
   }
 }
 
@@ -270,7 +271,7 @@ export async function deleteUserAction(
     removedTo("/admin/users", `${target.name} removed.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not remove the user.");
+    return fail(actionError(error, "Could not remove the user."));
   }
 }
 
@@ -327,6 +328,6 @@ export async function changeOwnPasswordAction(
     return ok("Password changed.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not change your password.");
+    return fail(actionError(error, "Could not change your password."));
   }
 }

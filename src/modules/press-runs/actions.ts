@@ -7,6 +7,7 @@ import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
 import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
 import { jobCard, pressRun } from "@/db/schema";
+import { actionError } from "@/lib/action-error";
 import { allocateNumber } from "@/lib/numbering";
 
 import { getJobCard, getPressRun, getRunMembers } from "./queries";
@@ -136,7 +137,7 @@ export async function createRunForJobCardAction(
     return ok(`${run.runNo} started, with ${card.jcNo} on it.`, `/press-runs/${run.id}`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not start that press run.");
+    return fail(actionError(error, "Could not start that press run."));
   }
 }
 
@@ -179,7 +180,7 @@ export async function addJobCardToRunAction(
     return ok(`${card.jcNo} added to ${run.runNo}.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not add it to that run.");
+    return fail(actionError(error, "Could not add it to that run."));
   }
 }
 
@@ -210,7 +211,7 @@ export async function removeJobCardFromRunAction(
     return ok(`${card.jcNo} removed from the run.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not remove it from the run.");
+    return fail(actionError(error, "Could not remove it from the run."));
   }
 }
 
@@ -275,7 +276,7 @@ export async function updateRunSheetAction(
     return ok("Run sheet saved.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the run sheet.");
+    return fail(actionError(error, "Could not save the run sheet."));
   }
 }
 
@@ -310,7 +311,7 @@ export async function updateRunExecutionAction(
     return ok("Run figures saved.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save those figures.");
+    return fail(actionError(error, "Could not save those figures."));
   }
 }
 
@@ -338,6 +339,6 @@ export async function removeRunAction(
     removedTo("/items", `${run.runNo} removed.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not remove that run.");
+    return fail(actionError(error, "Could not remove that run."));
   }
 }

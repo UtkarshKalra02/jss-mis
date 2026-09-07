@@ -6,6 +6,7 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { requireAccess } from "@/auth/guard";
 import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
 import { client } from "@/db/schema";
+import { actionError } from "@/lib/action-error";
 
 import { clientCodeTaken, getClient } from "./queries";
 import { clientSchema } from "./validation";
@@ -126,7 +127,7 @@ export async function createClientAction(
     return ok(`${v.name} added.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not add the client.");
+    return fail(actionError(error, "Could not add the client."));
   }
 }
 
@@ -171,7 +172,7 @@ export async function updateClientAction(
     return ok("Saved.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the changes.");
+    return fail(actionError(error, "Could not save the changes."));
   }
 }
 
@@ -198,7 +199,7 @@ export async function setClientActiveAction(
     );
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not change the status.");
+    return fail(actionError(error, "Could not change the status."));
   }
 }
 
@@ -238,7 +239,7 @@ export async function markClientReviewedAction(
     return ok(`${existing.name} marked as checked.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not mark it as checked.");
+    return fail(actionError(error, "Could not mark it as checked."));
   }
 }
 
@@ -262,6 +263,6 @@ export async function deleteClientAction(
     removedTo("/clients", `${existing.name} removed.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not remove the client.");
+    return fail(actionError(error, "Could not remove the client."));
   }
 }

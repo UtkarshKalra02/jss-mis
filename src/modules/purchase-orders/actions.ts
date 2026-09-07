@@ -16,6 +16,7 @@ import {
 } from "@/db/audit";
 import { recomputeForPoItem, withStatusWrite } from "@/db/po-status";
 import { poItem, purchaseOrder, stageEvent } from "@/db/schema";
+import { actionError } from "@/lib/action-error";
 import { startOfDayIST } from "@/lib/dates";
 import { allocateNumber } from "@/lib/numbering";
 
@@ -220,7 +221,7 @@ export async function createPurchaseOrderAction(
     });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the purchase order.");
+    return fail(actionError(error, "Could not save the purchase order."));
   }
 }
 
@@ -271,7 +272,7 @@ export async function updatePoHeaderAction(
     return ok({ message: "Saved." });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the changes.");
+    return fail(actionError(error, "Could not save the changes."));
   }
 }
 
@@ -321,7 +322,7 @@ export async function addPoItemAction(
     return ok({ message: `${created.itemCode} added.` });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not add the item.");
+    return fail(actionError(error, "Could not add the item."));
   }
 }
 
@@ -367,7 +368,7 @@ export async function updatePoItemAction(
     return ok({ message: "Saved." });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the item.");
+    return fail(actionError(error, "Could not save the item."));
   }
 }
 
@@ -413,7 +414,7 @@ export async function removePoItemAction(
     );
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not remove the item.");
+    return fail(actionError(error, "Could not remove the item."));
   }
 }
 
@@ -463,7 +464,7 @@ export async function setPoItemCancelledAction(
     });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not change the item.");
+    return fail(actionError(error, "Could not change the item."));
   }
 }
 
@@ -534,6 +535,6 @@ export async function setPurchaseOrderCancelledAction(
     });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not change the purchase order.");
+    return fail(actionError(error, "Could not change the purchase order."));
   }
 }

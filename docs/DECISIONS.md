@@ -2084,3 +2084,45 @@ a dropped column from a renamed one without being asked, and the answer it needs
 given in a non-interactive shell. Two unambiguous migrations are also easier to read a year
 from now than one that both drops and adds.
 
+---
+
+**J19 — A database error never reaches the screen; the action's own sentences still do.**
+Releasing a job card against a database two migrations behind put this in front of the
+person releasing it: the entire `insert into "job_card" (…) values ($1, $2, …)` statement,
+followed by every bound parameter — the item id, the client id, the quantities. That is
+drizzle's `error.message`, and every action in the system was returning it verbatim,
+because they all ended `return fail(error instanceof Error ? error.message : "…")`.
+
+Three things were wrong with it at once. It is unreadable — nobody on the floor can act on
+two thousand characters of SQL. It is not actionable — the real cause, a column that does
+not exist, is nowhere in what the reader sees. And it puts ROW VALUES on screen, in front
+of whoever happens to be looking at it, which is a different and worse problem than being
+merely unhelpful.
+
+`actionError()` in `src/lib/action-error.ts` now stands between the catch and the screen.
+The rule it encodes: **errors the application throws keep their message, errors the
+database throws get one written for them.** The distinction matters, because the
+application's own errors — "That item is no longer in the system", the permission
+refusals — are the only messages in the system actually composed for a reader, and
+rewriting those would be a loss.
+
+A database error is recognised by a five-character SQLSTATE anywhere down the `cause`
+chain, or by drizzle's own signature of carrying `query` and `params`. Five characters
+exactly, because Node's errors carry codes too and `ECONNREFUSED` must not be reported as
+a schema problem.
+
+The schema-drift case (`42703`, `42P01`) is the one that names its detail — the column or
+table — because it is the one database error where the detail is what the reader acts on:
+it means the migrations have not been run against whichever database this app is pointed
+at, and the message says so and points at `/api/health`. Nothing else quotes anything
+Postgres said. `detail` in particular contains the offending row, which is exactly what
+must not be shown.
+
+The real error, statement and parameters and all, goes to `console.error` — the server log
+is where it is useful and where it was missing.
+
+The tests provoke genuine driver errors against the real database rather than hand-building
+error objects, on the reasoning that the shape drizzle and the neon driver actually produce
+IS the thing under test. A hand-made fake would keep passing after the driver changed its
+error shape, which is precisely the moment this would start leaking again.
+

@@ -6,6 +6,7 @@ import { unstable_rethrow } from "next/navigation";
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
 import type { Actor } from "@/db/audit";
+import { actionError } from "@/lib/action-error";
 
 import { ImportParseError, parseWorkbook } from "./parse";
 import { existingDedupeKeys, getImportBatch, listClientsForImport } from "./queries";
@@ -126,7 +127,7 @@ export async function previewImportAction(
     console.error("[import] preview failed", error);
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Could not read that file.",
+      error: actionError(error, "Could not read that file."),
     };
   }
 }
@@ -212,7 +213,7 @@ export async function confirmImportAction(
     console.error("[import] confirm failed", error);
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Could not import that file.",
+      error: actionError(error, "Could not import that file."),
     };
   }
 }
@@ -269,7 +270,7 @@ export async function undoImportAction(
     unstable_rethrow(error);
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Could not undo that import.",
+      error: actionError(error, "Could not undo that import."),
     };
   }
 }

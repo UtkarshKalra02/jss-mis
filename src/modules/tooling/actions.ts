@@ -8,6 +8,7 @@ import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
 import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
 import { tooling } from "@/db/schema";
+import { actionError } from "@/lib/action-error";
 import { allocateNumber } from "@/lib/numbering";
 
 import { getToolingRecord } from "./queries";
@@ -135,7 +136,7 @@ export async function createToolingAction(
     return ok(`${row.toolNo} added.`, `/tooling/${row.id}`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not add that tool.");
+    return fail(actionError(error, "Could not add that tool."));
   }
 }
 
@@ -204,7 +205,7 @@ export async function updateToolingAction(
     return ok("Saved.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save those changes.");
+    return fail(actionError(error, "Could not save those changes."));
   }
 }
 
@@ -252,6 +253,6 @@ export async function removeToolingAction(
     removedTo("/tooling", `${existing.toolNo} removed from the register.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not remove that tool.");
+    return fail(actionError(error, "Could not remove that tool."));
   }
 }

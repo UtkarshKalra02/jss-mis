@@ -7,6 +7,7 @@ import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
 import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
 import { jobCard, pressRun } from "@/db/schema";
+import { actionError } from "@/lib/action-error";
 import { allocateNumber, todayIST } from "@/lib/numbering";
 
 import { syncJobCardFabrication } from "@/modules/fabrication/write";
@@ -232,7 +233,7 @@ export async function releaseJobCardAction(
     return ok(`${row.jcNo} released.`, `/job-cards/${row.id}`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not release that job card.");
+    return fail(actionError(error, "Could not release that job card."));
   }
 }
 
@@ -312,7 +313,7 @@ export async function updateJobCardPlanAction(
     return ok("Saved.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save those changes.");
+    return fail(actionError(error, "Could not save those changes."));
   }
 }
 
@@ -359,7 +360,7 @@ export async function updateJobCardExecutionAction(
     return ok("Run figures saved.");
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save those figures.");
+    return fail(actionError(error, "Could not save those figures."));
   }
 }
 
@@ -421,7 +422,7 @@ export async function setJobCardStatusAction(
     );
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not change that status.");
+    return fail(actionError(error, "Could not change that status."));
   }
 }
 
@@ -482,7 +483,7 @@ export async function removeJobCardAction(
     removedTo("/job-cards", `${existing.jcNo} removed. Its number stays consumed.`);
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not remove that job card.");
+    return fail(actionError(error, "Could not remove that job card."));
   }
 }
 

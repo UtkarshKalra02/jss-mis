@@ -15,6 +15,7 @@ import {
   type Tx,
 } from "@/db/audit";
 import { dispatch, dispatchLine, stageEvent } from "@/db/schema";
+import { actionError } from "@/lib/action-error";
 import { startOfDayIST } from "@/lib/dates";
 import { allocateNumber } from "@/lib/numbering";
 
@@ -214,7 +215,7 @@ export async function createDispatchAction(
     });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the dispatch.");
+    return fail(actionError(error, "Could not save the dispatch."));
   }
 }
 
@@ -299,7 +300,7 @@ export async function updateDispatchHeaderAction(
     });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not save the changes.");
+    return fail(actionError(error, "Could not save the changes."));
   }
 }
 
@@ -351,7 +352,7 @@ export async function addDispatchLineAction(
     return ok({ message: "Line added." });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not add the line.");
+    return fail(actionError(error, "Could not add the line."));
   }
 }
 
@@ -379,7 +380,7 @@ export async function removeDispatchLineAction(
     return ok({ message: "Line removed." });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not remove the line.");
+    return fail(actionError(error, "Could not remove the line."));
   }
 }
 
@@ -432,6 +433,6 @@ export async function setDispatchCancelledAction(
     });
   } catch (error) {
     unstable_rethrow(error);
-    return fail(error instanceof Error ? error.message : "Could not change the challan.");
+    return fail(actionError(error, "Could not change the challan."));
   }
 }
