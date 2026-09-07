@@ -28,12 +28,12 @@ export type PostedSelection = {
 /**
  * Brings a design's fabrication specification to exactly `wanted`.
  *
- * REMOVED ROWS ARE SOFT-DELETED AND NEVER RESTORED, and that is the deliberate
- * difference from `syncProcesses` next door. `design_process` carries a FULL
- * unique constraint, so a removed route row stays visible to it and re-adding
- * has to revive the old row. `design_fabrication` uses the partial index the
- * rest of the schema uses (C5), so a removed row is invisible and re-adding is
- * a genuine insert.
+ * REMOVED ROWS ARE SOFT-DELETED AND NEVER RESTORED. `design_fabrication` uses
+ * the partial index the rest of the schema uses (C5), so a removed row is
+ * invisible and re-adding is a genuine insert. The contrast this once drew was
+ * with `syncProcesses` next door, which had to revive rows because
+ * `design_process` carried a FULL unique constraint; both are gone (J22) and
+ * the partial index is now simply the rule rather than the exception.
  *
  * That difference is the whole answer to the stale-value problem (J9). Taking
  * Foiling off a design and putting it back six months later must NOT bring

@@ -49,7 +49,6 @@ function row(over: Partial<StageUpdateRow> = {}): StageUpdateRow {
     daysToCommitted: 10,
     isOverdue: false,
     isAtRisk: false,
-    routeCodes: [],
     pressRunId: null,
     runNo: null,
     runDate: null,

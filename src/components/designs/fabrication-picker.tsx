@@ -7,7 +7,7 @@ import type { FabricationOptionRow, Selection } from "@/modules/fabrication/quer
 /**
  * The design's fabrication specification — what is DONE to the paper.
  *
- * NOT the route. The Route section above decides which STAGES a job passes
+ * NOT the stages. `stage.applies_to` decides which STAGES a job passes
  * through; this decides what happens to it, and the two are separate
  * vocabularies because the paper job card lists three laminations, two UV
  * lines and four pasting lines under what the stage table calls three stages

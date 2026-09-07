@@ -2221,3 +2221,41 @@ on a path that a test exercising the happy case walks straight past. Two of them
 reachable through a URL somebody typed, and the third only fires when two features that
 were correct on their own — the release form and J15's resolution rule — meet.
 
+---
+
+**J22 — The per-design route is removed, and F4 becomes one rule instead of three.**
+`design_process` let a design declare which stages it actually passes through, and it sat
+at the top of F4's precedence: the design's route first, `stage.applies_to` by job type
+otherwise. In practice no design ever differed from its job type's default, so it was a
+grid of checkboxes nobody ticked feeding a branch nothing took — and a screen full of
+controls that do nothing teaches people to skim past controls that do.
+
+**What goes:** the Route section on the design form, the Route column on the designs grid,
+`design_process` and its table, `syncProcesses` and `unknownStages`, `listRouteStages`,
+`getDesignProcesses`, and `routeCodes` on the Stage Update row and its query.
+
+**What F4 becomes.** One source: `stage.applies_to` filtered by `po_item.job_type` (B4) —
+the JOB's type, not the client's. `stageChoicesFor()` keeps returning TWO lists, because
+that is F18 and F18 is untouched: the stages for this job type come first, everything else
+follows under "Other stages", and nothing is ever removed. Preeti still has to move a job to
+READY and DISPATCHED and neither is a step for either type. The `basis` field is gone, since
+there is now only one basis to report, and `route` is renamed `forJobType` so the name says
+what the list actually is.
+
+**What deliberately stays: fabrication.** J8 separated the two vocabularies — the route
+decided which STAGES a job passes through, `design_fabrication` decides what is DONE to it —
+because the paper card lists three laminations, two UV lines and four pasting lines under
+what the stage table calls three stages. That argument is the reason fabrication survives
+and the route does not: fabrication carries information the stage table cannot express, and
+the route only ever restated it.
+
+The table is dropped rather than left in place. A table nothing can write to is the
+unmaintained-data dead end this codebase keeps refusing — the same objection I5 raised to
+tooling issue/return and the BACKLOG entry raises to a stock count nothing decrements. Dev
+held zero designs and zero routes when this landed. Production could not be checked from
+here; if any routes were recorded there they are gone, and every job now follows its job
+type's default, which is what all of them were doing anyway.
+
+`design_fabrication`'s partial unique index (F17) was documented by CONTRAST with
+`design_process`'s full one. That contrast is now history rather than a live comparison, so
+the comments say so instead of pointing at a table that is not there.

@@ -3,18 +3,16 @@
 import { stageChoicesFor, type StageOption } from "@/modules/stage-update/precedence";
 
 /**
- * The stage dropdown, grouped by decision F4's precedence.
+ * The stage dropdown, grouped by decision F4.
  *
- * The item's own route comes first under a heading that says WHY it is the
- * route — the design's, or the job type's. Everything else follows under
- * "Other stages", because nothing is ever removed from this list (F18): a
+ * The stages for this job's type come first, and everything else follows under
+ * "Other stages" — because nothing is ever removed from this list (F18): a
  * dropdown that hides the stage somebody needs at 6pm gets worked around, and
  * the workaround is worse than the wrong order.
  */
 export function StagePicker({
   stages,
   jobType,
-  routeCodes,
   value,
   onChange,
   className,
@@ -25,7 +23,6 @@ export function StagePicker({
 }: {
   stages: StageOption[];
   jobType: "New" | "Repeat";
-  routeCodes: string[];
   value: string;
   onChange: (code: string) => void;
   className?: string;
@@ -34,7 +31,7 @@ export function StagePicker({
   ariaLabel?: string;
   required?: boolean;
 }) {
-  const choices = stageChoicesFor({ jobType, routeCodes }, stages);
+  const choices = stageChoicesFor({ jobType }, stages);
 
   return (
     <select
@@ -48,14 +45,8 @@ export function StagePicker({
     >
       <option value="">Move to…</option>
 
-      <optgroup
-        label={
-          choices.basis === "design"
-            ? "This design's route"
-            : `Stages for a ${jobType.toLowerCase()} job`
-        }
-      >
-        {choices.route.map((s) => (
+      <optgroup label={`Stages for a ${jobType.toLowerCase()} job`}>
+        {choices.forJobType.map((s) => (
           <option key={s.code} value={s.code}>
             {s.name}
             {s.isOptional ? " (optional)" : ""}

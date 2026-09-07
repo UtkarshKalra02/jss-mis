@@ -9,7 +9,6 @@ import {
   pgTable,
   text,
   timestamp,
-  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -25,7 +24,7 @@ import {
 } from "./enums";
 import { importBatch } from "./imports";
 import { enquiry } from "./pre-order";
-import { client, stage } from "./reference";
+import { client } from "./reference";
 import { appUser } from "./users";
 
 /* -------------------------------------------------------------------------- */
@@ -82,42 +81,6 @@ export const design = pgTable(
       "design_approval_complete",
       sql`${t.approvalStatus} <> 'Approved' or (${t.approvedAt} is not null and ${t.approvedBy} is not null)`,
     ),
-  ],
-);
-
-/* -------------------------------------------------------------------------- */
-/* design_process                                                              */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Which stages a design actually passes through.
- *
- * Replaces the spec's `design.processes text[]` (decision C1). An array column
- * cannot carry a foreign key, so a typo like 'LAMINATON' would sit in the
- * database undetected until a report quietly under-counted. As a junction
- * table each entry is FK-checked against stage.code, which is what
- * non-negotiable 4 requires, and "which designs need foiling?" becomes an
- * ordinary join instead of an array scan.
- */
-export const designProcess = pgTable(
-  "design_process",
-  {
-    ...baseColumns(),
-
-    designId: uuid()
-      .notNull()
-      .references(() => design.id, { onDelete: "cascade" }),
-
-    stageCode: text()
-      .notNull()
-      .references(() => stage.code),
-
-    /** Order within this design's route, if it differs from stage.sequence. */
-    sequence: integer(),
-  },
-  (t) => [
-    unique("design_process_design_stage_key").on(t.designId, t.stageCode),
-    index("design_process_stage_idx").on(t.stageCode),
   ],
 );
 

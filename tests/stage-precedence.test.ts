@@ -7,11 +7,14 @@ import {
 } from "@/modules/stage-update/precedence";
 
 /**
- * Decision F4's precedence, tested as a pure function.
+ * Decision F4, tested as a pure function.
  *
  * No database, no session, no browser — which is the point of extracting it.
  * This is the rule most likely to be argued about a year from now, and an
  * argument is far easier to settle against a test than against a component.
+ *
+ * The per-design route that used to sit above `applies_to` was removed in J22,
+ * so what is left is one source: the JOB's type.
  */
 
 const stage = (over: Partial<StageOption> & { code: string; sequence: number }): StageOption => ({
@@ -38,80 +41,71 @@ const STAGES: StageOption[] = [
 const codes = (list: StageOption[]) => list.map((s) => s.code);
 
 describe("stageChoicesFor", () => {
-  it("uses the design's route when it has one, whatever the job type says", () => {
-    const choices = stageChoicesFor(
-      { jobType: "New", routeCodes: ["PRINTING", "LAMINATION", "DIE_CUT"] },
-      STAGES,
-    );
+  it("offers a new job's stages, in sequence order", () => {
+    const choices = stageChoicesFor({ jobType: "New" }, STAGES);
 
-    expect(choices.basis).toBe("design");
-    expect(codes(choices.route)).toEqual(["PRINTING", "LAMINATION", "DIE_CUT"]);
-    // ENQUIRY and COSTING apply to New jobs, but this design's route wins.
-    expect(codes(choices.other)).toContain("ENQUIRY");
+    expect(codes(choices.forJobType)).toEqual([
+      "ENQUIRY",
+      "COSTING",
+      "PO_RECEIVED",
+      "DESIGN",
+      "PRINTING",
+      "LAMINATION",
+      "DIE_CUT",
+      "READY",
+      "DISPATCHED",
+    ]);
+    expect(choices.other).toEqual([]);
   });
 
-  it("falls back to applies_to filtered by the JOB's type", () => {
-    const repeat = stageChoicesFor({ jobType: "Repeat", routeCodes: [] }, STAGES);
+  it("drops ENQUIRY and COSTING for a repeat run", () => {
+    // B4: the JOB's type, not the client's. A repeat run from a new client
+    // skips them; a genuinely new job from a long-standing client does not.
+    const choices = stageChoicesFor({ jobType: "Repeat" }, STAGES);
 
-    expect(repeat.basis).toBe("jobType");
-    // A repeat run skips enquiry and costing.
-    expect(codes(repeat.route)).not.toContain("ENQUIRY");
-    expect(codes(repeat.route)).not.toContain("COSTING");
-    expect(codes(repeat.other)).toEqual(["ENQUIRY", "COSTING"]);
+    expect(codes(choices.forJobType)).not.toContain("ENQUIRY");
+    expect(codes(choices.forJobType)).not.toContain("COSTING");
+    expect(codes(choices.other)).toEqual(["ENQUIRY", "COSTING"]);
   });
 
-  it("keeps enquiry and costing for a genuinely new job (B4)", () => {
-    // The whole reason job_type exists rather than reusing client_type: a
-    // long-standing repeat client still places new jobs.
-    const fresh = stageChoicesFor({ jobType: "New", routeCodes: [] }, STAGES);
+  it("NEVER removes a stage from the dropdown, whatever the job type", () => {
+    // F18. A rule that hides the stage somebody needs at 6pm gets worked
+    // around, and the workaround is worse than the wrong order. The two lists
+    // together are always exactly the whole table.
+    for (const jobType of ["New", "Repeat"] as const) {
+      const choices = stageChoicesFor({ jobType }, STAGES);
+      const all = [...choices.forJobType, ...choices.other];
 
-    expect(codes(fresh.route)).toContain("ENQUIRY");
-    expect(codes(fresh.route)).toContain("COSTING");
-    expect(fresh.other).toEqual([]);
-  });
-
-  it("never drops a stage — route and other together are everything (F18)", () => {
-    for (const args of [
-      { jobType: "New" as const, routeCodes: ["PRINTING"] },
-      { jobType: "Repeat" as const, routeCodes: [] },
-      { jobType: "New" as const, routeCodes: [] },
-    ]) {
-      const choices = stageChoicesFor(args, STAGES);
-      const all = [...codes(choices.route), ...codes(choices.other)].sort();
-
-      // Preeti has to be able to reach READY and DISPATCHED regardless, and a
-      // dropdown that hides a stage somebody needs at 6pm gets worked around.
-      expect(all).toEqual(codes(STAGES).sort());
+      expect(all).toHaveLength(STAGES.length);
+      expect(new Set(codes(all))).toEqual(new Set(codes(STAGES)));
     }
   });
 
-  it("returns both lists in sequence order, not table order", () => {
+  it("sorts by sequence rather than trusting the order it was handed", () => {
     const shuffled = [...STAGES].reverse();
-    const choices = stageChoicesFor({ jobType: "New", routeCodes: [] }, shuffled);
+    const choices = stageChoicesFor({ jobType: "New" }, shuffled);
 
-    const sequences = choices.route.map((s) => s.sequence);
-    expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
+    expect(codes(choices.forJobType)).toEqual(
+      codes([...STAGES].sort((a, b) => a.sequence - b.sequence)),
+    );
   });
 
-  it("carries is_optional through rather than filtering on it", () => {
-    // Optional is guidance — "not every job needs this" — not a restriction.
-    const choices = stageChoicesFor(
-      { jobType: "New", routeCodes: ["PRINTING", "LAMINATION"] },
-      STAGES,
-    );
+  it("carries is_optional through without filtering on it", () => {
+    // Guidance, not a restriction: the screen marks a stage as one not every
+    // job needs, and still offers it.
+    const choices = stageChoicesFor({ jobType: "New" }, STAGES);
+    const lamination = choices.forJobType.find((s) => s.code === "LAMINATION");
 
-    expect(choices.route.find((s) => s.code === "LAMINATION")?.isOptional).toBe(true);
+    expect(lamination).toBeDefined();
+    expect(lamination!.isOptional).toBe(true);
   });
 
-  it("treats a design route naming an unknown stage as simply not matching", () => {
-    // The FK on design_process makes this impossible in practice; the function
-    // should degrade rather than throw if it ever happens.
-    const choices = stageChoicesFor(
-      { jobType: "New", routeCodes: ["PRINTING", "NOT_A_STAGE"] },
-      STAGES,
-    );
+  it("returns two empty lists for an empty stage table", () => {
+    // Reachable: ADMIN can deactivate every stage. It must not throw.
+    const choices = stageChoicesFor({ jobType: "New" }, []);
 
-    expect(codes(choices.route)).toEqual(["PRINTING"]);
+    expect(choices.forJobType).toEqual([]);
+    expect(choices.other).toEqual([]);
   });
 });
 

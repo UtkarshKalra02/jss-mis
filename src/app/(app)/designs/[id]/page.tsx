@@ -11,13 +11,7 @@ import {
 } from "@/components/designs/design-controls";
 import { DesignForm } from "@/components/designs/design-form";
 import { DesignTooling } from "@/components/tooling/design-tooling";
-import {
-  getApproverName,
-  getDesign,
-  getDesignProcesses,
-  listClientOptions,
-  listRouteStages,
-} from "@/modules/designs/queries";
+import { getApproverName, getDesign, listClientOptions } from "@/modules/designs/queries";
 import { designSelections, fabricationVocabulary } from "@/modules/fabrication/queries";
 import { toolingForDesign } from "@/modules/tooling/queries";
 
@@ -31,11 +25,9 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
   const design = await getDesign(id);
   if (!design) notFound();
 
-  const [processes, clients, stages, approverName, tools, fabricationOptions, fabricationSelected] =
+  const [clients, approverName, tools, fabricationOptions, fabricationSelected] =
     await Promise.all([
-      getDesignProcesses(id),
       listClientOptions(),
-      listRouteStages(),
       getApproverName(design.approvedBy),
       toolingForDesign(id),
       fabricationVocabulary(),
@@ -76,8 +68,6 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
               mode="edit"
               design={design}
               clients={clients}
-              stages={stages}
-              selectedProcesses={processes}
               fabricationOptions={fabricationOptions}
               fabricationSelected={fabricationSelected}
             />

@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { designProcess, jobCard, poItem, pressRun, stage } from "@/db/schema";
+import { jobCard, poItem, pressRun, stage } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
 
 import type { StageOption } from "./precedence";
@@ -27,7 +27,6 @@ export type StageUpdateRow = {
   isOverdue: boolean;
   isAtRisk: boolean;
   /** Stage codes from the item's design route. Empty when it has none (F4). */
-  routeCodes: string[];
 
   /**
    * The press run this item's job card was printed in, when it was ganged.
@@ -50,20 +49,8 @@ export type StageUpdateRow = {
  * nearest commitment. Two screens that disagree about what is urgent are two
  * screens somebody has to reconcile in their head.
  *
- * The design route comes back as an aggregated array per item rather than a
- * join, so one item with a four-stage route is still one row.
  */
 export async function listItemsToUpdate(): Promise<StageUpdateRow[]> {
-  const routes = db
-    .select({
-      designId: designProcess.designId,
-      codes: sql<string[]>`array_agg(${designProcess.stageCode})`.as("codes"),
-    })
-    .from(designProcess)
-    .where(isNull(designProcess.deletedAt))
-    .groupBy(designProcess.designId)
-    .as("routes");
-
   /*
    * The press run for each item, at most one row per item.
    *
@@ -111,7 +98,6 @@ export async function listItemsToUpdate(): Promise<StageUpdateRow[]> {
       daysToCommitted: vPoItemStatus.daysToCommitted,
       isOverdue: vPoItemStatus.isOverdue,
       isAtRisk: vPoItemStatus.isAtRisk,
-      routeCodes: sql<string[]>`coalesce(${routes.codes}, '{}')`,
       pressRunId: gang.pressRunId,
       runNo: gang.runNo,
       runDate: gang.runDate,
@@ -119,7 +105,6 @@ export async function listItemsToUpdate(): Promise<StageUpdateRow[]> {
     })
     .from(vPoItemStatus)
     .innerJoin(poItem, eq(poItem.id, vPoItemStatus.poItemId))
-    .leftJoin(routes, eq(routes.designId, poItem.designId))
     .leftJoin(gang, eq(gang.poItemId, vPoItemStatus.poItemId))
     .where(and(eq(vPoItemStatus.status, "Open"), gt(vPoItemStatus.pendingQty, 0)))
     .orderBy(

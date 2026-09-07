@@ -85,17 +85,4 @@ export const designColumns: LegacyColumnDef<DesignRow>[] = [
       </span>
     ),
   },
-  {
-    accessorKey: "processCount",
-    header: "Route",
-    meta: { align: "right", width: "6rem" },
-    cell: ({ row }) =>
-      row.original.processCount === 0 ? (
-        // Not an error: an empty route means the job follows the default for
-        // its type rather than a design-specific one (decision F4).
-        <span className="text-muted-foreground">default</span>
-      ) : (
-        <span className="tabular-nums">{row.original.processCount} stages</span>
-      ),
-  },
 ];

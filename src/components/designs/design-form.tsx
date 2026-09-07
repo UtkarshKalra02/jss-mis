@@ -4,12 +4,11 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 
-import { StagePill } from "@/components/stages/stage-pill";
 import { FabricationPicker } from "@/components/designs/fabrication-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { ClientOption, RouteStage } from "@/modules/designs/queries";
+import type { ClientOption } from "@/modules/designs/queries";
 import type { FabricationOptionRow, Selection } from "@/modules/fabrication/queries";
 import {
   createDesignAction,
@@ -68,16 +67,12 @@ export function DesignForm({
   mode,
   design,
   clients,
-  stages,
-  selectedProcesses,
   fabricationOptions,
   fabricationSelected,
 }: {
   mode: "create" | "edit";
   design?: DesignValues;
   clients: ClientOption[];
-  stages: RouteStage[];
-  selectedProcesses: string[];
   fabricationOptions: FabricationOptionRow[];
   fabricationSelected: Map<string, Selection>;
 }) {
@@ -93,7 +88,6 @@ export function DesignForm({
     if (state.ok && state.redirectTo) router.push(state.redirectTo);
   }, [state, router]);
 
-  const selected = new Set(selectedProcesses);
 
   return (
     <form action={formAction} className="space-y-8">
@@ -168,39 +162,6 @@ export function DesignForm({
         </div>
       </section>
 
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-sm font-medium">Route</h2>
-          <p className="text-muted-foreground mt-1 text-xs">
-            Which stages this design actually passes through. Leave every box clear and the
-            job follows the default route for its type instead — a route here overrides
-            that, so only set one when this design genuinely differs.
-          </p>
-        </div>
-
-        {/* Read from the stage table in sequence order (non-negotiable 5).
-            A stage ADMIN adds appears here with no change to this file. */}
-        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {stages.map((s) => (
-            <label
-              key={s.code}
-              className="hover:bg-muted/50 flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2"
-            >
-              <input
-                type="checkbox"
-                name="processes"
-                value={s.code}
-                defaultChecked={selected.has(s.code)}
-                className="accent-primary size-4"
-              />
-              <StagePill name={s.name} colour={s.colour} />
-              {s.isOptional ? (
-                <span className="text-muted-foreground ml-auto text-[11px]">optional</span>
-              ) : null}
-            </label>
-          ))}
-        </div>
-      </section>
 
       <FabricationPicker options={fabricationOptions} selected={fabricationSelected} />
 

@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 
@@ -8,13 +8,11 @@ import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
 import {
   auditedInsert,
-  auditedRestore,
   auditedSoftDelete,
   auditedUpdate,
   type Actor,
-  type Tx,
 } from "@/db/audit";
-import { design, designFabrication, designProcess, stage } from "@/db/schema";
+import { design, designFabrication } from "@/db/schema";
 import { actionError } from "@/lib/action-error";
 import { allocateNumber } from "@/lib/numbering";
 import { syncDesignFabrication, unknownSelections } from "@/modules/fabrication/write";
@@ -82,7 +80,6 @@ function parse(formData: FormData) {
     printType: formData.get("printType"),
     noOfColours: formData.get("noOfColours"),
     artworkUrl: formData.get("artworkUrl"),
-    processes: formData.getAll("processes").map(String),
     fabricationOptionIds: formData.getAll("fabricationOptionId").map(String),
     fabricationValueIds: formData.getAll("fabricationValueId").map(String),
     fabricationOtherTexts: formData.getAll("fabricationOtherText").map(String),
@@ -90,69 +87,6 @@ function parse(formData: FormData) {
 }
 
 const orNull = (v: string | undefined) => v ?? null;
-
-/**
- * Rejects a route referencing a stage that does not exist.
- *
- * The foreign key on design_process.stage_code would catch this anyway, but it
- * would arrive as a constraint-violation string. Checking first turns that into
- * a sentence naming the offending code.
- */
-async function unknownStages(codes: string[], tx: Tx): Promise<string[]> {
-  if (codes.length === 0) return [];
-
-  const found = await tx
-    .select({ code: stage.code })
-    .from(stage)
-    .where(inArray(stage.code, codes));
-
-  const known = new Set(found.map((r) => r.code));
-  return codes.filter((c) => !known.has(c));
-}
-
-/**
- * Brings a design's route to exactly `wanted`.
- *
- * Additions RESTORE a soft-deleted row when one exists rather than inserting a
- * new one. `design_process` has a full unique constraint on
- * (design_id, stage_code), so the soft-deleted row is still visible to it and a
- * plain insert would fail — and taking lamination off a design and putting it
- * back a month later is completely ordinary.
- */
-async function syncProcesses(
-  actor: Actor,
-  tx: Tx,
-  designId: string,
-  wanted: string[],
-): Promise<void> {
-  const existing = await tx
-    .select({
-      id: designProcess.id,
-      stageCode: designProcess.stageCode,
-      deletedAt: designProcess.deletedAt,
-    })
-    .from(designProcess)
-    .where(eq(designProcess.designId, designId));
-
-  const live = new Map(existing.filter((r) => !r.deletedAt).map((r) => [r.stageCode, r.id]));
-  const dead = new Map(existing.filter((r) => r.deletedAt).map((r) => [r.stageCode, r.id]));
-  const target = new Set(wanted);
-
-  for (const code of target) {
-    if (live.has(code)) continue;
-
-    const revivable = dead.get(code);
-    if (revivable) {
-      await auditedRestore(actor, designProcess, revivable, tx);
-    } else {
-      await auditedInsert(actor, designProcess, { designId, stageCode: code }, tx);
-    }
-  }
-
-  for (const [code, id] of live) {
-    if (!target.has(code)) await auditedSoftDelete(actor, designProcess, id, tx);
-  }
-}
 
 export async function createDesignAction(
   _prev: FormState,
@@ -171,11 +105,6 @@ export async function createDesignAction(
         // The composite foreign key refuses this too; the message here is a
         // sentence rather than a constraint name.
         throw new Error("A fabrication value was posted against the wrong process.");
-      }
-
-      const missing = await unknownStages(v.processes, tx);
-      if (missing.length > 0) {
-        throw new Error(`Unknown stage${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.`);
       }
 
       // DSN is not year-scoped: a die or plate design outlives any financial
@@ -201,7 +130,6 @@ export async function createDesignAction(
         tx,
       );
 
-      await syncProcesses(actor, tx, row.id, v.processes);
 
       // What is DONE to the design, as distinct from the stages it passes
       // through (J8). The two are separate vocabularies and neither is derived
@@ -241,11 +169,6 @@ export async function updateDesignAction(
         throw new Error("A fabrication value was posted against the wrong process.");
       }
 
-      const missing = await unknownStages(v.processes, tx);
-      if (missing.length > 0) {
-        throw new Error(`Unknown stage${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.`);
-      }
-
       await auditedUpdate(
         actor,
         design,
@@ -263,7 +186,6 @@ export async function updateDesignAction(
         tx,
       );
 
-      await syncProcesses(actor, tx, id, v.processes);
       await syncDesignFabrication(actor, tx, id, fabricationSelectionsFrom(v));
     });
 
@@ -361,15 +283,6 @@ export async function deleteDesignAction(
     if (!existing) return fail("That design no longer exists.");
 
     await db.transaction(async (tx) => {
-      // The route rows go with it. Without this they stay live, and the design
-      // still counts toward "which designs need foiling?" after it is gone.
-      const routes = await tx
-        .select({ id: designProcess.id })
-        .from(designProcess)
-        .where(and(eq(designProcess.designId, id), isNull(designProcess.deletedAt)));
-
-      for (const r of routes) await auditedSoftDelete(actor, designProcess, r.id, tx);
-
       const fabrication = await tx
         .select({ id: designFabrication.id })
         .from(designFabrication)

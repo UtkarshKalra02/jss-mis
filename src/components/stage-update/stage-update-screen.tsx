@@ -569,7 +569,6 @@ function ItemRow({
         <StagePicker
           stages={stages}
           jobType={row.jobType}
-          routeCodes={row.routeCodes}
           value={selected.has(row.poItemId) ? stageCode : ""}
           onChange={onPick}
           className={inputClass}
@@ -796,7 +795,6 @@ function MobileCard({ row, stages }: { row: StageUpdateRow; stages: StageOption[
         <StagePicker
           stages={stages}
           jobType={row.jobType}
-          routeCodes={row.routeCodes}
           value={stageCode}
           onChange={setStageCode}
           name="stageCode"

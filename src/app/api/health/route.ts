@@ -219,6 +219,12 @@ const SCHEMA_EXPECTATIONS: {
     sql: sql`select 1 from information_schema.columns
              where table_name = 'press_run' and column_name = 'paper_bundle'`,
   },
+  {
+    what: "design_process is gone",
+    since: "0028_drop_design_process",
+    expect: "absent",
+    sql: sql`select 1 from information_schema.tables where table_name = 'design_process'`,
+  },
 ];
 
 async function checkSchema() {

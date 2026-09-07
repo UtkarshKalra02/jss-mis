@@ -4,7 +4,7 @@ import Link from "next/link";
 import { requireAccess } from "@/auth/guard";
 import { DesignForm } from "@/components/designs/design-form";
 import { Button } from "@/components/ui/button";
-import { listClientOptions, listRouteStages } from "@/modules/designs/queries";
+import { listClientOptions } from "@/modules/designs/queries";
 import { fabricationVocabulary } from "@/modules/fabrication/queries";
 
 export const metadata: Metadata = { title: "New design · JSS MIS" };
@@ -12,9 +12,8 @@ export const metadata: Metadata = { title: "New design · JSS MIS" };
 export default async function NewDesignPage() {
   await requireAccess("design", "write");
 
-  const [clients, stages, fabricationOptions] = await Promise.all([
+  const [clients, fabricationOptions] = await Promise.all([
     listClientOptions(),
-    listRouteStages(),
     fabricationVocabulary(),
   ]);
 
@@ -48,8 +47,6 @@ export default async function NewDesignPage() {
           <DesignForm
             mode="create"
             clients={clients}
-            stages={stages}
-            selectedProcesses={[]}
             fabricationOptions={fabricationOptions}
             fabricationSelected={new Map()}
           />

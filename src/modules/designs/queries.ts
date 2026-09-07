@@ -1,7 +1,7 @@
-import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 
 import { db } from "@/db";
-import { appUser, client, design, designProcess, stage } from "@/db/schema";
+import { appUser, client, design } from "@/db/schema";
 
 export type DesignRow = {
   id: string;
@@ -14,7 +14,6 @@ export type DesignRow = {
   paperType: string | null;
   gsm: string | null;
   approvalStatus: string;
-  processCount: number;
   isActive: boolean;
 };
 
@@ -27,16 +26,6 @@ export type DesignRow = {
  * "which of NAT's designs is this?".
  */
 export async function listDesigns(): Promise<DesignRow[]> {
-  const processCounts = db
-    .select({
-      designId: designProcess.designId,
-      n: count().as("n"),
-    })
-    .from(designProcess)
-    .where(isNull(designProcess.deletedAt))
-    .groupBy(designProcess.designId)
-    .as("process_counts");
-
   return db
     .select({
       id: design.id,
@@ -49,12 +38,10 @@ export async function listDesigns(): Promise<DesignRow[]> {
       paperType: design.paperType,
       gsm: design.gsm,
       approvalStatus: design.approvalStatus,
-      processCount: sql<number>`coalesce(${processCounts.n}, 0)::int`,
       isActive: design.isActive,
     })
     .from(design)
     .innerJoin(client, eq(client.id, design.clientId))
-    .leftJoin(processCounts, eq(processCounts.designId, design.id))
     .where(isNull(design.deletedAt))
     .orderBy(asc(design.designCode));
 }
@@ -69,54 +56,6 @@ export async function getDesign(id: string) {
   return row ?? null;
 }
 
-/** The stage codes on a design's route. Live rows only. */
-export async function getDesignProcesses(designId: string): Promise<string[]> {
-  const rows = await db
-    .select({ stageCode: designProcess.stageCode })
-    .from(designProcess)
-    .innerJoin(stage, eq(stage.code, designProcess.stageCode))
-    .where(and(eq(designProcess.designId, designId), isNull(designProcess.deletedAt)))
-    .orderBy(asc(stage.sequence));
-
-  return rows.map((r) => r.stageCode);
-}
-
-export type RouteStage = {
-  code: string;
-  name: string;
-  sequence: number;
-  isOptional: boolean;
-  colour: string;
-};
-
-/**
- * The stages a design's route may be built from.
- *
- * Read from the `stage` table, in sequence order — never a list in a component
- * (non-negotiable 5). A stage ADMIN adds appears here immediately, and one
- * that is deactivated stops being offered without breaking the designs that
- * already reference it, because `design_process` keeps its foreign key.
- *
- * Filtered to is_process (decision F18). A design's route describes how the
- * job is MANUFACTURED, so ENQUIRY, COSTING, PO_RECEIVED, APPROVED, READY and
- * DISPATCHED do not belong on it — they are points in the order's lifecycle.
- * They remain perfectly valid stage events and Stage Update still offers them;
- * the distinction is editable in Admin, so the vocabulary can change without a
- * migration.
- */
-export async function listRouteStages(): Promise<RouteStage[]> {
-  return db
-    .select({
-      code: stage.code,
-      name: stage.name,
-      sequence: stage.sequence,
-      isOptional: stage.isOptional,
-      colour: stage.colour,
-    })
-    .from(stage)
-    .where(and(isNull(stage.deletedAt), eq(stage.isActive, true), eq(stage.isProcess, true)))
-    .orderBy(asc(stage.sequence));
-}
 
 export type ClientOption = { id: string; code: string; name: string; isActive: boolean };
 

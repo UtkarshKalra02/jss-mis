@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { SYSTEM_ACTOR, auditedInsert, auditedSoftDelete, auditedUpdate, type Tx } from "@/db/audit";
-import { design, designProcess, jobCard, poItem, purchaseOrder } from "@/db/schema";
+import { design, jobCard, poItem, purchaseOrder } from "@/db/schema";
 import { allocateNumber } from "@/lib/numbering";
 import { getJobCard, jobCardsForItem, liveCardCountFor } from "@/modules/job-cards/queries";
 import { parseExecutionForm, parseReleaseForm } from "@/modules/job-cards/validation";
@@ -160,11 +160,6 @@ async function makeItem(tx: Tx, opts: { withDesign?: boolean } = {}) {
       tx,
     );
     designId = d.id;
-
-    // A route with two processes, so the checklist has something to mark.
-    for (const code of ["PRINTING", "LAMINATION"]) {
-      await auditedInsert(SYSTEM_ACTOR, designProcess, { designId, stageCode: code }, tx);
-    }
   }
 
   const order = await auditedInsert(

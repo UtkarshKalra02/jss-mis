@@ -33,13 +33,15 @@ import { jobCard } from "./production";
  * replaces lists THREE laminations (normal, thermal, silver) under what the
  * stage table calls one LAMINATION stage, two UV lines under one UV stage, and
  * four pasting lines under one PASTING stage. It also lists Varnish and
- * Embossing, which have no stage at all. Hanging a detail column off
- * `design_process` could express none of that: there is one row per stage, and
+ * Embossing, which have no stage at all. Hanging a detail column off the
+ * design's route could express none of that: there was one row per stage, and
  * "which lamination" needs three.
  *
- * So the route (`design_process`) keeps deciding which STAGES a job passes
- * through, and this decides what is DONE to it. Neither is derived from the
- * other, because on this floor they genuinely are not.
+ * So `stage.applies_to` keeps deciding which STAGES a job passes through, and
+ * this decides what is DONE to it. Neither is derived from the other, because
+ * on this floor they genuinely are not. (The per-design route this once
+ * contrasted with was removed in J22; the separation it argues for stands, and
+ * is the reason THIS table survived and that one did not.)
  *
  * SEEDED FROM THE PAPER CARD, verbatim, in migration 0019. It is a table
  * rather than an enum for the same reason `stage` is (C3): the vocabulary
@@ -111,7 +113,7 @@ export const fabricationOption = pgTable(
  *
  * Same reasoning that turned `design.processes text[]` into a junction table
  * (C1): a relationship the database can enforce beats one the application
- * remembers to.
+ * remembers to. That junction table is gone (J22) but the reasoning is not.
  */
 export const fabricationOptionValue = pgTable(
   "fabrication_option_value",
@@ -152,12 +154,12 @@ export const fabricationOptionValue = pgTable(
  * card.
  *
  * THE UNIQUE INDEX IS PARTIAL, and that is the fix for F17 rather than a
- * detail. `design_process` carries a FULL unique constraint, so a soft-deleted
- * route row stays visible to it and re-adding a removed process has to RESTORE
- * the old row. Carrying a value on a row with that behaviour would mean
- * removing Foiling and adding it back six months later silently resurrects
- * "Gold" — indistinguishable, on screen and in print, from somebody having
- * chosen it.
+ * detail. The old `design_process` carried a FULL unique constraint, so a
+ * soft-deleted route row stayed visible to it and re-adding a removed process
+ * had to RESTORE the old row. Carrying a value on a row with that behaviour
+ * would mean removing Foiling and adding it back six months later silently
+ * resurrects "Gold" — indistinguishable, on screen and in print, from somebody
+ * having chosen it.
  *
  * Here the index is `UNIQUE ... WHERE deleted_at IS NULL`, which is the
  * convention every other natural key in this schema uses (C5). A removed row

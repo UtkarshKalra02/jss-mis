@@ -197,6 +197,13 @@
       "when": 1788524589537,
       "tag": "0027_paper_bundle_and_pantone",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1788763884592,
+      "tag": "0028_drop_design_process",
+      "breakpoints": true
     }
   ]
 }

@@ -56,7 +56,6 @@ export const designSchema = z.object({
    * configuration and lives in data (decision C3), so a list in this file
    * would go stale the moment ADMIN adds one.
    */
-  processes: z.array(z.string().trim().min(1)).default([]),
 
   /**
    * Fabrication selections — what is DONE to this design, as distinct from the

@@ -8,20 +8,17 @@ export type StageOption = {
 };
 
 export type StageChoices = {
-  /** The stages this job actually goes through, in sequence order. */
-  route: StageOption[];
+  /** The stages a job of this type goes through, in sequence order. */
+  forJobType: StageOption[];
   /**
    * Everything else, still selectable. F18: Preeti has to be able to move a job
-   * to READY and DISPATCHED, and neither is a route step.
+   * to READY and DISPATCHED, and neither is a step for either job type.
    */
   other: StageOption[];
-  /** Why `route` contains what it contains — shown as a hint on the screen. */
-  basis: "design" | "jobType";
 };
 
 /**
- * Which stages to offer for one item — decision F4's precedence, as a pure
- * function.
+ * Which stages to offer for one item — decision F4, as a pure function.
  *
  * Extracted from the screen so it can be tested without a database, a session
  * or a browser, the same reasoning that pulled the stage-config diff out into
@@ -29,42 +26,33 @@ export type StageChoices = {
  * and an argument is much easier to settle against a test than against a
  * component.
  *
- * The precedence, highest first:
+ * ONE SOURCE, NOT THREE. `stage.applies_to` filtered by the item's `job_type`
+ * (B4) — the JOB's type, not the client's. A repeat run skips ENQUIRY and
+ * COSTING; a genuinely new job from a long-standing client does not.
  *
- *   1. The DESIGN's route (`design_process`), when the design has one. A route
- *      is a statement about how this particular job is manufactured, and it is
- *      more specific than anything derived from the job's type.
- *   2. Otherwise `stage.applies_to`, filtered by the item's `job_type` (B4) —
- *      the JOB's type, not the client's. A repeat run skips ENQUIRY and
- *      COSTING; a genuinely new job from a long-standing client does not.
- *   3. `is_optional` narrows neither list. It is carried through so the screen
- *      can mark a stage as one not every job needs, which is guidance rather
- *      than a restriction.
+ * F4 originally put a per-design route (`design_process`) above this, and J22
+ * removed it: no design ever differed from its job type's default, so the route
+ * was a screen full of checkboxes nobody set and a branch nothing took.
+ * `is_optional` still narrows neither list — it is carried through so the
+ * screen can mark a stage as one not every job needs, which is guidance rather
+ * than a restriction.
  *
- * NOTHING IS EVER REMOVED FROM THE DROPDOWN (F18). Stages outside the route
- * come back in `other`, because a rule that hides a stage somebody needs at 6pm
- * gets worked around, and the workaround is worse than the wrong order.
+ * NOTHING IS EVER REMOVED FROM THE DROPDOWN (F18). Stages outside the job
+ * type's own come back in `other`, because a rule that hides a stage somebody
+ * needs at 6pm gets worked around, and the workaround is worse than the wrong
+ * order.
  */
 export function stageChoicesFor(
-  args: {
-    jobType: "New" | "Repeat";
-    /** Stage codes from design_process. Empty when the design has no route. */
-    routeCodes: readonly string[];
-  },
+  args: { jobType: "New" | "Repeat" },
   allStages: readonly StageOption[],
 ): StageChoices {
   const bySequence = [...allStages].sort((a, b) => a.sequence - b.sequence);
 
-  const hasDesignRoute = args.routeCodes.length > 0;
-
-  const inRoute = hasDesignRoute
-    ? (s: StageOption) => args.routeCodes.includes(s.code)
-    : (s: StageOption) => s.appliesTo === "All" || s.appliesTo === args.jobType;
+  const applies = (s: StageOption) => s.appliesTo === "All" || s.appliesTo === args.jobType;
 
   return {
-    route: bySequence.filter(inRoute),
-    other: bySequence.filter((s) => !inRoute(s)),
-    basis: hasDesignRoute ? "design" : "jobType",
+    forJobType: bySequence.filter(applies),
+    other: bySequence.filter((s) => !applies(s)),
   };
 }
 
