@@ -2410,3 +2410,61 @@ correlated subquery aliasing `job_card jc` survived the first sweep — grepping
 drizzle column does not find hand-written SQL — and only the test suite caught it, which is
 the same class of miss H7 documents.
 
+---
+
+**J26 — The owner sees everything, changes nothing, and delegates. Nobody delegates to
+him.** Two changes, and they are one decision: what Amit can SEE, and which direction work
+flows.
+
+**Read on every operational screen.** The role had read on the dashboard, the item tracker,
+job cards, press runs, tooling, AR and reports — and could not see purchase orders,
+enquiries, quotations, designs, dispatch, invoices, receipts or the client master. The man
+who runs the business could not see its orders or its dispatches, which made the role an
+ornament. He now reads all of them.
+
+**This does not touch B2.** OWNER stays globally deny-write, and that is enforced inside
+the audit wrapper rather than by this matrix, so widening what he can SEE carries no write
+risk whatsoever. The spec's original "Dashboard + Item Tracker" had already been widened
+once by B1; this widens it again, on the same reasoning and with the same safety.
+
+`admin` and `import` are deliberately still absent. They are operators' tools — user
+accounts, stage configuration, loading a spreadsheet — rather than things to look at, and
+read-only access to a workflow is a screen that cannot do the thing it exists for.
+
+**G2 IS REVERSED, NOT WIDENED.** G2 let him mark his OWN tasks done, so that a scorecard
+read aloud in a meeting did not omit the most senior person in the room. He now delegates
+to anyone and nobody delegates to him, so he will not appear on the scorecard as an
+assignee at all. That consequence was stated before this was built and accepted: the
+scorecard measures the people work flows TO, which is what it was always for, and the
+reason it needed him on it has gone rather than been ignored.
+
+**What the audit wrapper now permits, and nothing else.** Still `delegation_task` only.
+Insert, where `assigned_to` is not the actor — he cannot author his own accountability,
+which is the half of G2 that survives. Update, where either the stored `assigned_to` is the
+actor (the old self-write, kept for rows that predate this and unreachable for new ones) or
+the stored `assigned_by` is the actor, in which case he may change the task, the date, the
+level and cancel it.
+
+The two field lists are the point. An assignee reports progress and cannot move the
+goalposts. A delegator owns what the task is and when it is due and does NOT report on it —
+`completed_at` and `blocker_note` are absent from the delegator list, so the one person who
+cannot be overruled also cannot mark somebody else's work done. `assigned_to` is in neither
+list, so no OWNER write can move a task to a different person; reassignment stays an ADMIN
+action.
+
+**"Nobody delegates to an owner" is enforced in three places, and that is deliberate.** The
+delegation module reports it so the form can say so; the assignable-people list stops
+offering him, so the question is never asked with a wrong answer in it; and a DATABASE
+TRIGGER refuses it outright. The trigger is what makes it true for psql, an import script
+and a screen that has not been written yet — non-negotiable 4's whole argument. It fires on
+INSERT and on UPDATE OF `assigned_to`, because reassignment is the back door a create-only
+check would have left standing, and a test proves both.
+
+It is a trigger rather than a CHECK because the answer lives in another table: the task
+stores a user id and the role is on `app_user`. Denormalising the role onto the task would
+create a second copy that goes stale the day somebody's role changes — the failure I7
+removed `design.die_id` over.
+
+The rule is about the ROLE and not about Amit. An owner who can be assigned work from a
+form is an org chart that anybody with the delegation screen can rewrite upwards.
+

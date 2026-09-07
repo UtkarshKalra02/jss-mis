@@ -1,5 +1,6 @@
 import { and, asc, count, desc, eq, isNull, ne, sql } from "drizzle-orm";
 
+import type { Role } from "@/auth/roles";
 import { SYSTEM_USER_ID, type Tx } from "@/db/audit";
 import { db } from "@/db";
 import { appUser, delegationTask } from "@/db/schema";
@@ -155,6 +156,11 @@ export async function scorecard(): Promise<ScorecardRow[]> {
  * machine account, and offering it in a "who is this for?" list invites
  * somebody to delegate a task to nobody. Inactive accounts are excluded too —
  * a task assigned to somebody who cannot sign in is a task nobody will do.
+ *
+ * OWNER is excluded since J26: nobody delegates upwards, so offering him in the
+ * list is offering a choice that the action, the audit wrapper and a database
+ * trigger will all refuse. The rule is enforced in those three places; this is
+ * only what stops the form asking a question with a wrong answer in it.
  */
 export type Assignee = { id: string; name: string; username: string; role: string };
 
@@ -168,7 +174,12 @@ export async function assignableUsers(): Promise<Assignee[]> {
     })
     .from(appUser)
     .where(
-      and(ne(appUser.id, SYSTEM_USER_ID), eq(appUser.isActive, true), isNull(appUser.deletedAt)),
+      and(
+        ne(appUser.id, SYSTEM_USER_ID),
+        ne(appUser.role, "OWNER"),
+        eq(appUser.isActive, true),
+        isNull(appUser.deletedAt),
+      ),
     )
     .orderBy(asc(appUser.name));
 }
@@ -231,3 +242,15 @@ export async function recentlyDelegatedBy(userId: string): Promise<TaskRow[]> {
     .orderBy(desc(vDelegationStatus.createdAt))
     .limit(50);
 }
+
+/** The role of the person a task is about to be assigned to (J26). */
+export async function delegateTargetRole(userId: string): Promise<Role | null> {
+  const [row] = await db
+    .select({ role: appUser.role })
+    .from(appUser)
+    .where(and(eq(appUser.id, userId), isNull(appUser.deletedAt)))
+    .limit(1);
+
+  return row?.role ?? null;
+}
+

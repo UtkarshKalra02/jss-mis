@@ -17,10 +17,10 @@
  * read, OWNER and FLOOR get nothing.
  *
  * OWNER is read-only EVERYWHERE (decision B2), with exactly one documented
- * exception: `delegation` (decision G2), so Amit can mark his own delegated
- * tasks done and therefore appear on the scorecard. That grant is what lets him
- * REACH the screen; what he may actually write is decided by the audit wrapper
- * and is much narrower than the grant — three columns, on rows assigned to him.
+ * exception: `delegation`. G2 granted that so Amit could mark his own tasks
+ * done; J26 turned it round — he DELEGATES, and nobody may delegate to him.
+ * That grant is what lets him REACH the screen; what he may actually write is
+ * decided by the audit wrapper and is much narrower than the grant.
  *
  * Enforcement is not here in either case. The hard check is inside the audit
  * wrapper, so a future screen that forgets to call assertCan() still cannot let
@@ -221,15 +221,39 @@ export const ACCESS: Matrix = {
    * This entry exists so he can reach My Tasks. The wrapper is what decides
    * what he can do once he is there.
    */
+  /**
+   * Amit. Read on EVERY operational screen since J26 — he runs the business and
+   * could not see its purchase orders, dispatches or invoices, which made the
+   * role an ornament. Still deny-write everywhere (B2), enforced in the audit
+   * wrapper rather than by this matrix, so widening what he can SEE carries no
+   * write risk at all.
+   *
+   * `admin` and `import` are deliberately absent. They are operators' tools —
+   * user accounts, stage configuration, loading a spreadsheet — rather than
+   * anything to look at, and read-only access to a workflow is a screen that
+   * cannot do the thing it exists for.
+   */
   OWNER: {
     dashboard: "read",
+    enquiry: "read",
+    quotation: "read",
+    purchase_order: "read",
+    design: "read",
+    tooling: "read",
     item_tracker: "read",
+    job_planning: "read",
     job_card: "read",
+    press_run: "read",
+    stage_update: "read",
+    dispatch: "read",
+    invoice: "read",
+    receipt: "read",
     ar_ledger: "read", // B1 — section 6.10 lists OWNER
     reports: "read", // B1
-    press_run: "read",
-    tooling: "read",
-    delegation: "write", // G2
+    client: "read",
+
+    /** J26 widened this from G2's narrow self-write. See the audit wrapper. */
+    delegation: "write",
     delegation_scorecard: "read",
   },
 };
@@ -250,7 +274,7 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   PLANNER: "Job planning, stage updates and dispatch.",
   ACCOUNTS: "Invoices, receipts, AR ledger and dispatch.",
   FLOOR: "Stage updates only, on a phone.",
-  OWNER: "Read-only across dashboard, tracker, AR and reports.",
+  OWNER: "Sees everything, changes nothing — and delegates.",
 };
 
 /** Where each role lands after logging in. */

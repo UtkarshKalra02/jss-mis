@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assigneeStatuses,
+  canDelegateAtAll,
   canDelegateTo,
   canReassign,
   canSetStatus,
@@ -130,21 +131,39 @@ describe("reassignment (G4)", () => {
 });
 
 describe("who may delegate", () => {
-  it("lets ADMIN delegate to anyone", () => {
-    expect(canDelegateTo(delegator, PREETI)).toBe(true);
-    expect(canDelegateTo(delegator, AMIT)).toBe(true);
+  const planner = (id: string) => ({ id, role: "PLANNER" as const });
+  const asOwner = (id: string) => ({ id, role: "OWNER" as const });
+
+  it("lets ADMIN delegate to anyone who is not an owner", () => {
+    expect(canDelegateTo(delegator, planner(PREETI))).toBe(true);
+    expect(canDelegateTo(delegator, planner(DEEPAK))).toBe(true);
   });
 
   it("lets a non-admin delegate only to themselves", () => {
-    expect(canDelegateTo(assignee, PREETI)).toBe(true);
-    expect(canDelegateTo(assignee, DEEPAK)).toBe(false);
+    expect(canDelegateTo(assignee, planner(PREETI))).toBe(true);
+    expect(canDelegateTo(assignee, planner(DEEPAK))).toBe(false);
   });
 
-  it("lets OWNER delegate to nobody, including himself", () => {
-    // The audit wrapper refuses an OWNER insert outright (G2). Reported here
-    // too, so the screen can say so rather than failing on submit.
-    expect(canDelegateTo(owner, AMIT)).toBe(false);
-    expect(canDelegateTo(owner, PREETI)).toBe(false);
+  it("lets OWNER delegate to anyone else (J26)", () => {
+    // The half J26 added: he is the person work flows FROM.
+    expect(canDelegateTo(owner, planner(PREETI))).toBe(true);
+    expect(canDelegateTo(owner, planner(DEEPAK))).toBe(true);
+  });
+
+  it("REFUSES delegating to an owner, whoever is asking", () => {
+    // The rule is about the role, not about Amit. An owner who can be assigned
+    // work from a form is an org chart anybody can rewrite upwards.
+    expect(canDelegateTo(delegator, asOwner(AMIT))).toBe(false); // even ADMIN
+    expect(canDelegateTo(assignee, asOwner(AMIT))).toBe(false);
+    expect(canDelegateTo(owner, asOwner(AMIT))).toBe(false); // not even himself
+  });
+
+  it("still lets an owner raise tasks at all", () => {
+    // canDelegateAtAll cannot be written as "can delegate to myself" any more,
+    // because the owner is exactly the person who cannot.
+    expect(canDelegateAtAll(owner)).toBe(true);
+    expect(canDelegateAtAll(delegator)).toBe(true);
+    expect(canDelegateAtAll(assignee)).toBe(true);
   });
 });
 

@@ -13,20 +13,20 @@ import {
 } from "@/db/audit";
 import { client, delegationTask } from "@/db/schema";
 
-import { inRollback, uniq } from "./helpers";
+import { expectFailure, inRollback, uniq } from "./helpers";
 
 /**
- * THE ONE EXCEPTION TO B2 — decision G2.
+ * THE ONE EXCEPTION TO B2 — decisions G2 and J26.
  *
- * OWNER is globally deny-write, enforced in the audit wrapper. Amit is OWNER
- * and belongs on the delegation scorecard, which means he must be able to mark
- * his own tasks done. The exception granted is deliberately tiny: UPDATE only,
- * on delegation_task only, on rows already assigned to him, touching only
- * status / completed_at / blocker_note.
+ * OWNER is globally deny-write, enforced in the audit wrapper. G2 granted a tiny
+ * exception so Amit could mark his OWN tasks done. J26 turned it round: he
+ * delegates to anyone, nobody delegates to him, and he owns what he asked for
+ * rather than reporting on it.
  *
- * THIS FILE IS WHAT MAKES THAT NARROW IN FACT RATHER THAN IN INTENT. Widening
- * SELF_WRITABLE_FIELDS is a two-word edit that will look innocuous a year from
- * now; every negative test below is here so that edit fails loudly instead.
+ * THIS FILE IS WHAT MAKES THAT NARROW IN FACT RATHER THAN IN INTENT. Adding a
+ * word to SELF_WRITABLE_FIELDS or DELEGATOR_WRITABLE_FIELDS is an edit that will
+ * look innocuous a year from now; every negative test below is here so that edit
+ * fails loudly instead.
  */
 
 async function makeUser(tx: Tx, role: "OWNER" | "ADMIN" | "PLANNER"): Promise<string> {
@@ -53,6 +53,25 @@ async function taskFor(tx: Tx, assignedTo: string, assignedBy: string) {
   );
 }
 
+/**
+ * A task assigned TO the owner — impossible to create since J26, so the trigger
+ * is dropped for the length of the savepoint.
+ *
+ * This is not a way round the rule, it is the only way to build a row that
+ * PREDATES it. The self-write branch in the audit wrapper exists for exactly
+ * those rows, and a branch with no test is a branch that quietly rots.
+ */
+async function legacyTaskForOwner(tx: Tx, ownerId: string, byId: string) {
+  await tx.execute(
+    sql`alter table delegation_task disable trigger delegation_task_no_owner_assignee_trg`,
+  );
+  const row = await taskFor(tx, ownerId, byId);
+  await tx.execute(
+    sql`alter table delegation_task enable trigger delegation_task_no_owner_assignee_trg`,
+  );
+  return row;
+}
+
 /** Runs `fn` in a savepoint, reporting whether it threw ReadOnlyRoleError. */
 async function expectDenied(tx: Tx, fn: (sp: Tx) => Promise<unknown>) {
   try {
@@ -68,191 +87,46 @@ async function expectDenied(tx: Tx, fn: (sp: Tx) => Promise<unknown>) {
   }
 }
 
-describe("OWNER may update their OWN delegation task (G2)", () => {
-  it("marks it done, with a completion date", async () => {
+describe("an OWNER delegates (J26)", () => {
+  it("raises a task for somebody else", async () => {
+    // The half J26 added. He is the person work flows FROM.
     await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const boss = await makeUser(tx, "ADMIN");
-      const owner: Actor = { id: amit, role: "OWNER" };
+      const owner = await makeUser(tx, "OWNER");
+      const planner = await makeUser(tx, "PLANNER");
+      const actor: Actor = { id: owner, role: "OWNER" };
 
-      const task = await taskFor(tx, amit, boss);
-
-      await auditedUpdate(
-        owner,
+      const row = await auditedInsert(
+        actor,
         delegationTask,
-        task.id,
-        { status: "Done", completedAt: "2029-12-30" },
+        {
+          assignedTo: planner,
+          assignedBy: owner,
+          task: "Re-quote the Nature carton",
+          expectedDate: "2030-01-01",
+        },
         tx,
       );
 
-      const [row] = await tx
-        .select()
-        .from(delegationTask)
-        .where(eq(delegationTask.id, task.id));
-
-      expect(row!.status).toBe("Done");
-      expect(row!.completedAt).toBe("2029-12-30");
+      expect(row.assignedTo).toBe(planner);
+      expect(row.assignedBy).toBe(owner);
     });
   });
 
-  it("records a blocker note", async () => {
+  it("cannot raise one for HIMSELF", async () => {
+    // The half of G2 that J26 keeps: the one person who cannot be overruled
+    // does not get to author his own accountability.
     await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const boss = await makeUser(tx, "ADMIN");
-      const owner: Actor = { id: amit, role: "OWNER" };
-      const task = await taskFor(tx, amit, boss);
-
-      await auditedUpdate(
-        owner,
-        delegationTask,
-        task.id,
-        { status: "Blocked", blockerNote: "Waiting on the bank" },
-        tx,
-      );
-
-      const [row] = await tx
-        .select()
-        .from(delegationTask)
-        .where(eq(delegationTask.id, task.id));
-      expect(row!.status).toBe("Blocked");
-    });
-  });
-
-  it("still writes an audit row, attributed to him", async () => {
-    // The exception permits the write; it does not exempt it from the log.
-    await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const boss = await makeUser(tx, "ADMIN");
-      const owner: Actor = { id: amit, role: "OWNER" };
-      const task = await taskFor(tx, amit, boss);
-
-      await auditedUpdate(owner, delegationTask, task.id, { status: "In Progress" }, tx);
-
-      const rows = (
-        await tx.execute(sql`
-          select changed_by::text as changed_by
-          from audit_log
-          where table_name = 'delegation_task' and record_id = ${task.id}
-            and action = 'UPDATE'
-        `)
-      ).rows as { changed_by: string }[];
-
-      expect(rows).toHaveLength(1);
-      expect(rows[0]!.changed_by).toBe(amit);
-    });
-  });
-});
-
-describe("OWNER may do nothing else — the boundary of G2", () => {
-  it("cannot change the EXPECTED DATE, even on his own task", async () => {
-    // The whole point. The one person nobody overrules still cannot move his
-    // own deadline, so his score means what everybody else's does.
-    await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const boss = await makeUser(tx, "ADMIN");
-      const owner: Actor = { id: amit, role: "OWNER" };
-      const task = await taskFor(tx, amit, boss);
-
-      const result = await expectDenied(tx, (sp) =>
-        auditedUpdate(owner, delegationTask, task.id, { expectedDate: "2031-01-01" }, sp),
-      );
-
-      expect(result.denied).toBe(true);
-    });
-  });
-
-  it("cannot reword his own task", async () => {
-    await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const boss = await makeUser(tx, "ADMIN");
-      const owner: Actor = { id: amit, role: "OWNER" };
-      const task = await taskFor(tx, amit, boss);
-
-      const result = await expectDenied(tx, (sp) =>
-        auditedUpdate(owner, delegationTask, task.id, { task: "Something easier" }, sp),
-      );
-
-      expect(result.denied).toBe(true);
-    });
-  });
-
-  it("cannot hand his own task to somebody else", async () => {
-    await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const boss = await makeUser(tx, "ADMIN");
-      const owner: Actor = { id: amit, role: "OWNER" };
-      const task = await taskFor(tx, amit, boss);
-
-      const result = await expectDenied(tx, (sp) =>
-        auditedUpdate(owner, delegationTask, task.id, { assignedTo: boss }, sp),
-      );
-
-      expect(result.denied).toBe(true);
-    });
-  });
-
-  it("cannot sneak a forbidden field in alongside an allowed one", async () => {
-    // A per-field check that passed on ANY allowed field would let this
-    // through. Every key has to be on the list, not just one of them.
-    await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const boss = await makeUser(tx, "ADMIN");
-      const owner: Actor = { id: amit, role: "OWNER" };
-      const task = await taskFor(tx, amit, boss);
-
-      const result = await expectDenied(tx, (sp) =>
-        auditedUpdate(
-          owner,
-          delegationTask,
-          task.id,
-          { status: "In Progress", expectedDate: "2031-01-01" },
-          sp,
-        ),
-      );
-
-      expect(result.denied).toBe(true);
-
-      const [row] = await tx
-        .select()
-        .from(delegationTask)
-        .where(eq(delegationTask.id, task.id));
-      // And nothing landed — not even the half that was allowed.
-      expect(row!.status).toBe("Not Started");
-      expect(row!.expectedDate).toBe("2030-01-01");
-    });
-  });
-
-  it("cannot touch SOMEBODY ELSE'S delegation task", async () => {
-    await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const preeti = await makeUser(tx, "PLANNER");
-      const boss = await makeUser(tx, "ADMIN");
-      const owner: Actor = { id: amit, role: "OWNER" };
-
-      const task = await taskFor(tx, preeti, boss);
-
-      const result = await expectDenied(tx, (sp) =>
-        auditedUpdate(owner, delegationTask, task.id, { status: "Done" }, sp),
-      );
-
-      expect(result.denied).toBe(true);
-    });
-  });
-
-  it("cannot CREATE a delegation task, even for himself", async () => {
-    // The exception is an UPDATE. He does not author his own accountability.
-    await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const owner: Actor = { id: amit, role: "OWNER" };
+      const owner = await makeUser(tx, "OWNER");
+      const actor: Actor = { id: owner, role: "OWNER" };
 
       const result = await expectDenied(tx, (sp) =>
         auditedInsert(
-          owner,
+          actor,
           delegationTask,
           {
-            assignedTo: amit,
-            assignedBy: amit,
-            task: "A task I set myself",
+            assignedTo: owner,
+            assignedBy: owner,
+            task: "Mark my own homework",
             expectedDate: "2030-01-01",
           },
           sp,
@@ -263,48 +137,221 @@ describe("OWNER may do nothing else — the boundary of G2", () => {
     });
   });
 
-  it("cannot delete or restore a delegation task", async () => {
+  it("cannot insert into any OTHER table, which is still all of them", async () => {
     await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const boss = await makeUser(tx, "ADMIN");
-      const owner: Actor = { id: amit, role: "OWNER" };
-      const task = await taskFor(tx, amit, boss);
+      const owner = await makeUser(tx, "OWNER");
+      const actor: Actor = { id: owner, role: "OWNER" };
 
-      const deleted = await expectDenied(tx, (sp) =>
-        auditedSoftDelete(owner, delegationTask, task.id, sp),
+      const result = await expectDenied(tx, (sp) =>
+        auditedInsert(actor, client, { code: uniq("OW"), name: "Nope" }, sp),
       );
-      expect(deleted.denied).toBe(true);
 
-      const restored = await expectDenied(tx, (sp) =>
-        auditedRestore(owner, delegationTask, task.id, sp),
-      );
-      expect(restored.denied).toBe(true);
+      expect(result.denied).toBe(true);
+    });
+  });
+});
+
+describe("nobody delegates to an OWNER (J26)", () => {
+  it("is refused by the DATABASE, not merely by the form", async () => {
+    // Even for SYSTEM_ACTOR, which is an ADMIN and bypasses every application
+    // rule. That is the whole point of putting it in a trigger
+    // (non-negotiable 4): the form's rule is a rule until somebody writes a
+    // script.
+    await inRollback(async (tx) => {
+      const owner = await makeUser(tx, "OWNER");
+      const admin = await makeUser(tx, "ADMIN");
+
+      const result = await expectFailure(tx, (sp) => taskFor(sp, owner, admin));
+
+      expect(result.threw).toBe(true);
+      expect(result.message).toContain("delegation runs downwards");
     });
   });
 
-  it("cannot write ANY OTHER TABLE — B2 is otherwise untouched", async () => {
+  it("cannot be reached by REASSIGNING an existing task onto him", async () => {
+    // The back door a create-only check would have left standing.
     await inRollback(async (tx) => {
-      const amit = await makeUser(tx, "OWNER");
-      const owner: Actor = { id: amit, role: "OWNER" };
+      const owner = await makeUser(tx, "OWNER");
+      const admin = await makeUser(tx, "ADMIN");
+      const planner = await makeUser(tx, "PLANNER");
 
-      const inserted = await expectDenied(tx, (sp) =>
-        auditedInsert(owner, client, { code: uniq("O"), name: "Owner Co" }, sp),
+      const task = await taskFor(tx, planner, admin);
+
+      const result = await expectFailure(tx, (sp) =>
+        auditedUpdate(SYSTEM_ACTOR, delegationTask, task.id, { assignedTo: owner }, sp),
       );
-      expect(inserted.denied).toBe(true);
 
-      // And an UPDATE on another table, which is the path carrying the
-      // exception — the table check has to hold, not just the role check.
-      const existing = await auditedInsert(
-        SYSTEM_ACTOR,
-        client,
-        { code: uniq("O"), name: "Owner Co 2" },
+      expect(result.threw).toBe(true);
+      expect(result.message).toContain("delegation runs downwards");
+    });
+  });
+});
+
+describe("an OWNER owns what he asked for, and does not report on it", () => {
+  it("changes the task, the date and the level on a task HE raised", async () => {
+    await inRollback(async (tx) => {
+      const owner = await makeUser(tx, "OWNER");
+      const planner = await makeUser(tx, "PLANNER");
+      const actor: Actor = { id: owner, role: "OWNER" };
+
+      const task = await taskFor(tx, planner, owner);
+
+      await auditedUpdate(
+        actor,
+        delegationTask,
+        task.id,
+        { task: "Re-quote it by Friday", expectedDate: "2030-02-01", level: "L3" },
         tx,
       );
 
-      const updated = await expectDenied(tx, (sp) =>
-        auditedUpdate(owner, client, existing.id, { name: "Renamed by owner" }, sp),
+      const [row] = await tx.select().from(delegationTask).where(eq(delegationTask.id, task.id));
+      expect(row!.task).toBe("Re-quote it by Friday");
+      expect(row!.expectedDate).toBe("2030-02-01");
+      expect(row!.level).toBe("L3");
+    });
+  });
+
+  it("cancels a task he raised", async () => {
+    // Cancelling is a delegator action, never an assignee one (G3).
+    await inRollback(async (tx) => {
+      const owner = await makeUser(tx, "OWNER");
+      const planner = await makeUser(tx, "PLANNER");
+      const actor: Actor = { id: owner, role: "OWNER" };
+
+      const task = await taskFor(tx, planner, owner);
+      await auditedUpdate(actor, delegationTask, task.id, { status: "Cancelled" }, tx);
+
+      const [row] = await tx.select().from(delegationTask).where(eq(delegationTask.id, task.id));
+      expect(row!.status).toBe("Cancelled");
+    });
+  });
+
+  it("cannot mark somebody else's work DONE on his behalf", async () => {
+    // completed_at and blocker_note belong to the person doing the work. A
+    // delegator who can close his own task is a scorecard that measures nothing.
+    await inRollback(async (tx) => {
+      const owner = await makeUser(tx, "OWNER");
+      const planner = await makeUser(tx, "PLANNER");
+      const actor: Actor = { id: owner, role: "OWNER" };
+
+      const task = await taskFor(tx, planner, owner);
+
+      const result = await expectDenied(tx, (sp) =>
+        auditedUpdate(actor, delegationTask, task.id, { completedAt: "2030-01-02" }, sp),
       );
-      expect(updated.denied).toBe(true);
+
+      expect(result.denied).toBe(true);
+    });
+  });
+
+  it("cannot hand a task he raised to somebody else", async () => {
+    // assigned_to is in NEITHER list. Reassignment stays an ADMIN action.
+    await inRollback(async (tx) => {
+      const owner = await makeUser(tx, "OWNER");
+      const planner = await makeUser(tx, "PLANNER");
+      const other = await makeUser(tx, "PLANNER");
+      const actor: Actor = { id: owner, role: "OWNER" };
+
+      const task = await taskFor(tx, planner, owner);
+
+      const result = await expectDenied(tx, (sp) =>
+        auditedUpdate(actor, delegationTask, task.id, { assignedTo: other }, sp),
+      );
+
+      expect(result.denied).toBe(true);
+    });
+  });
+
+  it("cannot touch a task somebody ELSE raised for somebody else", async () => {
+    await inRollback(async (tx) => {
+      const owner = await makeUser(tx, "OWNER");
+      const admin = await makeUser(tx, "ADMIN");
+      const planner = await makeUser(tx, "PLANNER");
+      const actor: Actor = { id: owner, role: "OWNER" };
+
+      const task = await taskFor(tx, planner, admin);
+
+      const result = await expectDenied(tx, (sp) =>
+        auditedUpdate(actor, delegationTask, task.id, { status: "Cancelled" }, sp),
+      );
+
+      expect(result.denied).toBe(true);
+    });
+  });
+
+  it("cannot sneak a forbidden field in alongside an allowed one", async () => {
+    // Every field or none. A single disallowed key refuses the whole update
+    // rather than silently dropping it.
+    await inRollback(async (tx) => {
+      const owner = await makeUser(tx, "OWNER");
+      const planner = await makeUser(tx, "PLANNER");
+      const actor: Actor = { id: owner, role: "OWNER" };
+
+      const task = await taskFor(tx, planner, owner);
+
+      const result = await expectDenied(tx, (sp) =>
+        auditedUpdate(
+          actor,
+          delegationTask,
+          task.id,
+          { task: "Fine", blockerNote: "not fine" },
+          sp,
+        ),
+      );
+
+      expect(result.denied).toBe(true);
+    });
+  });
+
+  it("cannot delete or restore a delegation task", async () => {
+    // A delegated task is cancelled by status, not deleted.
+    await inRollback(async (tx) => {
+      const owner = await makeUser(tx, "OWNER");
+      const planner = await makeUser(tx, "PLANNER");
+      const actor: Actor = { id: owner, role: "OWNER" };
+
+      const task = await taskFor(tx, planner, owner);
+
+      expect(
+        (await expectDenied(tx, (sp) => auditedSoftDelete(actor, delegationTask, task.id, sp)))
+          .denied,
+      ).toBe(true);
+
+      expect(
+        (await expectDenied(tx, (sp) => auditedRestore(actor, delegationTask, task.id, sp))).denied,
+      ).toBe(true);
+    });
+  });
+});
+
+describe("a task assigned to him from BEFORE J26 still works", () => {
+  it("lets him report on it, and still not move the goalposts", async () => {
+    // The self-write branch G2 added. No new row can reach this state, but the
+    // ones already in the database must not become unusable.
+    await inRollback(async (tx) => {
+      const owner = await makeUser(tx, "OWNER");
+      const admin = await makeUser(tx, "ADMIN");
+      const actor: Actor = { id: owner, role: "OWNER" };
+
+      const task = await legacyTaskForOwner(tx, owner, admin);
+
+      // Both together: a check constraint refuses Done with no completion date.
+      await auditedUpdate(
+        actor,
+        delegationTask,
+        task.id,
+        { status: "Done", completedAt: "2030-01-02" },
+        tx,
+      );
+
+      const [row] = await tx.select().from(delegationTask).where(eq(delegationTask.id, task.id));
+      expect(row!.status).toBe("Done");
+
+      // And still cannot move his own deadline.
+      const result = await expectDenied(tx, (sp) =>
+        auditedUpdate(actor, delegationTask, task.id, { expectedDate: "2031-01-01" }, sp),
+      );
+      expect(result.denied).toBe(true);
     });
   });
 });

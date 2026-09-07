@@ -226,6 +226,12 @@ const SCHEMA_EXPECTATIONS: {
     sql: sql`select 1 from information_schema.tables where table_name = 'design_process'`,
   },
   {
+    what: "delegation refuses an owner assignee",
+    since: "0032_no_delegation_to_owner",
+    sql: sql`select 1 from pg_trigger
+             where tgname = 'delegation_task_no_owner_assignee_trg'`,
+  },
+  {
     what: "job_card_item, and job_card.po_item_id gone",
     since: "0031_job_card_covers_many_items",
     sql: sql`select 1 from information_schema.tables where table_name = 'job_card_item'`,

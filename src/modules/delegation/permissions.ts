@@ -63,6 +63,9 @@ export const isDelegator = (viewer: Viewer, task: TaskSubject) =>
 /* Creating                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/** Enough of the person being delegated TO to apply the rules below. */
+export type DelegateTarget = { id: string; role: Role };
+
 /**
  * Who a person may delegate TO.
  *
@@ -70,20 +73,42 @@ export const isDelegator = (viewer: Viewer, task: TaskSubject) =>
  * which makes the module usable as a personal commitment log without letting
  * the org chart be rewritten from a form.
  *
- * OWNER may delegate to nobody at all, including himself. The audit wrapper
- * refuses an OWNER insert outright (G2) — the exception granted there is an
- * UPDATE on rows already assigned to him, and it stops well short of letting
- * him author his own accountability. Reported here as well as enforced there,
- * so the screen can say so rather than showing a form that fails on submit.
+ * OWNER DELEGATES TO ANYONE AND RECEIVES FROM NOBODY (J26). Both halves are
+ * deliberate and neither works without the other.
+ *
+ * G2 had it the other way round: he could not create a task at all, and the one
+ * write he was granted was marking his OWN tasks done, so that a scorecard read
+ * aloud in a meeting did not omit the most senior person in the room. J26
+ * reversed that. He is the person work flows FROM, so the scorecard now
+ * measures the people he delegates to rather than him — which is what it was
+ * always for, and is why he no longer needs to be on it.
+ *
+ * NOBODY may delegate to an OWNER, not even an ADMIN and not the owner himself.
+ * The rule is about the ROLE, not about Amit: an owner who can be assigned work
+ * from a form is an org chart anybody with the delegation screen can rewrite
+ * upwards. It is enforced again in the audit wrapper and again by a database
+ * trigger, because a rule that only the form knows is a rule until somebody
+ * writes a script.
  */
-export function canDelegateTo(viewer: Viewer, targetUserId: string): boolean {
-  if (viewer.role === "OWNER") return false;
+export function canDelegateTo(viewer: Viewer, target: DelegateTarget): boolean {
+  // First, and regardless of who is asking.
+  if (target.role === "OWNER") return false;
+
+  if (viewer.role === "OWNER") return true;
   if (viewer.role === "ADMIN") return true;
-  return viewer.id === targetUserId;
+  return viewer.id === target.id;
 }
 
+/**
+ * Whether this person can raise a task at all.
+ *
+ * An OWNER can, even though he can never be his own target — which is exactly
+ * why this cannot be written as "can delegate to myself".
+ */
 export const canDelegateAtAll = (viewer: Viewer) =>
-  canDelegateTo(viewer, viewer.id) || viewer.role === "ADMIN";
+  viewer.role === "OWNER" ||
+  viewer.role === "ADMIN" ||
+  canDelegateTo(viewer, { id: viewer.id, role: viewer.role });
 
 /* -------------------------------------------------------------------------- */
 /* Updating                                                                    */

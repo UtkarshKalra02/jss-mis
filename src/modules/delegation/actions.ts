@@ -19,7 +19,7 @@ import {
   type TaskSubject,
   type Viewer,
 } from "./permissions";
-import { getTaskRecord } from "./queries";
+import { delegateTargetRole, getTaskRecord } from "./queries";
 import {
   createTaskSchema,
   definitionPatchSchema,
@@ -146,10 +146,20 @@ export async function createTaskAction(
     if (!parsed.success) return fail(parsed.error.issues[0]!.message);
     const v = parsed.data;
 
-    if (!canDelegateTo(viewer, v.assignedTo)) {
+    /*
+     * The target's ROLE decides this now, not just their id (J26): nobody
+     * delegates to an OWNER, whoever is asking. Read from the database rather
+     * than taken from the form, for the reason the audit wrapper reads
+     * `assigned_to` from the stored row — a value the caller supplied is a
+     * value the caller can choose.
+     */
+    const targetRole = await delegateTargetRole(v.assignedTo);
+    if (!targetRole) return fail("That person is no longer in the system.");
+
+    if (!canDelegateTo(viewer, { id: v.assignedTo, role: targetRole })) {
       return fail(
-        viewer.role === "OWNER"
-          ? "Owners cannot create delegated tasks. Ask an admin to delegate it to you."
+        targetRole === "OWNER"
+          ? "Tasks cannot be delegated to the owner. Delegation runs downwards."
           : "You can only delegate tasks to yourself. An admin can delegate to anyone.",
       );
     }

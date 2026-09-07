@@ -57,12 +57,21 @@ export class ReadOnlyRoleError extends Error {
 /* -------------------------------------------------------------------------- */
 
 /**
- * THE SINGLE NARROW EXCEPTION TO "OWNER NEVER WRITES".
+ * THE ONE EXCEPTION TO "OWNER NEVER WRITES" — delegation, and only delegation.
  *
- * Amit is OWNER and belongs on the delegation scorecard, which means he has to
- * be able to mark his own tasks done. A scorecard read aloud in a meeting that
- * omits the most senior person in the room is a political instrument rather
- * than a factual one.
+ * G2 granted it so Amit could mark his OWN tasks done and therefore appear on
+ * the scorecard. J26 turned it round: he is the person work flows FROM, so he
+ * DELEGATES to anyone and nobody delegates to him. The scorecard now measures
+ * the people he delegates to, which is what it was always for.
+ *
+ * Three shapes are permitted and nothing else:
+ *
+ *   1. CREATING a task for somebody else — never for himself, and never for
+ *      another OWNER;
+ *   2. changing what he asked for on a task HE delegated — the task text, the
+ *      date, the level, and cancelling it;
+ *   3. reporting on a task assigned to him, which survives only for rows that
+ *      predate J26, since no new one can be created.
  *
  * WHY IT LIVES HERE and not in the delegation module: B2 is enforced at this
  * choke point, so its exception has to be visible at the same choke point.
@@ -75,24 +84,34 @@ export class ReadOnlyRoleError extends Error {
  * one-person-one-identity in the audit log, which E11 already established this
  * system depends on.
  *
- * THE EXACT BOUNDARY, all four conditions required together:
+ * THE EXACT BOUNDARY. The table is `delegation_task` and nothing else, in every
+ * case. `auditedAppend`, `auditedSoftDelete` and `auditedRestore` still refuse
+ * an OWNER outright — a delegated task is cancelled by status, not deleted.
  *
- *   1. the table is delegation_task and nothing else;
- *   2. the operation is UPDATE — auditedInsert, auditedAppend,
- *      auditedSoftDelete and auditedRestore all still refuse an OWNER
- *      outright, so he can neither create a task, delete one, nor restore one;
- *   3. the row's STORED assigned_to is the actor. Read from the database
- *      inside the transaction, never claimed by the caller;
- *   4. every field being written is in SELF_WRITABLE_FIELDS.
+ * On INSERT: `assigned_to` must not be the actor. He cannot author his own
+ * accountability, which is the half of G2 that J26 keeps. That the target is
+ * not another OWNER is enforced by the delegation module and by a database
+ * trigger, not here — this file knows roles, not who holds them.
  *
- * What condition 4 buys is the point of the whole module: expected_date, task
- * and assigned_to are not on the list, so the one person who cannot be
- * overruled also cannot move his own deadline, reword his own task, or hand it
- * to somebody else. The score means something precisely because of that.
+ * On UPDATE, one of two things must hold, and the row is read from the DATABASE
+ * inside the transaction so ownership is verified rather than asserted:
+ *
+ *   - the stored `assigned_to` is the actor, and every field is in
+ *     SELF_WRITABLE_FIELDS; or
+ *   - the stored `assigned_by` is the actor, and every field is in
+ *     DELEGATOR_WRITABLE_FIELDS.
+ *
+ * WHAT THE TWO LISTS BUY IS THE POINT OF THE WHOLE MODULE. An assignee reports
+ * progress and cannot move the goalposts: `expected_date`, `task` and
+ * `assigned_to` are absent from the first. A delegator owns what the task is
+ * and when it is due but does not report on it: `completed_at` and
+ * `blocker_note` are absent from the second. Neither list contains
+ * `assigned_to`, so no OWNER write can move a task to a different person —
+ * reassignment stays an ADMIN action.
  *
  * tests/delegation-owner.test.ts pins every one of these in both directions.
- * The exception is narrow in FACT only for as long as those tests pass —
- * widening this list is a two-word edit that looks innocuous a year from now.
+ * These lists are narrow in FACT only for as long as those tests pass — adding
+ * a word to either is a change that looks innocuous a year from now.
  */
 const OWNER_SELF_WRITE_TABLE = "delegation_task";
 
@@ -100,6 +119,15 @@ const SELF_WRITABLE_FIELDS: ReadonlySet<string> = new Set([
   "status",
   "completedAt",
   "blockerNote",
+]);
+
+/** What the person who SET the task owns — mirrors DELEGATOR_FIELDS (G3). */
+const DELEGATOR_WRITABLE_FIELDS: ReadonlySet<string> = new Set([
+  "task",
+  "expectedDate",
+  "level",
+  // Cancelling is a delegator action, never an assignee one (G3).
+  "status",
 ]);
 
 /**
@@ -110,18 +138,40 @@ const SELF_WRITABLE_FIELDS: ReadonlySet<string> = new Set([
  * cannot smuggle `assignedTo` in with the values and have it believed, because
  * the value checked here was never supplied by the caller at all.
  */
-function isOwnerSelfWrite(
+function isOwnerDelegationUpdate(
   actor: Actor,
   table: PgTable,
   values: Record<string, unknown>,
   before: Record<string, unknown>,
 ): boolean {
   if (getTableName(table) !== OWNER_SELF_WRITE_TABLE) return false;
-  if (before.assignedTo !== actor.id) return false;
 
   // Every field, not merely one of them. A single disallowed key refuses the
   // whole update rather than silently dropping it.
-  return Object.keys(values).every((field) => SELF_WRITABLE_FIELDS.has(field));
+  const all = (allowed: ReadonlySet<string>) =>
+    Object.keys(values).every((field) => allowed.has(field));
+
+  if (before.assignedTo === actor.id) return all(SELF_WRITABLE_FIELDS);
+  if (before.assignedBy === actor.id) return all(DELEGATOR_WRITABLE_FIELDS);
+
+  return false;
+}
+
+/**
+ * Whether this insert is the sanctioned one: an OWNER raising a task for
+ * somebody else.
+ *
+ * `assigned_to` IS taken from the caller here, unavoidably — the row does not
+ * exist yet to read it from. What that buys an attacker is nothing: the only
+ * value worth forging is the actor's own id, and that is the one this refuses.
+ */
+function isOwnerDelegationInsert(
+  actor: Actor,
+  table: PgTable,
+  values: Record<string, unknown>,
+): boolean {
+  if (getTableName(table) !== OWNER_SELF_WRITE_TABLE) return false;
+  return values.assignedTo !== undefined && values.assignedTo !== actor.id;
 }
 
 export class RecordNotFoundError extends Error {
@@ -233,7 +283,14 @@ export async function auditedInsert<T extends AuditableTable>(
   values: InferInsertModel<T>,
   tx?: Runner,
 ): Promise<InferSelectModel<T>> {
-  assertCanWrite(actor);
+  // An OWNER may raise a delegated task for somebody else, and nothing else
+  // (J26). Every other insert by an OWNER is still refused here.
+  if (
+    actor.role !== "OWNER" ||
+    !isOwnerDelegationInsert(actor, table, values as Record<string, unknown>)
+  ) {
+    assertCanWrite(actor);
+  }
 
   return inTransaction(tx, async (r) => {
     const [row] = await generic(r)
@@ -323,7 +380,7 @@ export async function auditedUpdate<T extends AuditableTable>(
     // still throws — including expected_date on the very row they are allowed
     // to touch, which is what stops the one person nobody overrules from
     // moving his own deadline.
-    if (actor.role === "OWNER" && !isOwnerSelfWrite(actor, table, values, before)) {
+    if (actor.role === "OWNER" && !isOwnerDelegationUpdate(actor, table, values, before)) {
       throw new ReadOnlyRoleError(actor.role);
     }
 
