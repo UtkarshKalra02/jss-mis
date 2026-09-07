@@ -5,6 +5,7 @@ import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   releaseJobCardAction,
   updateJobCardPlanAction,
@@ -133,8 +134,9 @@ export function JobCardForm({
   pendingQty,
   card,
   machines,
-  runOptions,
-  runSelected,
+  fabricationOptions,
+  designSelected,
+  cardSelected,
   hasExistingCard,
   startOpen,
   gangedOn,
@@ -147,8 +149,12 @@ export function JobCardForm({
   card?: JobCardPlanValues;
   machines: MachineOption[];
   /** Run-scope fabrication options this design has — new die or old, etc. */
-  runOptions: FabricationOptionRow[];
-  runSelected: Map<string, Selection>;
+  /** The whole vocabulary. The card answers all of it now (J24). */
+  fabricationOptions: FabricationOptionRow[];
+  /** What the item's design says, where there is one. Defaults, not answers. */
+  designSelected: Map<string, Selection>;
+  /** What this card has already said. Wins over the design, per option. */
+  cardSelected: Map<string, Selection>;
   hasExistingCard?: boolean;
   /** True on /job-cards/new, where the whole page IS the form. */
   startOpen?: boolean;
@@ -186,9 +192,40 @@ export function JobCardForm({
    */
   const sheetOnRun = Boolean(gangedOn) || gang === "existing";
   const [gangRunId, setGangRunId] = useState("");
-  const [runValues, setRunValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(runOptions.map((o) => [o.id, runSelected.get(o.id)?.valueId ?? ""])),
+  /*
+   * The card's fabrication, seeded from whatever is already known: the card's
+   * own answer if it has one, otherwise the design's. The design is a DEFAULT
+   * here and nothing more — once this form is saved the card carries its own
+   * opinion of every option it rendered (J24).
+   */
+  const [fabTicked, setFabTicked] = useState<Set<string>>(
+    () =>
+      new Set(
+        fabricationOptions
+          .filter((o) => {
+            const card = cardSelected.get(o.id);
+            return card ? card.applies : designSelected.has(o.id);
+          })
+          .map((o) => o.id),
+      ),
   );
+
+  const [fabValues, setFabValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      fabricationOptions.map((o) => [
+        o.id,
+        cardSelected.get(o.id)?.valueId ?? designSelected.get(o.id)?.valueId ?? "",
+      ]),
+    ),
+  );
+
+  const toggleFab = (id: string) =>
+    setFabTicked((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   useEffect(() => {
     if (state.ok && state.redirectTo) router.push(state.redirectTo);
@@ -425,37 +462,100 @@ export function JobCardForm({
         </section>
 
         {/* ---------------------------------------------------------------- */}
-        {/* Run-scope fabrication answers                                     */}
+        {/* Fabrication — the whole block, answered on the card (J24)         */}
         {/* ---------------------------------------------------------------- */}
-        {runOptions.length > 0 ? (
+        {fabricationOptions.length > 0 ? (
           <section>
-            <h4 className="text-sm font-medium">This run</h4>
+            <h4 className="text-sm font-medium">Fabrication detail</h4>
             <p className="text-muted-foreground mt-1 text-[12px]">
-              The design says this job has these. Whether the tooling is new or old is a fact
-              about THIS run, so it is asked here rather than on the design.
+              What is done to the job after it comes off the press. Tick what this job needs
+              and answer it — this is the block the floor reads, and it is answered here
+              because most items have no design linked to them.
             </p>
-            <div className="mt-2 grid gap-4 sm:grid-cols-2">
-              {runOptions.map((option) => (
-                <label key={option.id} className="block">
-                  <span className="text-[13px] font-medium">{option.label}</span>
-                  <input type="hidden" name="fabricationOptionId" value={option.id} />
-                  <select
-                    name="fabricationValueId"
-                    value={runValues[option.id] ?? ""}
-                    onChange={(e) =>
-                      setRunValues((v) => ({ ...v, [option.id]: e.target.value }))
-                    }
-                    className={inputClass}
+
+            <div className="mt-3 space-y-2">
+              {fabricationOptions.map((option) => {
+                const ticked = fabTicked.has(option.id);
+                const fromDesign = designSelected.has(option.id);
+                const card = cardSelected.get(option.id);
+
+                /* Says where the line stands when the card disagrees with its
+                   design. Two places can answer this question — that was the
+                   trade accepted in J24 — so the screen has to say which one
+                   did, rather than one quietly winning. */
+                const differs = fromDesign !== ticked;
+
+                return (
+                  <div
+                    key={option.id}
+                    className={cn(
+                      "flex flex-wrap items-center gap-3 rounded-md border px-3 py-2",
+                      ticked ? "bg-muted/40" : "opacity-70",
+                    )}
                   >
-                    <option value="">Not answered yet</option>
-                    {option.values.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.value}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
+                    {/* Every rendered option is posted as "seen", ticked or
+                        not. Seen-and-unticked is what lets this card say a job
+                        does NOT have something its design does. */}
+                    <input type="hidden" name="fabricationSeenOptionId" value={option.id} />
+
+                    <label className="flex min-w-56 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={ticked}
+                        onChange={() => toggleFab(option.id)}
+                        className="accent-primary size-4"
+                      />
+                      <span className="text-[13px] font-medium">{option.label}</span>
+                    </label>
+
+                    {ticked ? (
+                      <>
+                        <input type="hidden" name="fabricationOptionId" value={option.id} />
+                        {option.values.length > 0 ? (
+                          <select
+                            name="fabricationValueId"
+                            value={fabValues[option.id] ?? ""}
+                            onChange={(e) =>
+                              setFabValues((v) => ({ ...v, [option.id]: e.target.value }))
+                            }
+                            aria-label={`${option.label} — which`}
+                            className="border-input bg-background h-9 rounded-md border px-2 text-[13px]"
+                          >
+                            <option value="">Not answered yet</option>
+                            {option.values.map((v) => (
+                              <option key={v.id} value={v.id}>
+                                {v.value}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-muted-foreground text-[12px]">
+                            Nothing more to say
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      /* An unticked option still posts nothing but its seen id,
+                         so no value is carried on a process the job does not
+                         have — turning it back on must not resurrect an old
+                         answer (F17). */
+                      <span className="text-muted-foreground text-[12px]">Not on this job</span>
+                    )}
+
+                    <span className="ml-auto text-[11px]">
+                      {differs ? (
+                        <span className="text-at-risk">
+                          {ticked ? "added on this card" : "removed on this card"}
+                        </span>
+                      ) : fromDesign ? (
+                        <span className="text-muted-foreground">from the design</span>
+                      ) : card ? (
+                        <span className="text-muted-foreground">set on this card</span>
+                      ) : null}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </section>
         ) : null}

@@ -10,6 +10,8 @@ import { jobCard, pressRun } from "@/db/schema";
 import { actionError } from "@/lib/action-error";
 import { allocateNumber } from "@/lib/numbering";
 
+import { jobCardItemIds } from "@/modules/job-cards/queries";
+
 import { getJobCard, getPressRun, getRunMembers } from "./queries";
 import { parseRunExecution, parseRunForm, parseRunSheet } from "./validation";
 
@@ -75,9 +77,10 @@ async function requireRunWriter(): Promise<Actor> {
   return { id: user.id, role: user.role };
 }
 
-function revalidate(runId?: string, poItemId?: string) {
+/** A card may cover several items since J25, so every one of them is stale. */
+function revalidate(runId?: string, poItemIds: readonly string[] = []) {
   if (runId) revalidatePath(`/press-runs/${runId}`);
-  if (poItemId) revalidatePath(`/items/${poItemId}`);
+  for (const id of poItemIds) revalidatePath(`/items/${id}`);
   revalidatePath("/items");
 }
 
@@ -133,7 +136,7 @@ export async function createRunForJobCardAction(
       return created;
     });
 
-    revalidate(run.id, card.poItemId);
+    revalidate(run.id, await jobCardItemIds(jobCardId));
     return ok(`${run.runNo} started, with ${card.jcNo} on it.`, `/press-runs/${run.id}`);
   } catch (error) {
     unstable_rethrow(error);
@@ -176,7 +179,7 @@ export async function addJobCardToRunAction(
 
     await auditedUpdate(actor, jobCard, jobCardId, { pressRunId });
 
-    revalidate(pressRunId, card.poItemId);
+    revalidate(pressRunId, await jobCardItemIds(jobCardId));
     return ok(`${card.jcNo} added to ${run.runNo}.`);
   } catch (error) {
     unstable_rethrow(error);
@@ -207,7 +210,7 @@ export async function removeJobCardFromRunAction(
     const runId = card.pressRunId;
     await auditedUpdate(actor, jobCard, jobCardId, { pressRunId: null });
 
-    revalidate(runId, card.poItemId);
+    revalidate(runId, await jobCardItemIds(jobCardId));
     return ok(`${card.jcNo} removed from the run.`);
   } catch (error) {
     unstable_rethrow(error);

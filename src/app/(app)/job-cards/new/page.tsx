@@ -187,8 +187,9 @@ async function CardForm({ poItemId }: { poItemId: string }) {
    * on. Only options the DESIGN has are asked: the card cannot invent a
    * process the design does not do (J8).
    */
+  /* The design's answers, where the item has a design at all — most do not,
+     which is why the card answers the whole block itself (J24). Defaults. */
   const designFab = detail?.designId ? await designSelections(detail.designId) : new Map();
-  const runOptions = vocabulary.filter((o) => o.valueScope === "Run" && designFab.has(o.id));
 
   return (
     <>
@@ -214,8 +215,9 @@ async function CardForm({ poItemId }: { poItemId: string }) {
           itemCode={item.itemCode}
           pendingQty={item.pendingQty}
           machines={machines}
-          runOptions={runOptions}
-          runSelected={new Map()}
+          fabricationOptions={vocabulary}
+          designSelected={designFab}
+          cardSelected={new Map()}
           recentRuns={runs}
           startOpen
         />

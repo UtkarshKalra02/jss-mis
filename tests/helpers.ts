@@ -1,5 +1,7 @@
 import { db } from "@/db";
-import type { Tx } from "@/db/audit";
+import { SYSTEM_ACTOR, auditedInsert, type Tx } from "@/db/audit";
+import { jobCard, jobCardItem } from "@/db/schema";
+import { allocateNumber } from "@/lib/numbering";
 
 const ROLLBACK = Symbol("rollback");
 
@@ -70,4 +72,28 @@ let counter = 0;
 export function uniq(prefix: string): string {
   counter += 1;
   return `${prefix}${Date.now().toString(36).slice(-5)}${counter}`;
+}
+
+/**
+ * A job card covering one item — card row plus its `job_card_item` (J25).
+ *
+ * Almost every test wants exactly this, and writing the two inserts by hand at
+ * every call site is how half of them end up with a card covering nothing.
+ */
+export async function makeCardFor(
+  tx: Tx,
+  poItemId: string,
+  card: Record<string, unknown> = {},
+  plannedQty: number | null = null,
+) {
+  const row = await auditedInsert(
+    SYSTEM_ACTOR,
+    jobCard,
+    { jcNo: await allocateNumber(tx, "JC", "2026-09-01"), ...card } as never,
+    tx,
+  );
+
+  await auditedInsert(SYSTEM_ACTOR, jobCardItem, { jobCardId: row.id, poItemId, plannedQty }, tx);
+
+  return row;
 }

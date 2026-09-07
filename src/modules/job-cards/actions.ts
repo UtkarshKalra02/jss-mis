@@ -6,21 +6,26 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
 import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
-import { jobCard, pressRun } from "@/db/schema";
+import { jobCard, jobCardItem, pressRun } from "@/db/schema";
 import { actionError } from "@/lib/action-error";
 import { allocateNumber, todayIST } from "@/lib/numbering";
 
 import { syncJobCardFabrication } from "@/modules/fabrication/write";
 import { getPressRun as getRun } from "@/modules/press-runs/queries";
 
-import { getJobCardRecord, releasableItem, releasableItemsByIds } from "./queries";
+import {
+  getJobCardRecord,
+  jobCardItemIds,
+  releasableItem,
+  releasableItemsByIds,
+} from "./queries";
 import {
   parseExecutionForm,
   parseJobCardStatusForm,
   parseBulkReleaseForm,
   parsePlanForm,
   parseReleaseForm,
-  runSelectionsFrom,
+  cardSelectionsFrom,
 } from "./validation";
 
 /**
@@ -191,10 +196,6 @@ export async function releaseJobCardAction(
         jobCard,
         {
           jcNo: await allocateNumber(tx, "JC", cardDate),
-          poItemId: v.poItemId,
-          // Defaults to what is still owed, read through the view so there is
-          // one definition of pending (non-negotiable 2).
-          plannedQty: v.plannedQty ?? item.pendingQty,
           plannedDate: v.plannedDate ?? null,
           // The sheet lives on the run when there is one (J15).
           ...(gangingOnto ? noSheet : sheet),
@@ -223,7 +224,26 @@ export async function releaseJobCardAction(
        * card with no answers if the second one failed, and the number would
        * already be burnt.
        */
-      await syncJobCardFabrication(actor, tx, card.id, runSelectionsFrom(v));
+      /*
+       * The item this card covers (J25). One row now; the card screen adds
+       * more. Written in the SAME transaction as the card, because a numbered
+       * card covering nothing is worse than no card — it prints blank and the
+       * number is already spent.
+       */
+      await auditedInsert(
+        actor,
+        jobCardItem,
+        {
+          jobCardId: card.id,
+          poItemId: v.poItemId,
+          // Defaults to what is still owed, read through the view so there is
+          // one definition of pending (non-negotiable 2).
+          plannedQty: v.plannedQty ?? item.pendingQty,
+        },
+        tx,
+      );
+
+      await syncJobCardFabrication(actor, tx, card.id, cardSelectionsFrom(v));
 
       /*
        * Ganging, in the SAME transaction as the card (J15).
@@ -370,23 +390,31 @@ export async function releaseGangAction(
       for (const [at, poItemId] of v.poItemIds.entries()) {
         const item = byId.get(poItemId)!;
 
-        await auditedInsert(
+        const card = await auditedInsert(
           actor,
           jobCard,
           {
             // Allocated inside the loop and inside the transaction, so the
             // series stays gapless if any of this rolls back.
             jcNo: await allocateNumber(tx, "JC", v.runDate),
-            poItemId,
-
-            // Blank means all of what is still owed, read through the view so
-            // there is one definition of pending (non-negotiable 2).
-            plannedQty: v.plannedQtys[at] ?? item.pendingQty,
 
             // One date for the plate. Not per item, deliberately.
             plannedDate: v.runDate,
 
             pressRunId: created.id,
+          },
+          tx,
+        );
+
+        await auditedInsert(
+          actor,
+          jobCardItem,
+          {
+            jobCardId: card.id,
+            poItemId,
+            // Blank means all of what is still owed, read through the view so
+            // there is one definition of pending (non-negotiable 2).
+            plannedQty: v.plannedQtys[at] ?? item.pendingQty,
           },
           tx,
         );
@@ -449,7 +477,6 @@ export async function updateJobCardPlanAction(
         jobCard,
         v.id,
         {
-          plannedQty: v.plannedQty ?? null,
           plannedDate: v.plannedDate ?? null,
           paperSupplyBy: v.paperSupplyBy ?? null,
           plateSupplyBy: v.plateSupplyBy ?? null,
@@ -477,11 +504,11 @@ export async function updateJobCardPlanAction(
         tx,
       );
 
-      await syncJobCardFabrication(actor, tx, v.id, runSelectionsFrom(v));
+      await syncJobCardFabrication(actor, tx, v.id, cardSelectionsFrom(v));
     });
 
     revalidatePath(`/job-cards/${v.id}`);
-    revalidatePath(`/items/${existing.poItemId}`);
+    for (const id of await jobCardItemIds(existing.id)) revalidatePath(`/items/${id}`);
 
     return ok("Saved.");
   } catch (error) {
@@ -528,7 +555,7 @@ export async function updateJobCardExecutionAction(
     });
 
     revalidatePath(`/job-cards/${v.id}`);
-    revalidatePath(`/items/${existing.poItemId}`);
+    for (const id of await jobCardItemIds(existing.id)) revalidatePath(`/items/${id}`);
 
     return ok("Run figures saved.");
   } catch (error) {
@@ -586,7 +613,7 @@ export async function setJobCardStatusAction(
 
     revalidatePath(`/job-cards/${v.id}`);
     revalidatePath("/job-cards");
-    revalidatePath(`/items/${existing.poItemId}`);
+    for (const id of await jobCardItemIds(existing.id)) revalidatePath(`/items/${id}`);
 
     return ok(
       v.status === "Cancelled"
@@ -650,7 +677,7 @@ export async function removeJobCardAction(
     await auditedSoftDelete(actor, jobCard, id);
 
     revalidatePath("/job-cards");
-    revalidatePath(`/items/${existing.poItemId}`);
+    for (const id of await jobCardItemIds(existing.id)) revalidatePath(`/items/${id}`);
     revalidatePath("/stage-update");
 
     removedTo("/job-cards", `${existing.jcNo} removed. Its number stays consumed.`);

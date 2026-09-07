@@ -59,7 +59,9 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
   ]);
 
   const designFab = card.designId ? await designSelections(card.designId) : new Map();
-  const checklist = printedChecklist(vocabulary, designFab, cardFab);
+  const checklist = printedChecklist(vocabulary, designFab, cardFab, {
+    hasDesign: Boolean(card.designId),
+  });
 
   // The run wins while a card is ganged (J15), so the screen reads what will
   // actually print rather than the card's own dormant columns.
@@ -80,7 +82,15 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
    * a sheet with a hole in it.
    */
   const unanswered = checklist.filter((l) => l.awaitingValue);
-  const runOptions = vocabulary.filter((o) => o.valueScope === "Run" && designFab.has(o.id));
+
+  /*
+   * Lines where this card contradicts its design (J24). Two places can answer
+   * the fabrication question and the card wins — that trade was made
+   * deliberately, on the condition that the screen never lets it happen
+   * silently. This is that condition.
+   */
+  const overridden = checklist.filter((l) => l.overridesDesign);
+
 
   return (
     <div className="max-w-4xl">
@@ -150,6 +160,14 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
             : `${unanswered.length} fabrication answers are missing — ${unanswered
                 .map((l) => l.label)
                 .join(", ")} — and will print blank.`}
+        </p>
+      ) : null}
+
+      {overridden.length > 0 ? (
+        <p className="text-muted-foreground mt-4 rounded-md border px-3 py-2 text-[13px]">
+          This card differs from its design on{" "}
+          <span className="font-medium">{overridden.map((l) => l.label).join(", ")}</span>. The
+          card wins — it is the document the floor works from — and the design is unchanged.
         </p>
       ) : null}
 
@@ -354,8 +372,9 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
             itemCode={card.itemCode}
             card={card}
             machines={machines}
-            runOptions={runOptions}
-            runSelected={cardFab}
+            fabricationOptions={vocabulary}
+            designSelected={designFab}
+            cardSelected={cardFab}
             gangedOn={run ? { id: run.id, runNo: run.runNo } : null}
           />
         </section>

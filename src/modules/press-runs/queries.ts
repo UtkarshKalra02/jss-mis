@@ -2,7 +2,16 @@ import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
-import { client, design, jobCard, machine, poItem, pressRun, purchaseOrder } from "@/db/schema";
+import {
+  client,
+  design,
+  jobCard,
+  jobCardItem,
+  machine,
+  poItem,
+  pressRun,
+  purchaseOrder,
+} from "@/db/schema";
 import type { PaperBundle } from "@/modules/job-cards/paper";
 
 /**
@@ -119,7 +128,7 @@ export async function getRunMembers(id: string, runner: Runner = db): Promise<Ru
     .select({
       jobCardId: jobCard.id,
       jcNo: jobCard.jcNo,
-      plannedQty: jobCard.plannedQty,
+      plannedQty: jobCardItem.plannedQty,
       plannedDate: jobCard.plannedDate,
       status: jobCard.status,
       poItemId: poItem.id,
@@ -133,7 +142,13 @@ export async function getRunMembers(id: string, runner: Runner = db): Promise<Ru
       clientName: client.name,
     })
     .from(jobCard)
-    .innerJoin(poItem, eq(poItem.id, jobCard.poItemId))
+    // One row per item on the plate. A card covering two items puts both on
+    // the run sheet, which is what the floor needs to see (J25).
+    .innerJoin(
+      jobCardItem,
+      and(eq(jobCardItem.jobCardId, jobCard.id), isNull(jobCardItem.deletedAt)),
+    )
+    .innerJoin(poItem, eq(poItem.id, jobCardItem.poItemId))
     .innerJoin(purchaseOrder, eq(purchaseOrder.id, poItem.purchaseOrderId))
     .innerJoin(client, eq(client.id, purchaseOrder.clientId))
     .leftJoin(design, eq(design.id, poItem.designId))

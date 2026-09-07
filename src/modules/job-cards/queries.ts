@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, ne, or, sql } fr
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
 import {
+  jobCardItem,
   client,
   design,
   jobCard,
@@ -114,7 +115,7 @@ export async function getJobCard(
     .select({
       id: jobCard.id,
       jcNo: jobCard.jcNo,
-      plannedQty: jobCard.plannedQty,
+      plannedQty: jobCardItem.plannedQty,
       plannedDate: jobCard.plannedDate,
       status: jobCard.status,
       holdReason: jobCard.holdReason,
@@ -181,13 +182,20 @@ export async function getJobCard(
       designNoOfColours: design.noOfColours,
     })
     .from(jobCard)
-    .innerJoin(poItem, eq(poItem.id, jobCard.poItemId))
+    /*
+     * THE CARD'S FIRST ITEM (J25). A card may cover several; this screen shows
+     * one set of item columns, so it takes the earliest added. The full list
+     * comes from `jobCardItems()`.
+     */
+    .innerJoin(jobCardItem, and(eq(jobCardItem.jobCardId, jobCard.id), isNull(jobCardItem.deletedAt)))
+    .innerJoin(poItem, eq(poItem.id, jobCardItem.poItemId))
     .innerJoin(purchaseOrder, eq(purchaseOrder.id, poItem.purchaseOrderId))
     .innerJoin(client, eq(client.id, purchaseOrder.clientId))
     .leftJoin(design, eq(design.id, poItem.designId))
     .leftJoin(pressRun, eq(pressRun.id, jobCard.pressRunId))
     .leftJoin(machine, eq(machine.id, jobCard.machineId))
     .where(and(eq(jobCard.id, id), LIVE))
+    .orderBy(asc(jobCardItem.createdAt))
     .limit(1);
 
   return row ?? null;
@@ -236,9 +244,10 @@ export async function liveCardCountFor(
   const [row] = await runner
     .select({ n: count() })
     .from(jobCard)
+    .innerJoin(jobCardItem, and(eq(jobCardItem.jobCardId, jobCard.id), isNull(jobCardItem.deletedAt)))
     .where(
       and(
-        eq(jobCard.poItemId, poItemId),
+        eq(jobCardItem.poItemId, poItemId),
         LIVE,
         ne(jobCard.status, "Cancelled"),
         excludeId ? ne(jobCard.id, excludeId) : undefined,
@@ -319,7 +328,8 @@ export async function jobCardsForItem(
     .select({
       id: jobCard.id,
       jcNo: jobCard.jcNo,
-      plannedQty: jobCard.plannedQty,
+      // This item's share of the card, not the card's total (J25).
+      plannedQty: jobCardItem.plannedQty,
       plannedDate: jobCard.plannedDate,
       status: jobCard.status,
       finalQty: jobCard.finalQty,
@@ -328,8 +338,9 @@ export async function jobCardsForItem(
       pressRunId: jobCard.pressRunId,
     })
     .from(jobCard)
+    .innerJoin(jobCardItem, and(eq(jobCardItem.jobCardId, jobCard.id), isNull(jobCardItem.deletedAt)))
     .leftJoin(machine, eq(machine.id, jobCard.machineId))
-    .where(and(eq(jobCard.poItemId, poItemId), LIVE))
+    .where(and(eq(jobCardItem.poItemId, poItemId), LIVE))
     .orderBy(desc(jobCard.plannedDate), desc(jobCard.createdAt));
 }
 
@@ -402,7 +413,7 @@ export async function searchJobCards(
       jcNo: jobCard.jcNo,
       plannedDate: jobCard.plannedDate,
       status: jobCard.status,
-      plannedQty: jobCard.plannedQty,
+      plannedQty: jobCardItem.plannedQty,
       finalQty: jobCard.finalQty,
       itemCode: poItem.itemCode,
       itemName: poItem.itemName,
@@ -412,7 +423,13 @@ export async function searchJobCards(
       pressRunId: jobCard.pressRunId,
     })
     .from(jobCard)
-    .innerJoin(poItem, eq(poItem.id, jobCard.poItemId))
+    /*
+     * ONE ROW PER CARD, showing its first item. A card covering three items is
+     * one document and belongs on this grid once; the items are listed on the
+     * card itself (J25).
+     */
+    .innerJoin(jobCardItem, and(eq(jobCardItem.jobCardId, jobCard.id), isNull(jobCardItem.deletedAt)))
+    .innerJoin(poItem, eq(poItem.id, jobCardItem.poItemId))
     .innerJoin(purchaseOrder, eq(purchaseOrder.id, poItem.purchaseOrderId))
     .innerJoin(client, eq(client.id, purchaseOrder.clientId))
     .leftJoin(machine, eq(machine.id, jobCard.machineId))
@@ -479,8 +496,11 @@ export async function releasableItems(query = "", limit = 200): Promise<Releasab
        * itself, which is the bug H7 documents and that shipped twice.
        */
       cards: sql<number>`(
-        select count(*)::int from job_card jc
-        where jc.po_item_id = v_po_item_status.po_item_id
+        select count(*)::int
+          from job_card jc
+          join job_card_item jci on jci.job_card_id = jc.id
+        where jci.po_item_id = v_po_item_status.po_item_id
+          and jci.deleted_at is null
           and jc.deleted_at is null
       )`,
     })
@@ -544,13 +564,66 @@ export async function releasableItemsByIds(
   // Live card counts for all of them at once, so J3's second-card question can
   // be asked once for the batch rather than five times.
   const counts = await runner
-    .select({ poItemId: jobCard.poItemId, n: count() })
-    .from(jobCard)
-    .where(and(inArray(jobCard.poItemId, ids), LIVE))
-    .groupBy(jobCard.poItemId);
+    .select({ poItemId: jobCardItem.poItemId, n: count() })
+    .from(jobCardItem)
+    .innerJoin(jobCard, eq(jobCard.id, jobCardItem.jobCardId))
+    .where(and(inArray(jobCardItem.poItemId, ids), isNull(jobCardItem.deletedAt), LIVE))
+    .groupBy(jobCardItem.poItemId);
 
   const byItem = new Map(counts.map((c) => [c.poItemId, Number(c.n)]));
 
   return rows.map((r) => ({ ...r, cardCount: byItem.get(r.poItemId) ?? 0 }));
+}
+
+/** The PO items a job card covers, in the order they were added (J25). */
+export async function jobCardItemIds(
+  jobCardId: string,
+  runner: Runner = db,
+): Promise<string[]> {
+  const rows = await runner
+    .select({ poItemId: jobCardItem.poItemId })
+    .from(jobCardItem)
+    .where(and(eq(jobCardItem.jobCardId, jobCardId), isNull(jobCardItem.deletedAt)))
+    .orderBy(asc(jobCardItem.createdAt));
+
+  return rows.map((r) => r.poItemId);
+}
+
+export type JobCardItemRow = {
+  poItemId: string;
+  plannedQty: number | null;
+  itemCode: string;
+  itemName: string;
+  clientCode: string;
+  clientName: string;
+  orderedQty: number;
+  committedDate: string | null;
+};
+
+/**
+ * Every item on a job card, with what the card plans for each (J25).
+ *
+ * Read through `v_po_item_status` for the ordered quantity and committed date,
+ * so the card screen shows the same numbers as the Item Tracker.
+ */
+export async function jobCardItems(
+  jobCardId: string,
+  runner: Runner = db,
+): Promise<JobCardItemRow[]> {
+  return runner
+    .select({
+      poItemId: jobCardItem.poItemId,
+      plannedQty: jobCardItem.plannedQty,
+      itemCode: vPoItemStatus.itemCode,
+      itemName: vPoItemStatus.itemName,
+      clientCode: vPoItemStatus.clientCode,
+      clientName: vPoItemStatus.clientName,
+      orderedQty: vPoItemStatus.orderedQty,
+      committedDate: vPoItemStatus.committedDate,
+    })
+    .from(jobCardItem)
+    .innerJoin(vPoItemStatus, eq(vPoItemStatus.poItemId, jobCardItem.poItemId))
+    .where(and(eq(jobCardItem.jobCardId, jobCardId), isNull(jobCardItem.deletedAt)))
+    .orderBy(asc(jobCardItem.createdAt));
 }
 

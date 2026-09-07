@@ -2,13 +2,15 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { SYSTEM_ACTOR, auditedInsert, type Tx } from "@/db/audit";
-import { design, designFabrication, fabricationOption } from "@/db/schema";
+import { design, designFabrication } from "@/db/schema";
 import {
   designSelections,
   fabricationVocabulary,
   printedChecklist,
+  type Selection,
 } from "@/modules/fabrication/queries";
 import { syncDesignFabrication, unknownSelections } from "@/modules/fabrication/write";
+import { cardSelectionsFrom } from "@/modules/job-cards/validation";
 
 import { expectFailure, inRollback, uniq } from "./helpers";
 
@@ -323,7 +325,9 @@ describe("the checklist as the job card prints it", () => {
       // card no longer carries a blank rule for anybody to write it on (J8).
       expect(unanswered.awaitingValue).toBe(true);
 
-      const thisRun = new Map([[die.id, { optionId: die.id, valueId: newDie.id, otherText: null }]]);
+      const thisRun = new Map([
+        [die.id, { optionId: die.id, valueId: newDie.id, otherText: null, applies: true }],
+      ]);
       const afterRun = printedChecklist(vocabulary, selections, thisRun);
       expect(afterRun.find((l) => l.code === "DIE")!.detail).toBe("New");
     });
@@ -427,3 +431,148 @@ describe("changing a design's fabrication", () => {
     });
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* The card answers the whole block, and wins where it disagrees (J24)         */
+/* -------------------------------------------------------------------------- */
+
+describe("a job card's own fabrication", () => {
+  const sel = (optionId: string, over: Partial<Selection> = {}): Selection => ({
+    optionId,
+    valueId: null,
+    otherText: null,
+    applies: true,
+    ...over,
+  });
+
+  it("ticks a process the design does not have — the common case now", async () => {
+    // Designs are not linked to purchase orders in practice, so most cards have
+    // an empty design map and have to say everything themselves.
+    await inRollback(async (tx) => {
+      const vocabulary = await fabricationVocabulary(tx);
+      const uv = vocabulary.find((o) => o.code === "UV")!;
+      const full = uv.values.find((v) => v.value === "Full")!;
+
+      const lines = printedChecklist(
+        vocabulary,
+        new Map(),
+        new Map([[uv.id, sel(uv.id, { valueId: full.id })]]),
+      );
+
+      const line = lines.find((l) => l.code === "UV")!;
+      expect(line.applies).toBe(true);
+      expect(line.detail).toBe("Full");
+      expect(line.source).toBe("card");
+      // Nothing to disagree with: the design said nothing at all.
+      expect(line.overridesDesign).toBe(false);
+    });
+  });
+
+  it("turns OFF a process its design has, and says that it did", async () => {
+    // The state row-presence alone cannot express, and the reason `applies`
+    // exists as a column.
+    await inRollback(async (tx) => {
+      const vocabulary = await fabricationVocabulary(tx);
+      const uv = vocabulary.find((o) => o.code === "UV")!;
+
+      const lines = printedChecklist(
+        vocabulary,
+        new Map([[uv.id, sel(uv.id)]]),
+        new Map([[uv.id, sel(uv.id, { applies: false })]]),
+      );
+
+      const line = lines.find((l) => l.code === "UV")!;
+      expect(line.applies).toBe(false);
+      expect(line.overridesDesign).toBe(true);
+    });
+  });
+
+  it("keeps the design's answer for anything the card says nothing about", async () => {
+    await inRollback(async (tx) => {
+      const vocabulary = await fabricationVocabulary(tx);
+      const foiling = vocabulary.find((o) => o.code === "FOILING")!;
+      const gold = foiling.values.find((v) => v.value === "Gold")!;
+
+      const lines = printedChecklist(
+        vocabulary,
+        new Map([[foiling.id, sel(foiling.id, { valueId: gold.id })]]),
+        new Map(),
+      );
+
+      const line = lines.find((l) => l.code === "FOILING")!;
+      expect(line.detail).toBe("Gold");
+      expect(line.source).toBe("design");
+      expect(line.overridesDesign).toBe(false);
+    });
+  });
+
+  it("does not call it a disagreement when the card only re-ticks", async () => {
+    // Ticking Foiling without saying which, on a design that says Gold, prints
+    // Gold. The card overrode the tick and said nothing about the value, so
+    // there is nothing to resolve and nothing to warn about.
+    await inRollback(async (tx) => {
+      const vocabulary = await fabricationVocabulary(tx);
+      const foiling = vocabulary.find((o) => o.code === "FOILING")!;
+      const gold = foiling.values.find((v) => v.value === "Gold")!;
+
+      const lines = printedChecklist(
+        vocabulary,
+        new Map([[foiling.id, sel(foiling.id, { valueId: gold.id })]]),
+        new Map([[foiling.id, sel(foiling.id)]]),
+      );
+
+      const line = lines.find((l) => l.code === "FOILING")!;
+      expect(line.detail).toBe("Gold");
+      expect(line.overridesDesign).toBe(false);
+    });
+  });
+
+  it("flags a card that answers the same process differently", async () => {
+    await inRollback(async (tx) => {
+      const vocabulary = await fabricationVocabulary(tx);
+      const foiling = vocabulary.find((o) => o.code === "FOILING")!;
+      const gold = foiling.values.find((v) => v.value === "Gold")!;
+      const silver = foiling.values.find((v) => v.value === "Silver")!;
+
+      const lines = printedChecklist(
+        vocabulary,
+        new Map([[foiling.id, sel(foiling.id, { valueId: gold.id })]]),
+        new Map([[foiling.id, sel(foiling.id, { valueId: silver.id })]]),
+      );
+
+      const line = lines.find((l) => l.code === "FOILING")!;
+      expect(line.detail).toBe("Silver");
+      expect(line.source).toBe("card");
+      expect(line.overridesDesign).toBe(true);
+    });
+  });
+});
+
+describe("cardSelectionsFrom", () => {
+  it("writes a row for everything the form rendered, ticked or not", () => {
+    const out = cardSelectionsFrom({
+      fabricationOptionIds: ["a"],
+      fabricationValueIds: ["v1"],
+      fabricationSeenOptionIds: ["a", "b", "c"],
+    });
+
+    expect(out).toEqual([
+      { optionId: "a", applies: true, valueId: "v1" },
+      { optionId: "b", applies: false, valueId: null },
+      { optionId: "c", applies: false, valueId: null },
+    ]);
+  });
+
+  it("writes nothing when the form rendered nothing", () => {
+    // A card raised before this existed keeps deferring to its design rather
+    // than being silently emptied by a form that never showed the block.
+    expect(
+      cardSelectionsFrom({
+        fabricationOptionIds: [],
+        fabricationValueIds: [],
+        fabricationSeenOptionIds: [],
+      }),
+    ).toEqual([]);
+  });
+});
+

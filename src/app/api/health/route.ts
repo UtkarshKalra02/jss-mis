@@ -226,6 +226,12 @@ const SCHEMA_EXPECTATIONS: {
     sql: sql`select 1 from information_schema.tables where table_name = 'design_process'`,
   },
   {
+    what: "job_card_fabrication.applies",
+    since: "0030_job_card_fabrication_applies",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'job_card_fabrication' and column_name = 'applies'`,
+  },
+  {
     // Seed data rather than schema, and worth checking for the same reason:
     // a database missing it renders a job card that quietly omits a line the
     // paper one has.

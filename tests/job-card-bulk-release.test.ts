@@ -4,12 +4,12 @@ import { describe, expect, it } from "vitest";
 import { SYSTEM_ACTOR, auditedInsert, type Tx } from "@/db/audit";
 import { jobCard, poItem, pressRun, purchaseOrder } from "@/db/schema";
 import { allocateNumber } from "@/lib/numbering";
-import { releasableItemsByIds } from "@/modules/job-cards/queries";
+import { jobCardItemIds, releasableItemsByIds } from "@/modules/job-cards/queries";
 import { parseBulkReleaseForm } from "@/modules/job-cards/validation";
 import { getRunMembers } from "@/modules/press-runs/queries";
 import { resolvedSheet } from "@/modules/press-runs/sheet";
 
-import { inRollback, uniq } from "./helpers";
+import { inRollback, makeCardFor, uniq } from "./helpers";
 
 /**
  * Raising several cards on one plate — decision J20.
@@ -74,17 +74,11 @@ async function raiseGang(tx: Tx, itemIds: string[], runDate = "2026-09-10") {
   );
 
   for (const poItemId of itemIds) {
-    await auditedInsert(
-      SYSTEM_ACTOR,
-      jobCard,
-      {
-        jcNo: await allocateNumber(tx, "JC", runDate),
-        poItemId,
-        plannedQty: 1000,
-        plannedDate: runDate,
-        pressRunId: run.id,
-      },
+    await makeCardFor(
       tx,
+      poItemId,
+      { jcNo: await allocateNumber(tx, "JC", runDate), plannedDate: runDate, pressRunId: run.id },
+      1000,
     );
   }
 
@@ -113,7 +107,8 @@ describe("what a bulk release writes", () => {
 
       // Each card points at exactly one item, and they are the three asked for.
       const cards = await tx.select().from(jobCard).where(eq(jobCard.pressRunId, run.id));
-      expect(new Set(cards.map((c) => c.poItemId))).toEqual(new Set(items.map((i) => i.id)));
+      const covered = await Promise.all(cards.map((c) => jobCardItemIds(c.id, tx)));
+      expect(new Set(covered.flat())).toEqual(new Set(items.map((i) => i.id)));
 
       // Three distinct JC numbers. One document per job, as on paper.
       expect(new Set(cards.map((c) => c.jcNo)).size).toBe(3);
@@ -256,12 +251,7 @@ describe("what the batch lookup reports before anything is written", () => {
       const a = await itemFor(tx, "Has A Card");
       const b = await itemFor(tx, "Fresh");
 
-      await auditedInsert(
-        SYSTEM_ACTOR,
-        jobCard,
-        { jcNo: await allocateNumber(tx, "JC", "2026-09-01"), poItemId: a.id },
-        tx,
-      );
+      await makeCardFor(tx, a.id);
 
       const found = await releasableItemsByIds([a.id, b.id], tx);
 
@@ -404,18 +394,12 @@ describe("a single release that joins a plate (J21)", () => {
         tx,
       );
 
-      const card = await auditedInsert(
-        SYSTEM_ACTOR,
-        jobCard,
-        {
-          jcNo: await allocateNumber(tx, "JC", "2026-09-10"),
-          poItemId: item.id,
-          pressRunId: run.id,
-          // The card's own sheet columns stay empty, which is what the action
-          // now writes for a card that is joining a plate.
-        },
-        tx,
-      );
+      // The card's own sheet columns stay empty, which is what the action now
+      // writes for a card that is joining a plate.
+      const card = await makeCardFor(tx, item.id, {
+        jcNo: await allocateNumber(tx, "JC", "2026-09-10"),
+        pressRunId: run.id,
+      });
 
       expect(card.paperSize).toBeNull();
       expect(card.paperQty).toBeNull();

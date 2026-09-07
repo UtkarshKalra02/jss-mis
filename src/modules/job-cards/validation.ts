@@ -136,6 +136,8 @@ export const releaseSchema = z.object({
    */
   fabricationOptionIds: z.array(z.string().trim()).default([]),
   fabricationValueIds: z.array(z.string().trim()).default([]),
+  /** Every option the form rendered, ticked or not — see cardSelectionsFrom. */
+  fabricationSeenOptionIds: z.array(z.string().trim()).default([]),
 
   /**
    * Ganging, decided while the card is raised (J15).
@@ -216,6 +218,7 @@ export function parsePlanForm(formData: FormData) {
     ),
     fabricationOptionIds: formData.getAll("fabricationOptionId").map(String),
     fabricationValueIds: formData.getAll("fabricationValueId").map(String),
+    fabricationSeenOptionIds: formData.getAll("fabricationSeenOptionId").map(String),
   });
 }
 
@@ -244,6 +247,7 @@ export function parseReleaseForm(formData: FormData) {
     notes: formData.get("notes"),
     fabricationOptionIds: formData.getAll("fabricationOptionId").map(String),
     fabricationValueIds: formData.getAll("fabricationValueId").map(String),
+    fabricationSeenOptionIds: formData.getAll("fabricationSeenOptionId").map(String),
     gangPressRunId: formData.get("gangPressRunId"),
     gangNewRun: formData.get("gangNewRun"),
     confirmSecondCard: formData.get("confirmSecondCard"),
@@ -291,14 +295,43 @@ export function parseExecutionForm(formData: FormData) {
   });
 }
 
-/** Zips the card's run-scope fabrication answers into selections. */
-export function runSelectionsFrom(input: {
+/**
+ * The card's fabrication answers, as selections to write (J24).
+ *
+ * THREE STATES OUT OF TWO ARRAYS. `fabricationSeenOptionId` carries every
+ * option the form actually rendered; `fabricationOptionId` carries the ones
+ * that were ticked. Seen and ticked is "this job has it"; seen and not ticked
+ * is "this job does NOT", which is the row that overrides a design; not seen at
+ * all produces no row, so the card keeps no opinion and the design stands.
+ *
+ * The seen list is its OWN array rather than a third parallel one, because only
+ * ticked options carry values, and pairing ticks against everything would
+ * misalign the moment somebody unticks the first row — putting one option's
+ * value on another, which the composite foreign key would then refuse in a way
+ * nobody could read.
+ */
+export function cardSelectionsFrom(input: {
   fabricationOptionIds: string[];
   fabricationValueIds: string[];
+  fabricationSeenOptionIds: string[];
 }) {
-  return input.fabricationOptionIds.map((optionId, i) => ({
+  const ticked = new Map(
+    input.fabricationOptionIds.map((optionId, i) => [
+      optionId,
+      input.fabricationValueIds[i]?.length ? input.fabricationValueIds[i]! : null,
+    ]),
+  );
+
+  // A form that rendered nothing writes nothing, which is how a card raised
+  // before this existed keeps deferring to its design.
+  const seen = input.fabricationSeenOptionIds.length
+    ? input.fabricationSeenOptionIds
+    : [...ticked.keys()];
+
+  return [...new Set(seen)].map((optionId) => ({
     optionId,
-    valueId: input.fabricationValueIds[i]?.length ? input.fabricationValueIds[i]! : null,
+    applies: ticked.has(optionId),
+    valueId: ticked.get(optionId) ?? null,
   }));
 }
 

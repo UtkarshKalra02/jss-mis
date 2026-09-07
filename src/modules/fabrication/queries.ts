@@ -96,6 +96,12 @@ export type Selection = {
   optionId: string;
   valueId: string | null;
   otherText: string | null;
+  /**
+   * Whether the job has this process. Always true for a design's selections —
+   * a design records only what it HAS — and either way for a card, which can
+   * say a job does not have something its design ticked (J24).
+   */
+  applies: boolean;
 };
 
 /** What one design has chosen. Keyed by option id for the form and the print. */
@@ -112,10 +118,12 @@ export async function designSelections(
     .from(designFabrication)
     .where(and(eq(designFabrication.designId, designId), isNull(designFabrication.deletedAt)));
 
-  return new Map(rows.map((r) => [r.optionId, r]));
+  // A design row exists only for a process the design HAS, so presence is the
+  // whole statement. The card is the one that can say "not on this job".
+  return new Map(rows.map((r) => [r.optionId, { ...r, applies: true }]));
 }
 
-/** What one job card has recorded for the run-scope options. */
+/** What one job card has recorded. Since J24 that is the whole block. */
 export async function jobCardSelections(
   jobCardId: string,
   runner: Runner = db,
@@ -125,6 +133,7 @@ export async function jobCardSelections(
       optionId: jobCardFabrication.optionId,
       valueId: jobCardFabrication.valueId,
       otherText: jobCardFabrication.otherText,
+      applies: jobCardFabrication.applies,
     })
     .from(jobCardFabrication)
     .where(and(eq(jobCardFabrication.jobCardId, jobCardId), isNull(jobCardFabrication.deletedAt)));
@@ -145,6 +154,18 @@ export type PrintedFabricationLine = {
   detail: string | null;
   /** True when the value is missing and somebody still has to answer it. */
   awaitingValue: boolean;
+  /**
+   * Where this line's answer came from. Null when nothing has been said about
+   * it anywhere. The card wins wherever it has an opinion (J24).
+   */
+  source: "design" | "card" | null;
+  /**
+   * True when the card disagrees with the design — a different value, or a
+   * process turned on or off. This is the flag that makes the accepted risk
+   * visible: two places can answer this question and the screen has to say
+   * which one did.
+   */
+  overridesDesign: boolean;
 };
 
 /**
@@ -156,24 +177,55 @@ export type PrintedFabricationLine = {
  * "Foiling ✓ Gold" — where the paper card carried a ruled blank for somebody
  * to write it in.
  *
- * Design-scope values come from the design, run-scope values from the card.
- * That split is the whole reason both tables exist: gold-or-silver is a
- * property of the design and is right every time it is ordered, while
- * new-die-or-old is a property of this run and would be wrong on the second.
+ * THE CARD WINS, PER OPTION (J24). Where the card has said anything about an
+ * option — has it, does not have it, or what value — that is the answer. Where
+ * it has said nothing, the design's answer stands. The design is a default and
+ * the card is the document that goes to the floor.
+ *
+ * This deliberately allows two places to answer one question, which is the
+ * failure I7 deleted `design.die_id` over. It is accepted here on one
+ * condition, and `source` and `overridesDesign` are that condition: every line
+ * says where its answer came from, and a line where the card contradicts its
+ * design says so rather than quietly winning.
+ *
+ * The value falls through separately from the tick. A card that turns Foiling
+ * on without saying Gold or Silver, on a design that says Gold, prints Gold —
+ * the card overrode the tick and said nothing about the value, so there is no
+ * disagreement to resolve.
  */
 export function printedChecklist(
   vocabulary: readonly FabricationOptionRow[],
   design: ReadonlyMap<string, Selection>,
   card: ReadonlyMap<string, Selection>,
+  opts: {
+    /**
+     * Whether the item HAS a design at all.
+     *
+     * An empty design map means two different things and only the caller knows
+     * which: an item with no design linked to it, which is most of them, or a
+     * design that has no fabrication ticked. Without the distinction every
+     * ordinary card would report itself as overriding a design that does not
+     * exist, and a warning that fires on everything is one nobody reads.
+     */
+    hasDesign?: boolean;
+  } = {},
 ): PrintedFabricationLine[] {
+  const hasDesign = opts.hasDesign ?? design.size > 0;
+
   const valueLabel = new Map<string, string>();
   for (const option of vocabulary) {
     for (const v of option.values) valueLabel.set(v.id, v.value);
   }
 
   return vocabulary.map((option) => {
-    const chosen = design.get(option.id);
-    const applies = chosen !== undefined;
+    const fromDesign = design.get(option.id);
+    const fromCard = card.get(option.id);
+
+    // The tick: the card's opinion if it has one, otherwise the design's.
+    const applies = fromCard ? fromCard.applies : fromDesign !== undefined;
+
+    const saidByCard = fromCard !== undefined;
+    const designApplies = fromDesign !== undefined;
 
     if (!applies || option.valueScope === "None") {
       return {
@@ -183,14 +235,20 @@ export function printedChecklist(
         applies,
         detail: null,
         awaitingValue: false,
+        source: applies ? (saidByCard ? "card" : "design") : null,
+        overridesDesign: hasDesign && saidByCard && fromCard.applies !== designApplies,
       };
     }
 
-    const source = option.valueScope === "Run" ? card.get(option.id) : chosen;
-    const value = source?.valueId ? (valueLabel.get(source.valueId) ?? null) : null;
+    // The value: the card's if it gave one, otherwise the design's. A card
+    // that ticked a process without answering it has not contradicted a design
+    // that did answer it.
+    const valued = fromCard?.valueId ? fromCard : (fromDesign?.valueId ? fromDesign : fromCard);
+    const value = valued?.valueId ? (valueLabel.get(valued.valueId) ?? null) : null;
 
-    const detail =
-      value && source?.otherText ? `${value} — ${source.otherText}` : (value ?? null);
+    const detail = value && valued?.otherText ? `${value} — ${valued.otherText}` : (value ?? null);
+
+    const valueFromCard = Boolean(fromCard?.valueId);
 
     return {
       optionId: option.id,
@@ -199,12 +257,17 @@ export function printedChecklist(
       applies: true,
       detail,
       /*
-       * A run-scope option on a design that has it, with nobody having said
-       * new or old yet. The card must not print a blank rule for this — the
-       * answer belongs in the system (J8) — so the screen flags it before the
-       * sheet is printed instead.
+       * Ticked, and nobody has said which. The card must not print a blank
+       * rule for this — the answer belongs in the system (J8) — so the screen
+       * flags it before the sheet is printed instead.
        */
       awaitingValue: detail === null,
+      source: valueFromCard || saidByCard ? "card" : "design",
+      overridesDesign:
+        hasDesign &&
+        saidByCard &&
+        (fromCard.applies !== designApplies ||
+          (valueFromCard && fromDesign?.valueId != null && fromCard.valueId !== fromDesign.valueId)),
     };
   });
 }

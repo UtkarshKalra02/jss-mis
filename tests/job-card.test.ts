@@ -2,12 +2,17 @@ import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { SYSTEM_ACTOR, auditedInsert, auditedSoftDelete, auditedUpdate, type Tx } from "@/db/audit";
-import { design, jobCard, poItem, purchaseOrder } from "@/db/schema";
+import { design, jobCard, jobCardItem, poItem, purchaseOrder } from "@/db/schema";
 import { allocateNumber } from "@/lib/numbering";
-import { getJobCard, jobCardsForItem, liveCardCountFor } from "@/modules/job-cards/queries";
+import {
+  getJobCard,
+  jobCardItemIds,
+  jobCardsForItem,
+  liveCardCountFor,
+} from "@/modules/job-cards/queries";
 import { parseExecutionForm, parseReleaseForm } from "@/modules/job-cards/validation";
 
-import { expectFailure, inRollback, uniq } from "./helpers";
+import { expectFailure, inRollback, makeCardFor, uniq } from "./helpers";
 
 /**
  * Job card release (decision J1).
@@ -191,17 +196,11 @@ async function makeItem(tx: Tx, opts: { withDesign?: boolean } = {}) {
 }
 
 async function release(tx: Tx, itemId: string, on = "2026-05-10", extra = {}) {
-  return auditedInsert(
-    SYSTEM_ACTOR,
-    jobCard,
-    {
-      jcNo: await allocateNumber(tx, "JC", on),
-      poItemId: itemId,
-      plannedQty: 5000,
-      plannedDate: on,
-      ...extra,
-    },
+  return makeCardFor(
     tx,
+    itemId,
+    { jcNo: await allocateNumber(tx, "JC", on), plannedDate: on, ...extra },
+    5000,
   );
 }
 
@@ -226,9 +225,11 @@ describe("releasing a job card", () => {
       const first = await release(tx, itemId);
       const second = await release(tx, itemId);
 
-      // H1 and spec section 3: a card covers ONE item, an item may have many.
-      expect(first.poItemId).toBe(itemId);
-      expect(second.poItemId).toBe(itemId);
+      // An item may have many cards (spec section 3). Since J25 a card may
+      // also cover many items — the relationship is many-to-many, and the
+      // junction is what says so.
+      expect(await jobCardItemIds(first.id, tx)).toEqual([itemId]);
+      expect(await jobCardItemIds(second.id, tx)).toEqual([itemId]);
       expect(first.id).not.toBe(second.id);
       expect(await liveCardCountFor(itemId, tx)).toBe(2);
     });
@@ -335,7 +336,12 @@ describe("transcribing the run figures back off the paper", () => {
       expect(read!.finalQty).toBe(5120);
       expect(read!.wastageQty).toBe(180);
       // The plan is untouched — that is the whole reason it is a separate form.
-      expect(read!.plannedQty).toBe(5000);
+      // Quantity lives on the junction since J25, so it is read from there.
+      const [planned] = await tx
+        .select({ plannedQty: jobCardItem.plannedQty })
+        .from(jobCardItem)
+        .where(eq(jobCardItem.jobCardId, card.id));
+      expect(planned!.plannedQty).toBe(5000);
       expect(read!.execNoOfColours).toBe("4/c");
     });
   });

@@ -19,6 +19,8 @@ import { designFabrication, fabricationOptionValue, jobCardFabrication } from "@
  */
 
 export type PostedSelection = {
+  /** False records "this job does NOT have this process" (J24). */
+  applies?: boolean;
   optionId: string;
   /** Absent for a tick-only option, and for a design row whose value is the run's. */
   valueId?: string | null;
@@ -93,10 +95,20 @@ export async function syncDesignFabrication(
 /**
  * Records the run-scope answers on a job card: new die or old, and so on.
  *
- * Only options the DESIGN has are ever posted here — the card cannot invent a
- * process the design does not do. The database agrees independently: the
- * composite foreign key refuses a value belonging to another option, so a
- * mangled form cannot record "Gold" against the die.
+ * SINCE J24 ANY OPTION MAY BE POSTED, not only the ones a design opened, and a
+ * posted row may say the job does NOT have the process. Designs are not linked
+ * to purchase orders in practice, so gating this on a design left most cards
+ * with no finishing recorded at all.
+ *
+ * An option the card says nothing about gets NO ROW, which is how it keeps
+ * falling through to the design. That is why removal here is a soft delete of
+ * the row rather than writing `applies` false: "no opinion" and "explicitly
+ * off" are different answers and the merge in printedChecklist reads them
+ * differently.
+ *
+ * The database agrees independently about values: the composite foreign key
+ * refuses a value belonging to another option, so a mangled form cannot record
+ * "Gold" against the die.
  */
 export async function syncJobCardFabrication(
   actor: Actor,
@@ -110,6 +122,7 @@ export async function syncJobCardFabrication(
       optionId: jobCardFabrication.optionId,
       valueId: jobCardFabrication.valueId,
       otherText: jobCardFabrication.otherText,
+      applies: jobCardFabrication.applies,
     })
     .from(jobCardFabrication)
     .where(and(eq(jobCardFabrication.jobCardId, jobCardId), isNull(jobCardFabrication.deletedAt)));
@@ -119,21 +132,36 @@ export async function syncJobCardFabrication(
 
   for (const [optionId, want] of target) {
     const existing = byOption.get(optionId);
-    const valueId = want.valueId ?? null;
-    const otherText = want.otherText ?? null;
+    const applies = want.applies ?? true;
+
+    // A process the job does not have carries no value. Keeping one would mean
+    // turning Foiling back on silently restores "Gold", which is the resurrection
+    // F17's partial index exists to prevent.
+    const valueId = applies ? (want.valueId ?? null) : null;
+    const otherText = applies ? (want.otherText ?? null) : null;
 
     if (!existing) {
       await auditedInsert(
         actor,
         jobCardFabrication,
-        { jobCardId, optionId, valueId, otherText },
+        { jobCardId, optionId, valueId, otherText, applies },
         tx,
       );
       continue;
     }
 
-    if (existing.valueId !== valueId || existing.otherText !== otherText) {
-      await auditedUpdate(actor, jobCardFabrication, existing.id, { valueId, otherText }, tx);
+    if (
+      existing.valueId !== valueId ||
+      existing.otherText !== otherText ||
+      existing.applies !== applies
+    ) {
+      await auditedUpdate(
+        actor,
+        jobCardFabrication,
+        existing.id,
+        { valueId, otherText, applies },
+        tx,
+      );
     }
   }
 

@@ -2296,3 +2296,54 @@ index on `fabrication_option.code` is PARTIAL (C5) and `ON CONFLICT` only matche
 index when the statement repeats its predicate. NOT EXISTS says the same thing without
 depending on that, and is replayable from any earlier point — J16's general rule.
 
+---
+
+**J24 — The job card answers the whole fabrication block, and wins where it disagrees with
+the design.** J8 built two vocabularies and split them by `value_scope`: design-scope values
+(gold or silver) on the design, run-scope values (new die or old) on the card, and WHICH
+options were asked at all was the design's decision. The card only ever saw run-scope
+options that a design had already ticked.
+
+**That gate assumed designs are linked to purchase orders. In practice they are not.** An
+item with no design got no fabrication block at all, so most cards reached the floor with no
+finishing named — exactly the question this system exists to stop somebody walking across
+the floor to ask. The card is the document that goes to the press; it has to be able to say
+what happens to the job.
+
+So the card now renders the whole block, all fourteen options, and answers them. The design
+where one exists PRE-FILLS the card and is then a default rather than an answer.
+
+**THIS DELIBERATELY ALLOWS TWO PLACES TO ANSWER ONE QUESTION**, which is the failure I7
+deleted `design.die_id` over and J15's one-way resolution rule exists to prevent. It was put
+as a choice with that named, and taken knowingly. The condition attached to it is that
+nothing wins silently: `printedChecklist` returns `source` and `overridesDesign` on every
+line, the card form marks each row "from the design", "set on this card", "added on this
+card" or "removed on this card", and the card screen names every line where the two
+disagree. A card may contradict its design; it may not do so quietly.
+
+**`applies` is a new column because three states cannot be stored in two.** No row means the
+card has no opinion and the design stands. A row with `applies` true means this job has the
+process. A row with it false means it does NOT — the only way a card can turn off something
+its design ticked. Without the column, "no opinion" and "explicitly off" are the same absent
+row.
+
+**The tick and the value fall through separately.** A card that turns Foiling on without
+saying which, over a design that says Gold, prints Gold: the card overrode the tick and said
+nothing about the value, so there is no disagreement and no warning. Only a card that
+answers the same process DIFFERENTLY is flagged.
+
+**An unticked option carries no value.** Turning Foiling back on must not silently
+resurrect "Gold" — the same resurrection F17's partial index was introduced to stop.
+
+**`hasDesign` is passed in rather than inferred.** An empty design map means either an item
+with no design, which is most of them, or a design with nothing ticked, and only the caller
+knows which. Inferring it made every ordinary card report itself as overriding a design that
+does not exist, and a warning that fires on everything is one nobody reads. A test caught
+that before it shipped.
+
+**Three states out of two form arrays.** `fabricationSeenOptionId` carries every option the
+form rendered and `fabricationOptionId` carries the ticked ones. Seen and ticked is "has
+it"; seen and unticked is "does not"; never seen is no row at all — which is how a card
+raised before this existed keeps deferring to its design instead of being silently emptied
+by a form that never showed the block.
+

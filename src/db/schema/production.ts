@@ -207,12 +207,17 @@ export const jobCard = pgTable(
     /** JC-YYYY-NNNN, financial year. */
     jcNo: text().notNull(),
 
-    poItemId: uuid()
-      .notNull()
-      .references(() => poItem.id),
-
-    /** May be less than ordered_qty when a run is split. */
-    plannedQty: integer(),
+    /**
+     * WHICH ITEMS THIS CARD COVERS LIVES IN `job_card_item` (J25).
+     *
+     * It used to be `po_item_id` here, NOT NULL, one card to one item — spec
+     * section 3's spine rule. A card now covers one or more, because a repeat
+     * of the same printing was costing a whole new card each time.
+     *
+     * Quantity moved with it: a card covering three items has three
+     * quantities, and one column could only hold a total that agreed with none
+     * of them.
+     */
 
     /** Which day it is scheduled to run. */
     plannedDate: date(),
@@ -353,15 +358,10 @@ export const jobCard = pgTable(
     uniqueIndex("job_card_no_key")
       .on(t.jcNo)
       .where(sql`${t.deletedAt} is null`),
-    index("job_card_po_item_idx").on(t.poItemId),
     index("job_card_press_run_idx").on(t.pressRunId),
     index("job_card_planned_date_idx").on(t.plannedDate),
     index("job_card_status_idx").on(t.status),
 
-    check(
-      "job_card_planned_qty_positive",
-      sql`${t.plannedQty} is null or ${t.plannedQty} > 0`,
-    ),
     // A job card on hold without a reason is a job card nobody can unblock.
     check(
       "job_card_hold_reason_required",
@@ -448,3 +448,63 @@ export type PressRun = typeof pressRun.$inferSelect;
 export type JobCard = typeof jobCard.$inferSelect;
 export type StageEvent = typeof stageEvent.$inferSelect;
 export type NewStageEvent = typeof stageEvent.$inferInsert;
+
+/* -------------------------------------------------------------------------- */
+/* job_card_item                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Which PO items a job card covers — decision J25.
+ *
+ * This REPLACES `job_card.po_item_id` and supersedes the line in spec section 3
+ * that reads "one job card covers exactly ONE po_item". A repeat of the same
+ * printing was costing a whole new card, and adding the second item to the card
+ * that already describes the job is what the floor actually does.
+ *
+ * WHAT DID NOT CHANGE, and this is the load-bearing half: stage events, dispatch
+ * lines, committed dates and OTD all still hang off `po_item`, not off the card.
+ * So the items on one card keep their own stage histories and move
+ * independently — they diverge the moment they come off the press, one to
+ * lamination and another straight to die-cut — and Stage Update still shows one
+ * row per item. The card groups what is printed together; it does not merge the
+ * things that are owed separately.
+ *
+ * Cross-client is allowed here by construction rather than by exception. C8's
+ * guard is on dispatch lines and invoice lines, which hang off the item, so a
+ * card carrying two clients' items breaks no document rule — the same position
+ * a press run is in (H3).
+ *
+ * `planned_qty` lives here because a card covering three items has three of
+ * them. A single column on the card could only hold a total, and a total that
+ * agrees with none of the three is worse than no number.
+ */
+export const jobCardItem = pgTable(
+  "job_card_item",
+  {
+    ...baseColumns(),
+
+    jobCardId: uuid()
+      .notNull()
+      .references(() => jobCard.id, { onDelete: "cascade" }),
+
+    poItemId: uuid()
+      .notNull()
+      .references(() => poItem.id),
+
+    /** May be less than ordered_qty when a run is split. */
+    plannedQty: integer(),
+  },
+  (t) => [
+    // PARTIAL, like the rest of the schema (C5): a removed item can be added
+    // back and that is a genuine insert, not a resurrection.
+    uniqueIndex("job_card_item_key")
+      .on(t.jobCardId, t.poItemId)
+      .where(sql`${t.deletedAt} is null`),
+    index("job_card_item_po_item_idx").on(t.poItemId),
+    check(
+      "job_card_item_planned_qty_positive",
+      sql`${t.plannedQty} is null or ${t.plannedQty} > 0`,
+    ),
+  ],
+);
+

@@ -225,9 +225,11 @@ export const designFabrication = pgTable(
  * right once and wrong forever after — the failure A2 names for unmeasured
  * numbers, in a different costume.
  *
- * WHICH options appear here is still the design's decision: a design with no
- * embossing never gets asked. This table answers a question the design has
- * already opened.
+ * SINCE J24 THE CARD ANSWERS THE WHOLE BLOCK, not only the run-scope questions
+ * a design opened. Designs are not linked to purchase orders in practice, so
+ * gating the card's fabrication on a design meant most cards reached the floor
+ * with no finishing named at all — the question this system exists to stop
+ * somebody walking across the floor to ask.
  */
 export const jobCardFabrication = pgTable(
   "job_card_fabrication",
@@ -245,6 +247,18 @@ export const jobCardFabrication = pgTable(
     valueId: uuid(),
 
     otherText: text(),
+
+    /**
+     * Whether this job actually has this process.
+     *
+     * THREE STATES ARE NEEDED, WHICH IS WHY THIS IS NOT JUST ROW-PRESENCE. A
+     * card with no row for an option has no opinion and falls through to the
+     * design. A row with `applies` true says this job has the process; a row
+     * with it false says it does NOT, which is the only way a card can turn
+     * off something its design has ticked (J24). Without the column, "no
+     * opinion" and "explicitly off" would be the same absent row.
+     */
+    applies: boolean().notNull().default(true),
   },
   (t) => [
     uniqueIndex("job_card_fabrication_key")

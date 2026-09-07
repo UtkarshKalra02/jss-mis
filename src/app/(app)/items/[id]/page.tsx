@@ -85,9 +85,6 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
    * process the design does not do (J8).
    */
   const designFab = detail?.designId ? await designSelections(detail.designId) : new Map();
-  const runOptions = fabricationOptions.filter(
-    (o) => o.valueScope === "Run" && designFab.has(o.id),
-  );
 
   const canSeePo = can(user.role, "purchase_order");
   const canGang = can(user.role, "press_run", "write");
@@ -364,8 +361,9 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
                 itemCode={item.itemCode}
                 pendingQty={item.pendingQty}
                 machines={machines}
-                runOptions={runOptions}
-                runSelected={new Map()}
+                fabricationOptions={fabricationOptions}
+                designSelected={designFab}
+                cardSelected={new Map()}
                 hasExistingCard={jobCards.length > 0}
               />
             ) : null}

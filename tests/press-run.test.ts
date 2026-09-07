@@ -13,7 +13,9 @@ import {
 
 import { resolvedSheet } from "@/modules/press-runs/sheet";
 
-import { expectFailure, inRollback, uniq } from "./helpers";
+import { jobCardItemIds } from "@/modules/job-cards/queries";
+
+import { expectFailure, inRollback, makeCardFor, uniq } from "./helpers";
 
 /**
  * Press runs — ganging (decision H1).
@@ -67,16 +69,11 @@ async function makeItem(tx: Tx, clientName: string) {
 }
 
 async function makeJobCard(tx: Tx, poItemId: string) {
-  return auditedInsert(
-    SYSTEM_ACTOR,
-    jobCard,
-    {
-      jcNo: await allocateNumber(tx, "JC", "2026-05-01"),
-      poItemId,
-      plannedQty: 500,
-      plannedDate: "2026-05-10",
-    },
+  return makeCardFor(
     tx,
+    poItemId,
+    { jcNo: await allocateNumber(tx, "JC", "2026-05-01"), plannedDate: "2026-05-10" },
+    500,
   );
 }
 
@@ -147,7 +144,7 @@ describe("ganging across clients (H3)", () => {
       await auditedUpdate(SYSTEM_ACTOR, jobCard, card.id, { pressRunId: run.id }, tx);
 
       const [row] = await tx.select().from(jobCard).where(eq(jobCard.id, card.id));
-      expect(row!.poItemId).toBe(nature.poItemId);
+      expect(await jobCardItemIds(card.id, tx)).toEqual([nature.poItemId]);
       expect(row!.pressRunId).toBe(run.id);
     });
   });
@@ -243,7 +240,7 @@ describe("removing a job card from a run", () => {
       const [row] = await tx.select().from(jobCard).where(eq(jobCard.id, card.id));
       expect(row!.pressRunId).toBeNull();
       // Still a perfectly good job card against its own item.
-      expect(row!.poItemId).toBe(a.poItemId);
+      expect(await jobCardItemIds(card.id, tx)).toEqual([a.poItemId]);
 
       expect(await getRunMembers(run.id, tx)).toHaveLength(0);
       expect((await gangInfoFor([card.id], tx)).size).toBe(0);
@@ -442,16 +439,11 @@ describe("the press run as a document", () => {
       );
 
       for (const item of [a, b]) {
-        await auditedInsert(
-          SYSTEM_ACTOR,
-          jobCard,
-          {
-            jcNo: await allocateNumber(tx, "JC", "2026-05-10"),
-            poItemId: item.poItemId,
-            pressRunId: run.id,
-            plannedQty: 500,
-          },
+        await makeCardFor(
           tx,
+          item.poItemId,
+          { jcNo: await allocateNumber(tx, "JC", "2026-05-10"), pressRunId: run.id },
+          500,
         );
       }
 

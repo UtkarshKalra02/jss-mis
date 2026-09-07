@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { jobCard, poItem, pressRun, stage } from "@/db/schema";
+import { jobCard, jobCardItem, poItem, pressRun, stage } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
 
 import type { StageOption } from "./precedence";
@@ -60,18 +60,22 @@ export async function listItemsToUpdate(): Promise<StageUpdateRow[]> {
    * duplicate an item across two plates and put it on the screen twice.
    */
   const gang = db
-    .selectDistinctOn([jobCard.poItemId], {
-      poItemId: jobCard.poItemId,
+    .selectDistinctOn([jobCardItem.poItemId], {
+      poItemId: jobCardItem.poItemId,
       pressRunId: pressRun.id,
       runNo: pressRun.runNo,
       runDate: pressRun.runDate,
       runMachine: pressRun.machine,
     })
     .from(jobCard)
+    .innerJoin(
+      jobCardItem,
+      and(eq(jobCardItem.jobCardId, jobCard.id), isNull(jobCardItem.deletedAt)),
+    )
     .innerJoin(pressRun, eq(pressRun.id, jobCard.pressRunId))
     .where(and(isNull(jobCard.deletedAt), isNull(pressRun.deletedAt)))
     .orderBy(
-      jobCard.poItemId,
+      jobCardItem.poItemId,
       sql`${jobCard.plannedDate} desc nulls last`,
       desc(jobCard.createdAt),
     )

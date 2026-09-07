@@ -72,8 +72,11 @@ async function search(tx: Tx, term: string) {
       or v.po_internal_no ilike ${like}
       or v.client_po_no ilike ${like}
       or exists (
-        select 1 from job_card jc
-        where jc.po_item_id = v.po_item_id
+        select 1
+          from job_card jc
+          join job_card_item jci on jci.job_card_id = jc.id
+        where jci.po_item_id = v.po_item_id
+          and jci.deleted_at is null
           and jc.deleted_at is null
           and jc.jc_no ilike ${like}
       )
@@ -118,12 +121,13 @@ describe("item search", () => {
       const jcNo = uniq("JC-");
 
       // Two cards on one item. A join would return it twice.
-      await tx.execute(
-        sql`insert into job_card (jc_no, po_item_id) values (${jcNo}, ${f.soon.id})`,
-      );
-      await tx.execute(
-        sql`insert into job_card (jc_no, po_item_id) values (${uniq("JC-")}, ${f.soon.id})`,
-      );
+      for (const no of [jcNo, uniq("JC-")]) {
+        await tx.execute(sql`
+          with c as (insert into job_card (jc_no) values (${no}) returning id)
+          insert into job_card_item (job_card_id, po_item_id)
+          select id, ${f.soon.id} from c
+        `);
+      }
 
       const rows = await search(tx, jcNo);
       expect(rows).toHaveLength(1);

@@ -1,0 +1,1 @@
+ALTER TABLE "job_card_fabrication" ADD COLUMN "applies" boolean DEFAULT true NOT NULL;

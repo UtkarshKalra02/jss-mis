@@ -7,6 +7,7 @@ import {
   dispatch,
   dispatchLine,
   jobCard,
+  jobCardItem,
   poItem,
   purchaseOrder,
   stage,
@@ -74,9 +75,13 @@ export async function searchItems(
         ilike(vPoItemStatus.clientName, like),
         ilike(vPoItemStatus.poInternalNo, like),
         ilike(vPoItemStatus.clientPoNo, like),
+        // Through the junction since J25: a card may cover several items, and
+        // searching its number must find every one of them.
         sql`exists (
           select 1 from ${jobCard}
-          where ${jobCard.poItemId} = ${vPoItemStatus.poItemId}
+          join ${jobCardItem} on ${jobCardItem.jobCardId} = ${jobCard.id}
+          where ${jobCardItem.poItemId} = ${vPoItemStatus.poItemId}
+            and ${jobCardItem.deletedAt} is null
             and ${jobCard.deletedAt} is null
             and ${jobCard.jcNo} ilike ${like}
         )`,
