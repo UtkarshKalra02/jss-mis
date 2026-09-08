@@ -219,23 +219,25 @@ describe("dispatch entry", () => {
     });
   });
 
-  it("refuses to dispatch more than was ordered, naming the overflow", async () => {
+  /**
+   * K12 removed the ceiling. An over-run is ordinary in an offset works, and
+   * the challan has to be able to say what actually left the building.
+   */
+  it("accepts a delivery larger than the order and completes the item", async () => {
     await inRollback(async (tx) => {
       const f = await fixture(tx, 100);
       const ch = await challan(tx, { clientId: f.clientId, dispatchDate: "2026-08-20" });
 
-      const result = await expectFailure(tx, (sp) =>
-        auditedInsert(
-          SYSTEM_ACTOR,
-          dispatchLine,
-          { dispatchId: ch.id, poItemId: f.itemId, qty: 150 },
-          sp,
-        ),
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatchLine,
+        { dispatchId: ch.id, poItemId: f.itemId, qty: 150 },
+        tx,
       );
 
-      expect(result.threw).toBe(true);
-      expect(result.message).toContain("exceeds the order");
-      expect(result.message).toContain("over by 50");
+      // The over-delivered item still counts as complete, so the DISPATCHED
+      // event is appended exactly as it would be for an exact delivery.
+      expect(await completedItems(tx, [f.itemId])).toEqual([f.itemId]);
     });
   });
 
@@ -358,14 +360,17 @@ describe("dispatch entry", () => {
   });
 
   /**
-   * The hole excluding drafts opens, and the guard that closes it.
+   * The guard 0008 added for this case is gone with the ceiling (K12).
    *
-   * A draft for the whole order and a dispatch for the whole order are each
-   * individually valid once drafts do not count. Promoting the draft would put
-   * twice the ordered quantity against the item, and the line-level trigger
-   * cannot see it because promoting a draft touches no line.
+   * A draft for the whole order plus a dispatch for the whole order used to be
+   * "each individually valid, jointly impossible" — and jointly impossible is
+   * exactly what stopped being true. Promoting the draft is now allowed and
+   * puts the item at twice its order.
+   *
+   * What is still asserted is the half of 0008 that has not changed: A DRAFT
+   * CONSUMES NOTHING until it is promoted.
    */
-  it("refuses to promote a draft that would take an item over its order", async () => {
+  it("promotes a draft that takes an item over its order, and counts it only then", async () => {
     await inRollback(async (tx) => {
       const f = await fixture(tx, 100);
 
@@ -381,7 +386,6 @@ describe("dispatch entry", () => {
         tx,
       );
 
-      // Perfectly valid on its own: the draft consumes nothing.
       const gone = await challan(tx, { clientId: f.clientId, dispatchDate: "2026-08-21" });
       await auditedInsert(
         SYSTEM_ACTOR,
@@ -390,13 +394,23 @@ describe("dispatch entry", () => {
         tx,
       );
 
-      const result = await expectFailure(tx, (sp) =>
-        sp.execute(sql`update dispatch set status = 'Dispatched' where id = ${draft.id}`),
-      );
+      const before = (
+        await tx.execute(
+          sql`select dispatched_qty from v_po_item_status where po_item_id = ${f.itemId}`,
+        )
+      ).rows as { dispatched_qty: number }[];
+      // The draft is not counted yet — 0008's rule, untouched.
+      expect(before[0]!.dispatched_qty).toBe(100);
 
-      expect(result.threw).toBe(true);
-      expect(result.message).toContain("would go over its order");
-      expect(result.message).toContain("over by 100");
+      await tx.execute(sql`update dispatch set status = 'Dispatched' where id = ${draft.id}`);
+
+      const after = (
+        await tx.execute(
+          sql`select dispatched_qty, pending_qty from v_po_item_status where po_item_id = ${f.itemId}`,
+        )
+      ).rows as { dispatched_qty: number; pending_qty: number }[];
+      expect(after[0]!.dispatched_qty).toBe(200);
+      expect(after[0]!.pending_qty).toBe(-100);
     });
   });
 

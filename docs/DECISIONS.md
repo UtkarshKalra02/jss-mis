@@ -2677,3 +2677,67 @@ ACCOUNTS also gained `stage_update: "write"` in the same session, on the reasoni
 dispatch on the role under B1: he is already the person closing a delivery out. It is write
 rather than read because both the Stage Update page and its action require write — there is
 no read-only version of that screen to grant.
+
+---
+
+## K12 — a delivery may exceed the order
+
+Asked for and applied 8 Sep 2026. **Amends spec 4.5**, which said
+`SUM(dispatch_line.qty) per po_item <= po_item.ordered_qty`, and removes the two triggers
+that enforced it.
+
+An over-run is ordinary in an offset works. Extra sheets are printed to cover make-ready and
+wastage, and when they come out clean the client is sent the lot. A system that refuses to
+record what physically left the building makes the challan disagree with the gate register,
+and the register is the thing that is actually true.
+
+**No ceiling at all, not a wider one.** A tolerance was considered and rejected: it would
+have been a percentage nobody has measured, applied to every client and every job, and the
+first time it refused a genuine 12% over-run somebody would raise it — at which point it is
+not a limit, it is a speed bump with a settings row. The form warns instead, which is the
+same "warn, never block" this screen already applies to dispatching an item that has not
+reached READY (F2).
+
+**The cost is real and is stated rather than hidden.** A mistyped 10000 for 1000 is now
+accepted, closes the order, and reaches OTD. The only defence is the form saying how far
+over the number is before it is saved, in amber, naming the overage. That is a deliberate
+trade, not an oversight — if it starts happening, the answer is a confirmation dialog at the
+desk, not a rule in the database.
+
+**What did NOT change, and this is the important half.** `pending_qty` is still
+`ordered - dispatched`, still computed in the view and stored nowhere (non-negotiable 2). It
+simply goes NEGATIVE, which is the honest reading. Every consumer was already written for
+it and none needed touching:
+
+- `po_item_recompute` closes an item on `dispatched >= ordered`, so an over-delivered item
+  closes exactly as an exactly-delivered one does;
+- `v_otd` takes `pending_qty <= 0 AND dispatched_qty > 0`, so it counts;
+- the dispatch, stage-update, job-card and WIP worklists all filter `pending_qty > 0`, so it
+  drops off them.
+
+That is why the change is two dropped guards and no view edits. Flooring `pending_qty` at
+zero would have been the tempting move and would have silently changed the meaning of every
+one of those comparisons.
+
+**Display resolves the sign; the arithmetic does not.** `formatPending` renders a negative
+pending as `0 · 100 over` rather than `-100`, because a bare minus in a column headed
+"Pending" reads as an error rather than as a hundred extra pieces delivered. Used on the PO
+detail, the item detail and the challan lines.
+
+**`dispatch_line_guard` survives; `dispatch_consumption_guard` does not.** The first still
+enforces C8 — a line's item and its challan must belong to the same client, which two
+individually valid foreign keys do not guarantee — and lost only its quantity check and the
+`FOR UPDATE` lock that existed to serialise it. The second existed *only* for the ceiling:
+0008 added it because excluding drafts made two challans "each individually valid, jointly
+impossible", and jointly impossible is precisely what stopped being true. A guard whose
+failure branch can no longer be reached is one somebody has to read and discount later, so
+it was dropped rather than left standing.
+
+Drafts still do not consume order quantity. That half of 0008 lives in the views and is
+untouched, and a test now pins it directly rather than as a side effect of the guard.
+
+**One inconsistency left deliberately.** The reverse guard from 0006 still refuses to lower
+`ordered_qty` below what has already been dispatched. So an item can be over-delivered to
+1100 against an order of 1000, but that order cannot then be revised down to 900. Nothing
+about the change requires touching it, and the rule is defensible on its own terms — it is
+noted here so the next person to meet it knows it was seen and left, not missed.

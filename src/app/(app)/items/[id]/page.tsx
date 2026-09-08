@@ -11,7 +11,7 @@ import {
   formatDate,
   formatDaysToCommitted,
   formatINRPrecise,
-  formatQty,
+  formatPending, formatQty,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -140,8 +140,8 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
         <Figure label="Dispatched" value={formatQty(item.dispatchedQty)} />
         <Figure
           label="Pending"
-          value={formatQty(item.pendingQty)}
-          tone={item.pendingQty === 0 ? "text-muted-foreground" : undefined}
+          value={formatPending(item.pendingQty)}
+          tone={item.pendingQty <= 0 ? "text-muted-foreground" : undefined}
         />
         <Figure
           label="Committed"

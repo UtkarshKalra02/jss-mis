@@ -62,6 +62,24 @@ export function formatQty(value: number | string | null | undefined): string {
   return numberFormatter.format(n);
 }
 
+/**
+ * Pending quantity, which may be NEGATIVE since K12.
+ *
+ * An over-delivery leaves `ordered - dispatched` below zero, and that is the
+ * honest number — every consumer of `pending_qty` is written against `<= 0`
+ * and `> 0` and would change meaning if the view floored it. What must not
+ * happen is a bare "-100" appearing in a column headed "Pending", which reads
+ * as an error rather than as a hundred extra pieces delivered.
+ *
+ * So the arithmetic stays signed and only the DISPLAY resolves it: nothing is
+ * pending, and the overage is named rather than hidden.
+ */
+export function formatPending(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  if (!Number.isFinite(value)) return "—";
+  return value < 0 ? `0 · ${formatQty(-value)} over` : formatQty(value);
+}
+
 /** 87.5% */
 export function formatPercent(
   value: number | string | null | undefined,

@@ -217,7 +217,11 @@ export function DispatchForm({
                 {forClient.map((item) => {
                   const notReady = item.currentStage !== "READY";
                   const typed = qty[item.poItemId] ?? "";
-                  const over = Number(typed || 0) > item.pendingQty;
+                  // Over the order is ALLOWED and warned about, never blocked
+                  // (K12) — the same treatment this screen already gives an
+                  // item that has not reached READY (F2).
+                  const overBy = Number(typed || 0) - item.pendingQty;
+                  const over = overBy > 0;
 
                   return (
                     <tr key={item.poItemId}>
@@ -273,7 +277,6 @@ export function DispatchForm({
                           name="qty"
                           type="number"
                           min={0}
-                          max={item.pendingQty}
                           step={1}
                           value={typed}
                           onChange={(e) =>
@@ -282,11 +285,20 @@ export function DispatchForm({
                           className={cn(
                             inputClass,
                             "text-right tabular-nums",
-                            over && "border-overdue",
+                            over && "border-at-risk",
                           )}
                           aria-label={`Dispatch quantity for ${item.itemCode}`}
                           placeholder="0"
                         />
+                        {/* Amber and specific, not red and refusing. An
+                            over-run is a real thing to record; a mistyped digit
+                            is the thing this number is here to catch, and it
+                            can only do that by saying how far over it is. */}
+                        {over ? (
+                          <span className="text-at-risk mt-1 block text-right text-[11px]">
+                            {formatQty(overBy)} over the order
+                          </span>
+                        ) : null}
                       </td>
 
                       <td className="px-2 py-1">

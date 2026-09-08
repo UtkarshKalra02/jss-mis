@@ -67,8 +67,21 @@ async function scenario(tx: Tx) {
   };
 }
 
-describe("dispatch quantity ceiling", () => {
-  it("allows partial dispatch and the exact remainder, and blocks the overflow", async () => {
+/**
+ * There is no longer a quantity ceiling (K12).
+ *
+ * An over-run is ordinary in an offset works — extra sheets are printed to
+ * cover make-ready, and when they come out clean the client gets the lot — and
+ * a system that refuses to record what physically left makes the challan
+ * disagree with the gate register. What used to be `dispatch_line_guard`'s
+ * ceiling is now the form's warning, and nothing else.
+ *
+ * The property still worth pinning is that pending_qty follows honestly into
+ * the negative rather than clamping, because every consumer of it was written
+ * against `<= 0` and `> 0` and would quietly change meaning if it floored.
+ */
+describe("dispatch quantity, which may now exceed the order", () => {
+  it("accepts a delivery larger than the order and lets pending go negative", async () => {
     await inRollback(async (tx) => {
       const s = await scenario(tx);
 
@@ -76,20 +89,42 @@ describe("dispatch quantity ceiling", () => {
         sql`insert into dispatch_line (dispatch_id, po_item_id, qty) values (${s.dispatchA}, ${s.itemId}, 600)`,
       );
 
-      const over = await expectFailure(tx, (sp) =>
+      // 500 more against a 1000 order: 100 over, and no longer refused.
+      await tx.execute(
+        sql`insert into dispatch_line (dispatch_id, po_item_id, qty) values (${s.dispatchA}, ${s.itemId}, 500)`,
+      );
+
+      const [row] = (
+        await tx.execute(
+          sql`select dispatched_qty, pending_qty, status
+                from v_po_item_status where po_item_id = ${s.itemId}`,
+        )
+      ).rows as { dispatched_qty: number; pending_qty: number; status: string }[];
+
+      expect(row!.dispatched_qty).toBe(1100);
+      // NEGATIVE, not floored at zero. v_otd takes pending_qty <= 0 and the
+      // worklists take > 0, so an over-delivered item counts as delivered and
+      // drops off the screens — exactly as an exactly-delivered one does.
+      expect(row!.pending_qty).toBe(-100);
+      expect(row!.status).toBe("Closed");
+    });
+  });
+
+  it("still refuses a line whose item belongs to another client (C8)", async () => {
+    // The other half of the same trigger, which the ceiling's removal must not
+    // have taken with it.
+    await inRollback(async (tx) => {
+      const s = await scenario(tx);
+
+      const result = await expectFailure(tx, (sp) =>
         sp.execute(
-          sql`insert into dispatch_line (dispatch_id, po_item_id, qty) values (${s.dispatchA}, ${s.itemId}, 500)`,
+          sql`insert into dispatch_line (dispatch_id, po_item_id, qty)
+              values (${s.dispatchB}, ${s.itemId}, 10)`,
         ),
       );
-      expect(over.threw).toBe(true);
-      expect(over.message).toContain("exceeds the order");
-      // The message has to be usable by whoever hits it at the desk.
-      expect(over.message).toContain("already dispatched 600");
 
-      // 400 exactly completes the order and must be allowed.
-      await tx.execute(
-        sql`insert into dispatch_line (dispatch_id, po_item_id, qty) values (${s.dispatchA}, ${s.itemId}, 400)`,
-      );
+      expect(result.threw).toBe(true);
+      expect(result.message).toContain("different client");
     });
   });
 

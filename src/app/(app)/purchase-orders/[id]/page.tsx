@@ -20,7 +20,7 @@ import {
   formatCommittedDate,
   formatDaysToCommitted,
   formatINRPrecise,
-  formatQty,
+  formatPending, formatQty,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -118,7 +118,7 @@ export default async function PurchaseOrderPage({
                   <td className="px-3 text-right tabular-nums">
                     {formatQty(item.dispatchedQty)}
                   </td>
-                  <td className="px-3 text-right tabular-nums">{formatQty(item.pendingQty)}</td>
+                  <td className="px-3 text-right tabular-nums">{formatPending(item.pendingQty)}</td>
                   <td className="px-3">
                     <StagePill name={item.currentStageName} colour={item.currentStageColour} />
                   </td>
