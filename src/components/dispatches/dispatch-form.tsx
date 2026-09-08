@@ -200,6 +200,11 @@ export function DispatchForm({
                 <tr>
                   <th className="min-w-32 px-2">Item</th>
                   <th className="min-w-48 px-2">Name</th>
+                  {/* Which order this row is owed against. A client with three
+                      open POs delivers them over weeks, not in one drop, so
+                      "which PO is this?" is asked of every row on this screen
+                      — and the answer was being fetched and thrown away. */}
+                  <th className="px-2">PO</th>
                   <th className="min-w-36 px-2">Stage</th>
                   <th className="px-2">Committed</th>
                   <th className="px-2 text-right">Ordered</th>
@@ -223,6 +228,9 @@ export function DispatchForm({
                         {item.itemCode}
                       </td>
                       <td className="px-2">{item.itemName}</td>
+                      <td className="text-muted-foreground px-2 tabular-nums">
+                        {item.poInternalNo}
+                      </td>
 
                       <td className="px-2">
                         <div className="flex items-center gap-2">

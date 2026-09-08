@@ -79,6 +79,7 @@ export default async function DispatchDetailPage({
             <tr>
               <th className="px-3">Item</th>
               <th className="px-3">Name</th>
+              <th className="px-3">PO</th>
               <th className="px-3">Stage</th>
               <th className="px-3 text-right">Ordered</th>
               <th className="px-3 text-right">On this challan</th>
@@ -90,7 +91,7 @@ export default async function DispatchDetailPage({
           <tbody>
             {lines.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-muted-foreground px-3 py-6 text-center">
+                <td colSpan={9} className="text-muted-foreground px-3 py-6 text-center">
                   No lines on this challan.
                 </td>
               </tr>
@@ -106,6 +107,9 @@ export default async function DispatchDetailPage({
                     </Link>
                   </td>
                   <td className="px-3">{line.itemName}</td>
+                  <td className="text-muted-foreground px-3 tabular-nums">
+                    {line.poInternalNo}
+                  </td>
                   <td className="px-3">
                     <StagePill name={line.currentStageName} colour={line.currentStageColour} />
                   </td>
@@ -136,7 +140,9 @@ export default async function DispatchDetailPage({
           {lines.length > 0 ? (
             <tfoot>
               <tr className="border-t font-medium">
-                <td className="px-3 py-2" colSpan={4}>
+                {/* Item, Name, PO, Stage, Ordered — so the total below lands
+                    under "On this challan" and not beside it. */}
+                <td className="px-3 py-2" colSpan={5}>
                   {lines.length} line{lines.length === 1 ? "" : "s"}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{formatQty(totalQty)}</td>

@@ -80,6 +80,10 @@ export async function listDispatchLines(dispatchId: string) {
       poItemId: dispatchLine.poItemId,
       itemCode: vPoItemStatus.itemCode,
       itemName: vPoItemStatus.itemName,
+      /* Which order the line is owed against. One PO is delivered across
+         several challans, so a challan that cannot say which PO its lines came
+         from is a document you have to look something else up to read. */
+      poInternalNo: vPoItemStatus.poInternalNo,
       orderedQty: vPoItemStatus.orderedQty,
       dispatchedQty: vPoItemStatus.dispatchedQty,
       pendingQty: vPoItemStatus.pendingQty,
