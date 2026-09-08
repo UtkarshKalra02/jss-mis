@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, ne, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
@@ -13,6 +13,7 @@ import {
   purchaseOrder,
 } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
+import { matchesEveryTerm } from "@/lib/search";
 import type { PaperBundle } from "./paper";
 
 /**
@@ -383,19 +384,21 @@ export async function searchJobCards(
   query: string,
   opts: { openOnly?: boolean; limit?: number } = {},
 ): Promise<JobCardListRow[]> {
-  const term = query.trim();
-  const like = `%${term}%`;
-
-  const matches = term
-    ? or(
-        ilike(jobCard.jcNo, like),
-        ilike(poItem.itemCode, like),
-        ilike(poItem.itemName, like),
-        ilike(client.code, like),
-        ilike(client.name, like),
-        ilike(machine.name, like),
-      )
-    : undefined;
+  /*
+   * Every term has to match something, so typing more words narrows the list
+   * — the same rule Stage Update searches by. Status is included because it is
+   * a column on this grid and "on hold" is a question people ask of it; it is
+   * cast to text first, since Postgres has no ILIKE for an enum.
+   */
+  const matches = matchesEveryTerm(query, (like) => [
+    ilike(jobCard.jcNo, like),
+    ilike(poItem.itemCode, like),
+    ilike(poItem.itemName, like),
+    ilike(client.code, like),
+    ilike(client.name, like),
+    ilike(machine.name, like),
+    sql`${jobCard.status}::text ilike ${like}`,
+  ]);
 
   /*
    * "Open" here means a card the floor could still be working from. A
@@ -463,18 +466,13 @@ export type ReleasableRow = {
  * run (J3), so this counts in order to inform rather than to filter.
  */
 export async function releasableItems(query = "", limit = 200): Promise<ReleasableRow[]> {
-  const term = query.trim();
-  const like = `%${term}%`;
-
-  const matches = term
-    ? or(
-        ilike(vPoItemStatus.itemCode, like),
-        ilike(vPoItemStatus.itemName, like),
-        ilike(vPoItemStatus.clientCode, like),
-        ilike(vPoItemStatus.clientName, like),
-        ilike(vPoItemStatus.poInternalNo, like),
-      )
-    : undefined;
+  const matches = matchesEveryTerm(query, (like) => [
+    ilike(vPoItemStatus.itemCode, like),
+    ilike(vPoItemStatus.itemName, like),
+    ilike(vPoItemStatus.clientCode, like),
+    ilike(vPoItemStatus.clientName, like),
+    ilike(vPoItemStatus.poInternalNo, like),
+  ]);
 
   return db
     .select({

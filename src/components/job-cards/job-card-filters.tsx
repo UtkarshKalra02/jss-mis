@@ -39,16 +39,35 @@ export function JobCardSearch({ initialQuery }: { initialQuery: string }) {
   }, [value]);
 
   return (
-    <div className="relative w-full max-w-lg">
-      <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-      <Input
-        type="search"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="Card number, item, client or machine…"
-        aria-label="Search job cards"
-        className={`h-9 pl-8 text-[13px] ${isPending ? "opacity-70" : ""}`}
-      />
+    <div className="w-full max-w-lg">
+      <div className="relative">
+        <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+        <Input
+          type="search"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Card number, item, client, machine or status…"
+          aria-label="Search job cards"
+          className={`h-9 pl-8 text-[13px] ${isPending ? "opacity-70" : ""}`}
+        />
+      </div>
+
+      {/* The way out of a filter, spelled out. `type="search"` gives a clear
+          cross in some browsers and nothing at all in others, and a grid
+          quietly showing a subset is the one thing a screen people act from
+          must not do. */}
+      {value.trim() ? (
+        <p className="text-muted-foreground mt-1.5 text-xs">
+          Filtered by “{value.trim()}”.{" "}
+          <button
+            type="button"
+            onClick={() => setValue("")}
+            className="text-primary hover:underline"
+          >
+            Clear search
+          </button>
+        </p>
+      ) : null}
     </div>
   );
 }

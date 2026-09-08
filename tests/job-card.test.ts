@@ -10,6 +10,7 @@ import {
   jobCardItems,
   jobCardsForItem,
   liveCardCountFor,
+  searchJobCards,
 } from "@/modules/job-cards/queries";
 import { parseExecutionForm, parseReleaseForm } from "@/modules/job-cards/validation";
 
@@ -592,5 +593,33 @@ describe("the items a job card covers", () => {
       // quantity as the Item Tracker rather than a second opinion.
       expect(rows[0]!.orderedQty).toBeGreaterThan(0);
     });
+  });
+});
+
+/**
+ * The list search, run against the real database.
+ *
+ * `searchJobCards` reads through `db` rather than a transaction, so it cannot
+ * see a rolled-back fixture and there is nothing here to assert about WHICH
+ * rows come back — the matching rule itself is pinned in
+ * `tests/search-terms.test.ts`, without a database in the way.
+ *
+ * What this catches is the SQL being invalid, which is not hypothetical:
+ * `status` is a Postgres enum and has no ILIKE operator, so searching it needs
+ * an explicit cast to text. Without one every search on this screen throws
+ * 42883 and the grid is a 500 page — a failure no amount of pure-function
+ * testing would have found.
+ */
+describe("the job card list search", () => {
+  it("runs without a query", async () => {
+    expect(Array.isArray(await searchJobCards(""))).toBe(true);
+  });
+
+  it("runs against the status enum, which needs a cast to text", async () => {
+    expect(Array.isArray(await searchJobCards("hold", { openOnly: false }))).toBe(true);
+  });
+
+  it("runs with several terms", async () => {
+    expect(Array.isArray(await searchJobCards("kbc carton hold"))).toBe(true);
   });
 });

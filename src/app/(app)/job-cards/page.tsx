@@ -51,7 +51,8 @@ export default async function JobCardsPage({
         ) : null}
       </div>
       <p className="text-muted-foreground mt-1 text-[13px]">
-        The sheet the floor works from. Search by card number, item, client or machine.
+        The sheet the floor works from. Search by card number, item, client, machine or
+        status — every word you add narrows the list.
       </p>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
