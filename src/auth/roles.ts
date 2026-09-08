@@ -200,8 +200,22 @@ export const ACCESS: Matrix = {
 
     reports: "read", // B1
     item_tracker: "read",
-    job_card: "read",
-    press_run: "read",
+
+    /**
+     * Pradeep raises job cards too, at Utkarsh's direction (amends J14).
+     *
+     * `press_run` moves WITH it and not separately. J14 is explicit that the
+     * two carry the same grant: ganging is a choice made while raising a card
+     * (J15), so a split grant produces somebody who can release a card and
+     * then cannot say what it runs with. Granting only `job_card` would have
+     * recreated exactly the gap that decision closed.
+     *
+     * What this hands him is a floor-planning judgement, not paperwork —
+     * whether a job runs on its own plate or shares a sheet with another
+     * client's. That is what J14 says the act actually is.
+     */
+    job_card: "write",
+    press_run: "write",
     tooling: "read",
     client: "read",
     delegation: "write",

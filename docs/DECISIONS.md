@@ -1836,6 +1836,11 @@ card's detail, so he can still answer "has the card for this design been raised,
 did it run?" — which is the question the order desk actually asks. What he cannot do is
 decide the answer.
 
+> **Amended by K11 (8 Sep 2026).** ACCOUNTS now also carries `job_card` and `press_run`
+> write. J14's reasoning about WHAT the act is stands unchanged and is why the amendment
+> had to grant both: Pradeep is now a third person who can decide that a job shares a
+> sheet. What is no longer true is the implied "only Preeti plans the floor" — see K11.
+
 **I11 — `Ordered` joins the tool status list, and `location` becomes nullable for that one
 case.**
 
@@ -2640,3 +2645,35 @@ what came in and needs to see it, but an enquiry belongs to the order desk, beca
 person who took the call is the person who knows what was said. B2 needs no special handling
 here: the audit wrapper refuses an OWNER write outright, and its only carve-out is
 delegation.
+
+---
+
+## K11 — Pradeep raises job cards, and therefore creates press runs
+
+Asked for and applied 8 Sep 2026. Amends **J14**, which gave `job_card` write to ADMIN and
+PLANNER only.
+
+**Both resources moved, because J14 says they cannot move apart.** Ganging is a choice made
+while raising a card (J15), so `job_card` and `press_run` carry the same grant — a split
+would produce somebody who can release a card and then cannot say what it runs with.
+Granting only `job_card`, which is what was originally asked for, would have recreated
+exactly the gap J14 closed.
+
+**What this actually hands over is a judgement, not a screen.** J14's argument is that
+raising a card is not order-desk paperwork but a decision about whether a job runs on its
+own plate or shares a sheet with another client's small job — a question about paper cost,
+plate cost and what the press is doing that day. Three people can now make that call rather
+than two. That is the thing to watch if two of them start raising cards for the same week's
+work; nothing in the system stops them, and nothing detects it.
+
+**It arrived as a request for "item tracker read and write".** Worth recording, because the
+request and the change are not the same shape. `item_tracker` is never checked for write
+anywhere in the codebase — ADMIN has carried `item_tracker: "write"` since Phase 1 and gains
+nothing from it — so granting it would have read as a permission and changed no behaviour.
+The capability actually wanted was reachable FROM the tracker: releasing a job card and
+adding it to a press run, both gated on their own resources. Those are what changed.
+
+ACCOUNTS also gained `stage_update: "write"` in the same session, on the reasoning that put
+dispatch on the role under B1: he is already the person closing a delivery out. It is write
+rather than read because both the Stage Update page and its action require write — there is
+no read-only version of that screen to grant.
