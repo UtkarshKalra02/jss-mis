@@ -54,16 +54,28 @@ export default async function DispatchDetailPage({
         ← Dispatch
       </Link>
 
-      <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 className="page-title tabular-nums">{head.challanNo}</h1>
-        <span className="text-muted-foreground text-[13px]">
-          {head.clientCode} — {head.clientName} · {formatDate(head.dispatchDate)}
-        </span>
-        <span
-          className={cn("text-[13px]", cancelled && "text-muted-foreground line-through")}
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="page-title tabular-nums">{head.challanNo}</h1>
+          <span className="text-muted-foreground text-[13px]">
+            {head.clientCode} — {head.clientName} · {formatDate(head.dispatchDate)}
+          </span>
+          <span
+            className={cn("text-[13px]", cancelled && "text-muted-foreground line-through")}
+          >
+            {head.status}
+          </span>
+        </div>
+
+        {/* Offered whatever the status: a draft and a cancelled challan both
+            print, and both say on the sheet what they are. Hiding the link
+            would mean somebody prints the real one and hand-annotates it. */}
+        <Link
+          href={`/dispatch/${head.id}/print`}
+          className="text-primary text-[13px] hover:underline"
         >
-          {head.status}
-        </span>
+          Print challan
+        </Link>
       </div>
 
       {cancelled ? (

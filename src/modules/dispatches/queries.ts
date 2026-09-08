@@ -34,6 +34,18 @@ export async function listDispatches(): Promise<DispatchRow[]> {
       challanNo: dispatch.challanNo,
       clientCode: client.code,
       clientName: client.name,
+      /*
+       * The consignee block on the printed challan. A challan leaves the
+       * building with the goods and is read by the receiving party's
+       * gatekeeper, so it has to name and address them on the paper — looking
+       * the address up on a screen is exactly what that person cannot do (J7).
+       */
+      clientGstin: client.gstin,
+      clientAddressLine1: client.addressLine1,
+      clientAddressLine2: client.addressLine2,
+      clientCity: client.city,
+      clientState: client.state,
+      clientPincode: client.pincode,
       dispatchDate: dispatch.dispatchDate,
       status: dispatch.status,
       lineCount: sql<number>`coalesce(${lines.lineCount}, 0)::int`,
@@ -55,6 +67,18 @@ export async function getDispatch(id: string) {
       clientId: dispatch.clientId,
       clientCode: client.code,
       clientName: client.name,
+      /*
+       * The consignee block on the printed challan. A challan leaves the
+       * building with the goods and is read by the receiving party's
+       * gatekeeper, so it has to name and address them on the paper — looking
+       * the address up on a screen is exactly what that person cannot do (J7).
+       */
+      clientGstin: client.gstin,
+      clientAddressLine1: client.addressLine1,
+      clientAddressLine2: client.addressLine2,
+      clientCity: client.city,
+      clientState: client.state,
+      clientPincode: client.pincode,
       dispatchDate: dispatch.dispatchDate,
       vehicleNo: dispatch.vehicleNo,
       transporter: dispatch.transporter,

@@ -73,4 +73,17 @@ export const dispatchColumns: LegacyColumnDef<DispatchRow>[] = [
       </span>
     ),
   },
+  {
+    id: "print",
+    header: "",
+    meta: { width: "4.5rem" },
+    cell: ({ row }) => (
+      <Link
+        href={`/dispatch/${row.original.id}/print`}
+        className="text-muted-foreground text-[12px] hover:underline"
+      >
+        Print
+      </Link>
+    ),
+  },
 ];

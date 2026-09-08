@@ -1605,7 +1605,7 @@ transcribes it back (J4).
 
 That rule also says the challan print is still owed: it goes out of the building with the
 goods and the party's gatekeeper reads it, and that person has no screen either. It is Phase
-3 work and stays Phase 3 work. Section 7's instruction to treat print stylesheets as
+3 work and stays Phase 3 work. **Built 8 Sep 2026 — see K14.** Section 7's instruction to treat print stylesheets as
 first-class screens is now met by `src/app/(print)/`, which the challan will reuse rather
 than reinvent.
 
@@ -2792,3 +2792,50 @@ these have none, so they do not appear in it. An enquiry that never converts the
 leaves a client row nothing flags for review. Setting `import_batch_id` would be a lie;
 giving `client` its own provenance column is the real fix and is a migration this change did
 not need. Worth doing if the client master starts filling with prospects.
+
+---
+
+## K14 — the delivery challan prints
+
+Built 8 Sep 2026, closing the item **J7** left open. Phase 3's last outstanding piece.
+
+J7's rule is *"print what is read by somebody who cannot open a screen"*, and it is why the
+job card printed first — Ajay reads that at a press. The same rule is what made this owed
+rather than optional: the challan leaves the building with the goods, and the gatekeeper who
+signs for them at the other end has no screen either. Preeti at her desk was never the
+reader; that was the mistake in reading J7 as "the challan does not need printing".
+
+**It is not a tax invoice and does not pretend to be.** Quantities only — no rates, no
+amounts, no tax, even though `dispatch_line.rate` is right there. Rates belong to the invoice
+(Phase 5), and a document carrying money while not being an invoice is exactly the sort of
+thing that gets argued about at a gate. The sheet says so in a line of its own rather than
+leaving somebody to decide what they are holding.
+
+**A challan that has not been dispatched says so, loudly.** A draft has not left and a
+cancelled one never did, and either printing as an ordinary challan is a piece of paper
+asserting that goods moved when they did not. Both print — hiding the link would only mean
+somebody prints the real one and annotates it by hand — but they carry an unmissable band at
+the top. Paper outlives the screen it came from, which is the whole argument for putting the
+status on the sheet rather than only in the UI.
+
+**Two things are deliberately left blank rather than filled in.**
+
+JSS's own GSTIN is not in the system, and a challan should carry the consignor's. A rule to
+write on is printed instead. Inventing a plausible number on a document that goes to a
+customer would be worse than a blank — it is the same rule that keeps unmeasured stage
+targets labelled unverified (A2).
+
+A consignee whose address the client master does not hold gets ruled lines too, for the same
+reason: the gatekeeper needs the address either way, and a blank space invites nothing while
+a rule invites a pen.
+
+**The table pads to eight rows.** A short challan otherwise ends in ragged white space below
+the last line, which is an invitation to add a line after the thing was signed.
+
+**Against orders, plural.** The header names every distinct PO the lines are drawn from,
+because a client's delivery routinely pulls items from more than one open order once a PO is
+being delivered across several days — the same reason the PO column was added to the
+dispatch screens in the first place.
+
+The letterhead is the job card's, unchanged, including its own note that the phone, email and
+ISO line on the reference stationery belong to another company and are not reproduced.
