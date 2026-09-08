@@ -232,6 +232,20 @@
       "when": 1788778571401,
       "tag": "0032_no_delegation_to_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788860586607,
+      "tag": "0033_enquiry_register",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788860609581,
+      "tag": "0034_drop_old_enquiry_columns",
+      "breakpoints": true
     }
   ]
 }

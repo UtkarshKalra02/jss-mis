@@ -2468,3 +2468,93 @@ removed `design.die_id` over.
 The rule is about the ROLE and not about Amit. An owner who can be assigned work from a
 form is an org chart that anybody with the delegation screen can rewrite upwards.
 
+
+---
+
+## K1 to K5 — the enquiry register
+
+Captured and built 8 Sep 2026, from a build spec Utkarsh wrote as "Phase 3, part 1 of 2".
+Quotation screens are explicitly out of scope. `enquiry` and `quotation` have existed in the
+schema since migration 0000 and were read by nothing; this is the first work that makes the
+register real.
+
+**K1 — `enquiry_source` is a TABLE, not an enum.**
+
+The build spec asked for "source: enum, ADMIN-editable lookup". Those cannot both be true.
+Changing a Postgres enum means `ALTER TYPE`, which means a migration and a deploy, so an
+admin screen sitting over one would be offering an edit it cannot perform.
+
+It follows `stage` instead — the pattern already established here for a list the factory
+owns rather than the code, and the one non-negotiable 5 exists to protect. The day work
+starts arriving through Instagram, that is a row somebody adds, not a release. Seeded with
+the six the spec named: REFERRAL, EXISTING_CLIENT, WALK_IN, PHONE, INDIAMART, OTHER.
+
+Sources are deactivated rather than deleted, for the same reason stages are: enquiries
+already recorded against a source have to keep reading correctly after it stops being
+offered on the form.
+
+**K2 — Enum labels stay Title Case, against the spec's own wording.**
+
+The spec wrote `OPEN`, `DROPPED`, `NO_RESPONSE`. Every Postgres enum in this system is Title
+Case — `'Open'`, `'In Process'`, `'Planned'` — and `enquiry_status` already held
+`'Open'/'Quoted'/'Won'/'Lost'` in production. UPPERCASE is used here for `stage.code`, which
+is a text column in a table and not an enum at all.
+
+Adding `'DROPPED'` beside `'Open'` would have left that one type permanently mixed, or else
+forced a rename of four labels and the view that filters on them, to gain nothing. Title
+Case throughout.
+
+**K3 — `Dropped` is not `Lost`, and the difference is the number the register exists for.**
+
+Lost means a competitor won the job, and it carries a required reason — `lost_reason` is now
+an enum of seven values rather than free text, because the whole point of the field is to be
+counted, and "we lose on price" is only knowable if PRICE is the same value every time.
+`Unknown` is deliberately one of the seven: the alternative to an honest unknown is somebody
+picking a plausible reason to get past the form, which poisons the count the field feeds.
+
+Dropped means the enquiry stopped being one without anybody winning it — the client shelved
+the product, or it was never real. Folding those into Lost would understate the win rate
+against work actually competed for.
+
+The old CHECK constraint tested for a non-blank string, which an enum cannot hold, so it was
+rewritten rather than kept. THE RULE IS UNCHANGED and still lives in the database, not only
+in the form (non-negotiable 4): no bulk update or script can produce a Lost enquiry with no
+explanation.
+
+**K4 — `client_required_date` must never become `committed_date`.**
+
+The client's stated ask and what this factory commits to are different numbers, and OTD is
+measured against the second one. Copying the ask into `po_item.committed_date` — even as a
+default somebody can edit — would make the factory late against a date nobody here ever
+agreed to. The column exists to be read, compared and argued with, never promoted.
+
+**K5 — the rename is two migrations, and the reason generalises.**
+
+`description` became `item_description` (and NOT NULL) and `expected_qty` became `qty`.
+Logically one rename; shipped as 0033 (additive) and 0034 (subtractive).
+
+drizzle-kit only offers rename detection through an interactive prompt, which cannot be
+answered from a non-interactive shell. The first attempt was therefore a hand-written
+`--custom` migration — and that is the trap worth recording: **a `--custom` migration does
+not update the snapshot in `drizzle/meta`.** The DDL applied correctly, but drizzle's model
+of the schema still described the old table, so the next `generate` would have produced a
+migration trying to recreate everything. Splitting into an additive generate and a
+subtractive one keeps both files machine-generated and both snapshots honest.
+
+The split moves no data ONLY because the table was empty — 0 rows in development and 0 in
+production, checked before either file was written. On a populated table this needs an
+UPDATE between the two migrations, and 0034 would otherwise be dropping data.
+
+**Two smaller things found on the way.**
+
+`ALTER TYPE ... ADD VALUE` is allowed inside a transaction on PG12+, but the new label
+cannot be USED in that same transaction. `v_enquiry_funnel` filters on `'Dropped'`, so it
+compares `status::text` instead — the same fix as migration 0025, for the same reason.
+
+The funnel view gained `dropped_count` and nothing else changed. Its status counts have
+never summed to `enquiry_count` and still do not: an enquiry at `'Quoted'` is in none of
+them, because `quoted_count` deliberately counts enquiries with a QUOTATION ROW attached
+rather than ones somebody set to `'Quoted'`. Statuses drift; rows do not. Making the
+statuses add up is a decision about a Phase 6 report that nothing reads yet, and was left
+alone; adding `dropped_count` was not, because without it the new status would have been
+invisible there rather than merely uncounted.

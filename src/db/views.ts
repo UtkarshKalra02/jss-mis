@@ -246,6 +246,19 @@ export const vEnquiryFunnel = pgView("v_enquiry_funnel", {
   quotedCount: integer("quoted_count").notNull(),
   wonCount: integer("won_count").notNull(),
   lostCount: integer("lost_count").notNull(),
+
+  /**
+   * Closed without a competitor winning it — shelved, or never real. Kept
+   * apart from lost so the win rate is measured against work actually
+   * competed for (migration 0033).
+   */
+  droppedCount: integer("dropped_count").notNull(),
+
+  /**
+   * Status 'Open' exactly. These four counts do not sum to enquiry_count and
+   * are not meant to: an enquiry at 'Quoted' is in none of them, because
+   * quoted_count measures attached quotation rows instead.
+   */
   openCount: integer("open_count").notNull(),
 
   /** Null when nothing has been quoted yet — not zero. */

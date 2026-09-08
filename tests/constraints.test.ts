@@ -167,10 +167,26 @@ describe("column constraints", () => {
     await inRollback(async (tx) => {
       const s = await scenario(tx);
 
+      /*
+       * Every other NOT NULL is satisfied deliberately. The row has to reach
+       * the CHECK to prove the CHECK is what stops it — an insert that trips a
+       * not-null first would throw, turn this test green, and assert nothing
+       * about the rule it is named after. (Migration 0033 added three of those
+       * not-nulls and did exactly that.)
+       *
+       * source_id and owner_user_id are looked up rather than inserted: the
+       * six sources are seeded by 0033, and app_user always has SYSTEM.
+       */
       const result = await expectFailure(tx, (sp) =>
         sp.execute(
-          sql`insert into enquiry (enquiry_no, client_id, enquiry_date, status)
-              values (${uniq("ENQ-")}, ${s.clientA}, current_date, 'Lost')`,
+          sql`insert into enquiry
+                (enquiry_no, client_id, enquiry_date, status, item_description,
+                 source_id, owner_user_id)
+              values (
+                ${uniq("ENQ-")}, ${s.clientA}, current_date, 'Lost', 'Test enquiry',
+                (select id from enquiry_source where code = 'OTHER'),
+                (select id from app_user order by created_at limit 1)
+              )`,
         ),
       );
       expect(result.threw).toBe(true);

@@ -47,11 +47,42 @@ export const stageAppliesToEnum = pgEnum("stage_applies_to", [
   "Repeat",
 ]);
 
+/**
+ * `Dropped` is not `Lost`.
+ *
+ * Lost means somebody else got the job, and it carries a required reason
+ * because the quote-to-win rate is the number this register exists to produce.
+ * Dropped means the enquiry stopped being an enquiry without a competitor
+ * winning it — the client shelved the product, or it was never real. Counting
+ * those as losses would understate the win rate against work actually
+ * competed for.
+ */
 export const enquiryStatusEnum = pgEnum("enquiry_status", [
   "Open",
   "Quoted",
   "Won",
   "Lost",
+  "Dropped",
+]);
+
+/**
+ * Why an enquiry was lost. Required when status is `Lost`, enforced by the
+ * `enquiry_lost_reason_required` check constraint rather than only by the form.
+ *
+ * A fixed list rather than free text because the whole point is to be able to
+ * count them — "we lose on price" is only knowable if PRICE is the same value
+ * every time. `Unknown` is deliberately offered: the alternative to an honest
+ * unknown is somebody picking a plausible reason to get past the form, which
+ * poisons the count it exists to feed.
+ */
+export const enquiryLostReasonEnum = pgEnum("enquiry_lost_reason", [
+  "Price",
+  "Lead Time",
+  "Capability",
+  "No Response",
+  "Client Deferred",
+  "Lost To Known Competitor",
+  "Unknown",
 ]);
 
 export const quotationStatusEnum = pgEnum("quotation_status", [
