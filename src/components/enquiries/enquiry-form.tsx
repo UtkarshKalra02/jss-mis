@@ -5,6 +5,7 @@ import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
+import { ClientPicker } from "@/components/enquiries/client-picker";
 import { todayIST } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import {
@@ -90,23 +91,11 @@ export function EnquiryForm({
       {editing ? <input type="hidden" name="id" value={enquiry!.id} /> : null}
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <label className="block">
-          <span className="text-[13px] font-medium">Client</span>
-          <select
-            name="clientId"
-            required
-            defaultValue={enquiry?.clientId ?? ""}
-            className={fieldClass}
-          >
-            <option value="">Choose a client…</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.code} · {c.name}
-                {c.isActive ? "" : " (inactive)"}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ClientPicker
+          clients={clients}
+          defaultClientId={enquiry?.clientId}
+          defaultName={enquiry?.clientName}
+        />
 
         <label className="block">
           <span className="text-[13px] font-medium">Enquiry date</span>

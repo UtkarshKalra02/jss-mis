@@ -42,7 +42,22 @@ export type EnquiryLostReason = (typeof enquiryLostReasons)[number];
 export const TERMINAL_STATUSES: readonly EnquiryStatus[] = ["Won", "Lost", "Dropped"];
 
 const baseEnquiry = z.object({
-  clientId: z.uuid({ message: "Choose the client this enquiry came from." }),
+  /**
+   * EITHER an existing client, OR a name to resolve against the master.
+   *
+   * An enquiry routinely arrives from somebody who is not a client yet — a
+   * walk-in, an IndiaMART lead, a referral — so the form types a name rather
+   * than picking from a list. `clientId` is filled in by the picker when the
+   * name resolved to an existing client in the browser; `clientName` is always
+   * sent, and the action re-resolves it against live rows because the
+   * browser's copy of the client list can be stale.
+   */
+  clientId: absentOrBlank(z.uuid()),
+  clientName: z
+    .string()
+    .trim()
+    .min(2, "Say who the enquiry came from.")
+    .max(200, "That is too long for a client name."),
 
   enquiryDate: isoDate,
 
@@ -140,6 +155,7 @@ export type StatusChangeInput = z.infer<typeof statusChangeSchema>;
 export function parseEnquiryForm(form: FormData) {
   return {
     clientId: form.get("clientId"),
+    clientName: form.get("clientName"),
     enquiryDate: form.get("enquiryDate"),
     sourceId: form.get("sourceId"),
     referredBy: form.get("referredBy"),

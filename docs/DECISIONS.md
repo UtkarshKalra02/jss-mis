@@ -2741,3 +2741,54 @@ untouched, and a test now pins it directly rather than as a side effect of the g
 1100 against an order of 1000, but that order cannot then be revised down to 900. Nothing
 about the change requires touching it, and the rule is defensible on its own terms — it is
 noted here so the next person to meet it knows it was seen and left, not missed.
+
+---
+
+## K13 — the enquiry's client is typed, not chosen
+
+Corrected 8 Sep 2026. The build spec's "Client matching" section asked for exactly this —
+*"exact normalised match uses existing client, near-match flags for manual choice, no match
+offers create-new inline"* — and the first cut of the form shipped a dropdown of existing
+clients instead. This is that section, built.
+
+**The dropdown was wrong about what an enquiry is.** Every other screen in the system deals
+with work that already belongs to a client: a PO, a job card, a challan. An enquiry is the
+one thing that routinely arrives from somebody who is not a client yet — a walk-in, an
+IndiaMART lead, a referral from an architect — and a list of existing clients cannot express
+any of them. Forcing one would mean either refusing to record the enquiry, or attaching it
+to whichever existing client looked closest, which is worse.
+
+**The matching is the importer's, reused and not reimplemented.** `normaliseClientName`,
+`buildClientIndex` and `matchClient` are called directly, so "NATUREEXPERT AYURVEDIC PVT
+LTD" and "Natureexpert Ayurvedic" resolve to one customer here exactly as they do in an
+upload. That is what stops a free-text field doing the damage it usually does — one
+customer, one row, however it was typed on the day. A second implementation of "are these
+the same company" is a second answer to that question, and F31 already argued this once.
+
+The four outcomes carry different behaviour, and the difference is the point:
+
+- **matched** — used silently. An exact match after normalising is not a question worth
+  asking.
+- **review** — resembles existing clients. The candidates are named and a PERSON chooses, or
+  confirms it is somebody new. Never guessed.
+- **ambiguous** — two existing clients already normalise to the same thing. Only choosing is
+  offered; creating a third is never the answer to a collision.
+- **create** — nothing resembles it, and the form says plainly that saving makes a client.
+
+**The server re-runs the match, and that is not belt-and-braces.** The picker resolves in
+the browser against a client list loaded when the page was. Somebody else may have created
+the same customer in the minutes since, and trusting the browser's answer is precisely how a
+client master grows two rows for one customer. The action matches again inside the enquiry's
+own transaction, against rows that transaction can see, and refuses `review`/`ambiguous`
+rather than guessing — reaching those server-side means the browser's answer went stale.
+
+Creating the client happens INSIDE that transaction, so a client conjured for an enquiry
+that then fails to insert rolls back with it rather than being left behind.
+
+**A known cost, recorded rather than solved.** A client created this way has a generated
+code, no GSTIN and no address — an unfinished record, exactly like an import-created one.
+But the client list's "created by import, unreviewed" filter keys off `import_batch_id`, and
+these have none, so they do not appear in it. An enquiry that never converts therefore
+leaves a client row nothing flags for review. Setting `import_batch_id` would be a lie;
+giving `client` its own provenance column is the real fix and is a migration this change did
+not need. Worth doing if the client master starts filling with prospects.

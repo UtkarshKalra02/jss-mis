@@ -36,6 +36,7 @@ function form(fields: Record<string, string | undefined>): FormData {
 
 const complete = {
   clientId: CLIENT,
+  clientName: "Natureexpert Ayurvedic",
   enquiryDate: "2026-09-08",
   sourceId: SOURCE,
   itemDescription: "Mono carton, 300gsm SBS, 4+0 matt lamination",
@@ -109,6 +110,28 @@ describe("the enquiry form, as the browser posts it", () => {
       );
       expect(parsed.success, `${qty} should be refused`).toBe(false);
     }
+  });
+
+  it("accepts a typed client with no id, which is how a new customer arrives", () => {
+    // The picker only fills clientId in when the typed name resolved to an
+    // existing client. A walk-in resolves to nothing, and the enquiry must
+    // still save — the action creates the client.
+    const typedOnly = { ...complete, clientId: undefined };
+    const parsed = createEnquirySchema.safeParse(parseEnquiryForm(form(typedOnly)));
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.clientId).toBeUndefined();
+      expect(parsed.data.clientName).toBe("Natureexpert Ayurvedic");
+    }
+  });
+
+  it("refuses an enquiry with no client name at all", () => {
+    const parsed = createEnquirySchema.safeParse(
+      parseEnquiryForm(form({ ...complete, clientId: undefined, clientName: undefined })),
+    );
+
+    expect(parsed.success).toBe(false);
   });
 
   it("refuses an enquiry with nobody to own it", () => {
