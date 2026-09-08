@@ -2558,3 +2558,85 @@ rather than ones somebody set to `'Quoted'`. Statuses drift; rows do not. Making
 statuses add up is a decision about a Phase 6 report that nothing reads yet, and was left
 alone; adding `dropped_count` was not, because without it the new status would have been
 invisible there rather than merely uncounted.
+
+---
+
+## K6 to K10 — the enquiry register's screens
+
+Built 8 Sep 2026, on the schema from K1–K5. Three screens exactly, as specified: list,
+form, detail. Quotation screens remain out of scope and nothing here scaffolds them.
+
+**K6 — The list defaults to Open, and says so.**
+
+Punit's question on any given morning is "what am I still owed an answer on", and burying
+six live enquiries under two years of Won and Lost ones is the failure F22's open-only
+default exists to prevent on the Item Tracker. The status filter offers `All` as a real
+choice and a "Reset to open" link appears whenever any filter is active, because a grid
+quietly showing a subset is the one thing a register must not be.
+
+Every filter lives in the URL, on F22's reasoning: a filtered view is a link, the back
+button behaves, and the dashboard tile points at `?status=Open` without a second mechanism
+existing to express the same thing.
+
+**K7 — The register is NOT ordered the way the production screens are.**
+
+Item Tracker, Stage Update, Job Cards and Dispatch all share one ordering — overdue first,
+then nearest committed date — deliberately, so that they cannot disagree about what is
+urgent. This screen breaks that on purpose and sorts newest first.
+
+An enquiry has no committed date. There is nothing for it to be late against, and borrowing
+an urgency ordering built on a column it does not have would be theatre. What stands in for
+pressure is `age_days`, computed from `today_ist()` so it does not drift by a day for most
+of the Indian working day, and it is a sortable column rather than an order imposed on
+everyone. Age is tinted amber past a week for Open and Quoted enquiries ONLY: a closed
+enquiry's age is a historical fact, not a prompt, and within a quarter every row on the
+register would otherwise be amber.
+
+That threshold is a nudge and is explicitly NOT the dashboard's at-risk window, which is
+configured in `app_setting` and measures a real commitment being missed. Nothing here has
+been measured on the floor, so nothing here claims a target.
+
+**K8 — No timeline on the detail screen.**
+
+Specified, and worth recording why rather than only that. An enquiry has no stage events —
+it is not a job yet and nothing about it passes through the factory. Reusing the Item
+Tracker's timeline would render an empty rail implying a history the row does not have.
+
+**K9 — Won prompts for a purchase order and never requires one.**
+
+The link is written from the enquiry side onto `purchase_order.enquiry_id`, which has been
+nullable since 0000. PO CAPTURE IS UNTOUCHED: no new required field, no changed validation,
+no reordered form. Deepak's daily entry flow must not acquire a step because a register was
+added upstream of it, and a repeat customer's PO legitimately has no enquiry behind it at
+all — the majority of them do not.
+
+Linking refuses a PO already claimed by another enquiry, and offers only POs belonging to
+the enquiry's own client. Marking an enquiry Won with no PO is a normal, permanent state.
+
+**K10 — Dropped is the way an enquiry goes away, not deletion.**
+
+Removal exists for a row entered against the wrong client or duplicated, is soft only
+(non-negotiable 7), and the confirmation says in as many words that an enquiry which simply
+came to nothing should be set to Dropped instead. A deleted enquiry is a hole in the funnel
+the register was built to measure.
+
+**Where the lost-reason rule actually lives.** Three places, and each earns its keep. The
+form renders the field only for Lost, so the question is asked exactly when it applies. The
+zod schema refuses the payload and puts the message on that field, so the refusal lands
+somewhere the person can act on. The `enquiry_lost_reason_required` CHECK refuses it in the
+database, which is what makes it true for a script, an import, or a screen not yet written
+— non-negotiable 4's whole argument.
+
+The conditional rendering is also why `tests/enquiry-form.test.ts` posts REAL FormData
+rather than hand-written objects. A field the form did not render is `null` from
+`FormData.get()`, and zod's `.optional()` accepts `undefined` but refuses `null` — the trap
+that silently rejected every delegation status change until it was found. A hand-written
+test object cannot catch it, because it is shaped the way the author already believes the
+form behaves.
+
+**Permissions.** `enquiry` was already `write` for ADMIN and ORDER_DESK and `read` for
+OWNER; PLANNER was ABSENT from the matrix entirely and is now `read` — Preeti quotes off
+what came in and needs to see it, but an enquiry belongs to the order desk, because the
+person who took the call is the person who knows what was said. B2 needs no special handling
+here: the audit wrapper refuses an OWNER write outright, and its only carve-out is
+delegation.

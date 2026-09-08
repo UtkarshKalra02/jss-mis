@@ -149,6 +149,15 @@ export const ACCESS: Matrix = {
 
   PLANNER: {
     dashboard: "read",
+
+    /**
+     * Preeti reads the register and does not edit it. She quotes off what came
+     * in and needs to see what is coming, but an enquiry belongs to the order
+     * desk — the person who took the call is the person who knows what was
+     * actually said.
+     */
+    enquiry: "read",
+
     job_planning: "write",
 
     /**

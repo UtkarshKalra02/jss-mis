@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
+import { openEnquiryCount } from "@/modules/enquiries/queries";
 import { MetricCard, type Trend } from "@/components/shell/metric-card";
 import { formatINR, formatPercent, formatQty } from "@/lib/format";
 import {
@@ -46,13 +47,15 @@ export default async function DashboardPage() {
   // One round of parallel reads. Each is a single aggregate query; running
   // them in sequence would put five Neon round trips end to end on the first
   // screen everybody opens.
-  const [otd, workload, dispatched, wip, atRiskWindowDays, tasks] = await Promise.all([
+  const [otd, workload, dispatched, wip, atRiskWindowDays, tasks, openEnquiries] =
+    await Promise.all([
     otdSummary(),
     workloadCounts(),
     dispatchedThisMonth(),
     wipByStage(),
     getAtRiskWindowDays(),
     showTasks ? taskCountsFor(user.id) : Promise.resolve({ pending: 0, overdue: 0 }),
+    showEnquiries ? openEnquiryCount() : Promise.resolve(0),
   ]);
 
   /*
@@ -199,7 +202,21 @@ export default async function DashboardPage() {
         {/* Phase 3, matching nav.ts. It was marked Phase 2 here while nav said
             3, which is the kind of disagreement that makes a reader trust
             neither. */}
-        {showEnquiries ? <MetricCard label="Open enquiries" pendingPhase={3} /> : null}
+        {/* Wired now that the register writes rows. Clicking goes to the
+            register already filtered, which is the ?risk= pattern the tracker
+            tiles use — one mechanism for "a tile is a saved view", not two. */}
+        {showEnquiries ? (
+          <MetricCard
+            label="Open enquiries"
+            value={formatQty(openEnquiries)}
+            href="/enquiries?status=Open"
+            sub={
+              openEnquiries === 0
+                ? "Nothing waiting on an answer."
+                : "Asked for, not yet won, lost or dropped."
+            }
+          />
+        ) : null}
       </div>
 
       <div className="mt-3 rounded-lg border px-4 py-3.5">
