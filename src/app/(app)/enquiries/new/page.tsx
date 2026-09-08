@@ -5,6 +5,7 @@ import { requireAccess } from "@/auth/guard";
 import { EnquiryForm } from "@/components/enquiries/enquiry-form";
 import { listClientOptions } from "@/modules/designs/queries";
 import { listOwnerOptions, listSourceOptions } from "@/modules/enquiries/queries";
+import { canAssignEnquiryOwner } from "@/modules/enquiries/permissions";
 
 export const metadata: Metadata = { title: "New enquiry · JSS MIS" };
 
@@ -34,6 +35,7 @@ export default async function NewEnquiryPage() {
           sources={sources}
           owners={owners}
           defaultOwnerId={user.id}
+          canAssign={canAssignEnquiryOwner(user.role)}
         />
       </div>
     </div>

@@ -917,6 +917,10 @@ on it should not have to discover their own number from over a colleague's shoul
 **G2 — OWNER may write ONE table, three columns, on his own rows. This is a documented
 exception to B2, not a softening of it.**
 
+> **A second exception was added on 8 Sep 2026 — see K15.** The reasoning below is what K15
+> argues from, and the cost this decision wrote down ("B2 stops being a sentence anybody can
+> check in one place") is now larger by one.
+
 B2 makes OWNER globally deny-write, enforced inside the audit wrapper so that a future
 screen which forgets its guard still cannot let an OWNER write. Amit is OWNER and belongs
 on the delegation scorecard, which requires him to mark his own tasks done. Three options
@@ -2839,3 +2843,70 @@ dispatch screens in the first place.
 
 The letterhead is the job card's, unchanged, including its own note that the phone, email and
 ISO line on the reference stationery belong to another company and are not reproduced.
+
+---
+
+## K15 — anyone at a desk records an enquiry; only ADMIN and OWNER say who chases it
+
+Asked for and applied 8 Sep 2026. Two changes that look like one.
+
+**Raising an enquiry is now open to every desk role.** `enquiry` write is ADMIN,
+ORDER_DESK, PLANNER and ACCOUNTS. The person who took the call is the person who knows what
+was said, and a register only somebody else can write to is a register that gets kept on
+paper instead — which is the thing this module exists to replace.
+
+**FLOOR is deliberately not included.** Ajay is at a press with a phone, and spec 6.7 gives
+him one screen on purpose: "a single stage dropdown, nothing else". Enquiry write would put
+a nav entry and a form in front of him that he has no use for. "Everyone" here means
+everyone at a desk.
+
+**Deciding WHO CHASES an enquiry is a different act from recording one**, and it belongs to
+ADMIN and OWNER. Everybody else raises enquiries owned by themselves and cannot hand them
+on. That is not politeness — it is what stops `owner_user_id` drifting into "whoever edited
+this last", which would make the field useless for the only question it answers.
+
+Enforced on the server, not by the form. The control is omitted for roles that cannot assign
+AND `resolveEnquiryOwner` drops any posted value from them, because a select that is not
+rendered is not a permission and a posted field is a suggestion. On edit it falls back to
+the owner ALREADY ON THE ROW rather than to the editor, so an order-desk edit to an enquiry
+Amit assigned leaves his decision standing.
+
+### This is the SECOND exception to B2, and that is the part worth arguing about
+
+B2 makes OWNER globally deny-write, checked inside the audit wrapper so that a screen which
+forgets its guard still cannot let an OWNER write. J26 carved out delegation, and wrote down
+that it was "an exception to B2, not a softening of it".
+
+This is the same act against a different table. Allocating work is the one thing an owner
+does that is not running the business through somebody else's screen; J26 conceded that for
+`delegation_task`, and saying who chases an enquiry is indistinguishable from it in kind.
+
+**The carve-out is one field on one table.** `isOwnerEnquiryAssignment` permits an update to
+`enquiry.owner_user_id` and refuses if ANY other key rides along — a partial match that
+silently dropped the rest would be worse than a refusal, because the caller would believe
+the whole update landed. `enquiry` stays `read` for OWNER in the matrix, so every other
+route into the module refuses him: he cannot raise an enquiry, edit what it says, change its
+status, link a PO or remove one. `assignEnquiryOwnerAction` asks for READ access and then
+checks the narrower capability, which is why it is the only action here not guarded by
+`requireAccess("enquiry", "write")`.
+
+It is declared in `src/db/audit.ts` beside B2 and beside J26's exception, not inside the
+enquiry module, for the reason J26 gives: a rule enforced in one file and excepted in
+another is a rule that quietly stops being true.
+
+**Unlike the delegation update, there is no `before` check.** Delegation verifies ownership
+— you may touch your own task. There is no equivalent here: an owner may hand ANY enquiry to
+anybody, which is what allocating work means. All the narrowness is in the field list.
+
+**What this costs, and it is worth saying plainly because it is now the second time.** B2
+was a sentence with one exception; it is now a sentence with two, and the second was easier
+to add than the first, which is exactly how such rules erode. The field list is narrow in
+FACT only while `tests/enquiry-owner.test.ts` passes — it pins both directions, and the half
+that matters more is the one proving nothing else came along: status, item description,
+quantity and required date are each refused on the very row the carve-out applies to, and so
+is the owner field itself when anything is smuggled in beside it.
+
+**Left alone deliberately.** `listOwnerOptions` still offers every active user, including
+Amit, so an enquiry can be assigned to an OWNER. J26 forbids delegating a TASK upwards and
+the same argument arguably applies, but nobody asked for it and inventing a restriction
+would block a case that might be real. Worth revisiting if it ever gets used that way.

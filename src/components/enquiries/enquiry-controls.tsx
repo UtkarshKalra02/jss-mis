@@ -7,13 +7,14 @@ import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { formatCommittedDate } from "@/lib/format";
 import {
+  assignEnquiryOwnerAction,
   linkPurchaseOrderAction,
   removeEnquiryAction,
   setEnquiryStatusAction,
   unlinkPurchaseOrderAction,
   type FormState,
 } from "@/modules/enquiries/actions";
-import type { EnquiryRow } from "@/modules/enquiries/queries";
+import type { EnquiryRow, OwnerOption } from "@/modules/enquiries/queries";
 import { enquiryLostReasons, enquiryStatuses } from "@/modules/enquiries/validation";
 
 const initialState: FormState = { ok: false, error: null };
@@ -123,6 +124,49 @@ export function StatusControl({ enquiry }: { enquiry: EnquiryRow }) {
 
       <Feedback state={state} />
     </form>
+  );
+}
+
+/**
+ * Handing an enquiry to somebody — ADMIN and OWNER only (K15).
+ *
+ * THIS IS THE ONLY WRITE AN OWNER HAS ON THIS SCREEN, and the only one he has
+ * in the module. Every other control here is rendered behind `canWrite`, which
+ * `enquiry: "read"` denies him. The action posts one field and the audit
+ * wrapper accepts nothing else from an OWNER, so the narrowness is enforced
+ * twice and displayed once.
+ */
+export function AssignOwner({
+  enquiry,
+  owners,
+}: {
+  enquiry: EnquiryRow;
+  owners: OwnerOption[];
+}) {
+  const [state, formAction] = useActionState(assignEnquiryOwnerAction, initialState);
+
+  return (
+    <div className="space-y-2">
+      <form action={formAction} className="flex flex-wrap items-end gap-3">
+        <input type="hidden" name="id" value={enquiry.id} />
+        <label className="space-y-1">
+          <span className="text-muted-foreground block text-xs">Who chases it</span>
+          <select
+            name="ownerUserId"
+            defaultValue={enquiry.ownerUserId}
+            className={`${fieldClass} w-64`}
+          >
+            {owners.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name} · {o.role.replace(/_/g, " ").toLowerCase()}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Submit label="Reassign" variant="outline" />
+      </form>
+      <Feedback state={state} />
+    </div>
   );
 }
 

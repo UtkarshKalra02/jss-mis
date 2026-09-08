@@ -23,10 +23,11 @@ import { auditLog } from "./schema";
  *
  *   B2. OWNER is read-only.     Checked here, at the choke point, rather than
  *      per screen — so a future page that forgets its guard still cannot let
- *      an OWNER write anything. There is exactly ONE documented exception,
- *      decision G2, and it is declared below rather than in the module that
- *      benefits from it: a rule enforced in one file and excepted in another
- *      is a rule that quietly stops being true.
+ *      an OWNER write anything. There are exactly TWO documented exceptions —
+ *      delegation (G2/J26) and saying who chases an enquiry (K15) — and both
+ *      are declared below rather than in the modules that benefit from them:
+ *      a rule enforced in one file and excepted in another is a rule that
+ *      quietly stops being true.
  *
  * If you find yourself wanting to bypass this for a bulk operation, pass a
  * transaction in instead (every function takes an optional `tx`), so the whole
@@ -172,6 +173,52 @@ function isOwnerDelegationInsert(
 ): boolean {
   if (getTableName(table) !== OWNER_SELF_WRITE_TABLE) return false;
   return values.assignedTo !== undefined && values.assignedTo !== actor.id;
+}
+
+/* -------------------------------------------------------------------------- */
+/* The SECOND exception to B2 — saying who chases an enquiry (K15)             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * AN OWNER MAY SET `enquiry.owner_user_id`, AND NOTHING ELSE ON THAT TABLE.
+ *
+ * This is a second carve-out from B2 and it is written here, beside the first,
+ * rather than inside the enquiry module — for the reason J26 gives: an
+ * exception that lives next to the rule is one the next person reads, and an
+ * exception buried in a feature is one they find out about.
+ *
+ * WHY IT IS DEFENSIBLE ON THE SAME REASONING AS J26. Allocating work is the
+ * one thing an owner does that is not running the business through somebody
+ * else's screen. J26 conceded that for `delegation_task`; deciding who chases
+ * an enquiry is the same act against a different table. Amit cannot raise an
+ * enquiry, cannot edit what it says, cannot change its status, cannot delete
+ * it — `enquiry` is still `read` for OWNER in the matrix, so every route into
+ * this module refuses him. The single field below is the whole of it.
+ *
+ * NO `before` CHECK, unlike the delegation update. There is no ownership to
+ * verify: an owner may hand ANY enquiry to anybody, which is what allocating
+ * work means. The narrowness here is entirely in the field list.
+ *
+ * WHAT THIS COSTS, and it is the same cost J26 wrote down. B2 is no longer a
+ * sentence with one exception; it is a sentence with two, and the second is
+ * always easier to add than the first. The field list is narrow in FACT only
+ * while tests/enquiry-owner.test.ts passes — adding a word to it is a change
+ * that will look innocuous a year from now.
+ */
+const OWNER_ASSIGNABLE_TABLE = "enquiry";
+
+const OWNER_ASSIGNABLE_FIELDS: ReadonlySet<string> = new Set(["ownerUserId"]);
+
+function isOwnerEnquiryAssignment(
+  table: PgTable,
+  values: Record<string, unknown>,
+): boolean {
+  if (getTableName(table) !== OWNER_ASSIGNABLE_TABLE) return false;
+
+  // Every field, not merely one of them — a single disallowed key refuses the
+  // whole update rather than silently dropping it.
+  const keys = Object.keys(values);
+  return keys.length > 0 && keys.every((field) => OWNER_ASSIGNABLE_FIELDS.has(field));
 }
 
 export class RecordNotFoundError extends Error {
@@ -375,12 +422,24 @@ export async function auditedUpdate<T extends AuditableTable>(
 
     if (!before) throw new RecordNotFoundError(getTableName(table), id);
 
-    // An OWNER gets exactly one thing: their own delegation task's status,
-    // completion date and blocker note (G2). Everything else, on every table,
-    // still throws — including expected_date on the very row they are allowed
-    // to touch, which is what stops the one person nobody overrules from
-    // moving his own deadline.
-    if (actor.role === "OWNER" && !isOwnerDelegationUpdate(actor, table, values, before)) {
+    /*
+     * An OWNER gets exactly TWO things, and this is the whole list.
+     *
+     *   1. Their own delegation task's status, completion date and blocker
+     *      note, or — as the delegator — the task, date, level and cancel
+     *      (G2/G3). Note what is absent even on a row they are allowed to
+     *      touch: expected_date as the assignee, which is what stops the one
+     *      person nobody overrules from moving his own deadline.
+     *
+     *   2. `enquiry.owner_user_id` — who chases an enquiry (K15).
+     *
+     * Everything else, on every table, still throws.
+     */
+    if (
+      actor.role === "OWNER" &&
+      !isOwnerDelegationUpdate(actor, table, values, before) &&
+      !isOwnerEnquiryAssignment(table, values)
+    ) {
       throw new ReadOnlyRoleError(actor.role);
     }
 

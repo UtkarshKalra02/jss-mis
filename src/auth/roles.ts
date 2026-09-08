@@ -151,12 +151,14 @@ export const ACCESS: Matrix = {
     dashboard: "read",
 
     /**
-     * Preeti reads the register and does not edit it. She quotes off what came
-     * in and needs to see what is coming, but an enquiry belongs to the order
-     * desk — the person who took the call is the person who knows what was
-     * actually said.
+     * Anybody at a desk records an enquiry (K15). The person who took the call
+     * is the person who knows what was said, and a register only somebody else
+     * can write to is a register that gets kept on paper.
+     *
+     * WHAT SHE CANNOT DO is say who chases it. That is an allocation of work
+     * and belongs to ADMIN and OWNER — see canAssignEnquiryOwner.
      */
-    enquiry: "read",
+    enquiry: "write",
 
     job_planning: "write",
 
@@ -178,6 +180,11 @@ export const ACCESS: Matrix = {
 
   ACCOUNTS: {
     dashboard: "read",
+
+    // Anybody at a desk records an enquiry (K15). Pradeep answers the phone
+    // like everybody else. He cannot say who chases it.
+    enquiry: "write",
+
     invoice: "write",
     receipt: "write",
     ar_ledger: "write",

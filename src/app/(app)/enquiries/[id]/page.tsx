@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
 import {
+  AssignOwner,
   PurchaseOrderLink,
   RemoveEnquiry,
   StatusControl,
@@ -12,7 +13,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { formatCommittedDate, formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { getEnquiry, linkablePurchaseOrders } from "@/modules/enquiries/queries";
+import { canAssignEnquiryOwner } from "@/modules/enquiries/permissions";
+import {
+  getEnquiry,
+  linkablePurchaseOrders,
+  listOwnerOptions,
+} from "@/modules/enquiries/queries";
 
 export const metadata: Metadata = { title: "Enquiry · JSS MIS" };
 
@@ -42,11 +48,15 @@ export default async function EnquiryDetailPage({
   const enquiry = await getEnquiry(id);
   if (!enquiry) notFound();
 
+  const canAssign = canAssignEnquiryOwner(user.role);
+
   // Only fetched when it could be acted on — a read-only viewer gets no picker.
   const linkable =
     canWrite && !enquiry.purchaseOrderId
       ? await linkablePurchaseOrders(enquiry.clientId)
       : [];
+
+  const owners = canAssign ? await listOwnerOptions() : [];
 
   const chasing = enquiry.status === "Open" || enquiry.status === "Quoted";
 
@@ -148,6 +158,18 @@ export default async function EnquiryDetailPage({
           </div>
         ) : null}
       </section>
+
+      {/* OUTSIDE the canWrite block on purpose. An OWNER has `enquiry: "read"`
+          and reaches none of the controls below, but K15 gives him this one —
+          it is the only write he has in this module. */}
+      {canAssign ? (
+        <section className="mt-8">
+          <h2 className="text-sm font-medium">Who chases it</h2>
+          <div className="mt-3">
+            <AssignOwner enquiry={enquiry} owners={owners} />
+          </div>
+        </section>
+      ) : null}
 
       {canWrite ? (
         <section className="mt-8 space-y-6">

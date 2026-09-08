@@ -12,6 +12,7 @@ import { allocateNumber } from "@/lib/numbering";
 import { buildClientIndex, clientCodeFor, matchClient } from "@/modules/imports/match";
 import { liveClientCodes } from "@/modules/imports/queries";
 
+import { canAssignEnquiryOwner, resolveEnquiryOwner } from "./permissions";
 import { getEnquiryRecord, listClientsForMatching } from "./queries";
 import {
   TERMINAL_STATUSES,
@@ -205,7 +206,14 @@ export async function createEnquiryAction(
           itemDescription: v.itemDescription,
           qty: v.qty ?? null,
           clientRequiredDate: v.clientRequiredDate ?? null,
-          ownerUserId: v.ownerUserId,
+          /*
+           * DECIDED HERE, not by the form (K15). Only ADMIN and OWNER may say
+           * who chases an enquiry; for everybody else the posted value is
+           * ignored and the raiser owns what they raised. The form omits the
+           * control for those roles, and this is what makes that omission a
+           * rule rather than a courtesy.
+           */
+          ownerUserId: resolveEnquiryOwner(user.role, v.ownerUserId, user.id),
           status: v.status,
           closedAt: closedAtFor(v.status, v.enquiryDate),
           ...lostFieldsFor(v.status, v.lostReason, v.lostNotes),
@@ -256,7 +264,10 @@ export async function updateEnquiryAction(
       itemDescription: v.itemDescription,
       qty: v.qty ?? null,
       clientRequiredDate: v.clientRequiredDate ?? null,
-      ownerUserId: v.ownerUserId,
+      // Falls back to the owner ALREADY ON THE ROW, not to the editor. An
+      // order-desk edit to an enquiry Amit handed to somebody else leaves his
+      // decision standing rather than quietly reclaiming it.
+      ownerUserId: resolveEnquiryOwner(user.role, v.ownerUserId, existing.ownerUserId),
       status: v.status,
       /*
        * Keeps the ORIGINAL closing date when the enquiry was already closed
@@ -319,6 +330,48 @@ export async function setEnquiryStatusAction(
     );
   } catch (error) {
     return fail(actionError(error, "Could not change that status."));
+  }
+}
+
+/**
+ * Says who chases this enquiry, and does nothing else.
+ *
+ * THE ONLY WRITE PATH AN OWNER HAS INTO THIS MODULE. `enquiry` is `read` for
+ * OWNER in the matrix, so `requireAccess("enquiry", "write")` — which every
+ * other action here calls — refuses Amit outright. This one asks for read and
+ * then checks the narrower capability, and the update it issues touches one
+ * field, which is the only shape the audit wrapper will accept from an OWNER
+ * (K15).
+ *
+ * ADMIN reaches it the ordinary way.
+ */
+export async function assignEnquiryOwnerAction(
+  _prev: FormState,
+  form: FormData,
+): Promise<FormState> {
+  const user = await requireAccess("enquiry");
+  if (!canAssignEnquiryOwner(user.role)) {
+    return fail("Only an admin or the owner can say who chases an enquiry.");
+  }
+
+  const actor: Actor = { id: user.id, role: user.role };
+  const id = String(form.get("id") ?? "");
+  const ownerUserId = String(form.get("ownerUserId") ?? "");
+  if (!id || !ownerUserId) return fail("Choose who should chase this.");
+
+  try {
+    const existing = await getEnquiryRecord(id);
+    if (!existing) return fail("That enquiry no longer exists.");
+    if (existing.ownerUserId === ownerUserId) return ok("No change — already theirs.");
+
+    // ONE FIELD. Anything else in this object would be refused for an OWNER by
+    // the audit wrapper, and that refusal is the point rather than an obstacle.
+    await auditedUpdate(actor, enquiry, id, { ownerUserId });
+
+    refreshed(id);
+    return ok("Enquiry reassigned.");
+  } catch (error) {
+    return fail(actionError(error, "Could not reassign that enquiry."));
   }
 }
 

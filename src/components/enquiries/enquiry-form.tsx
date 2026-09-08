@@ -54,6 +54,7 @@ export function EnquiryForm({
   sources,
   owners,
   defaultOwnerId,
+  canAssign,
   enquiry,
 }: {
   clients: ClientOption[];
@@ -61,6 +62,15 @@ export function EnquiryForm({
   owners: OwnerOption[];
   /** Whoever is filling the form in, so the common case is one less choice. */
   defaultOwnerId: string;
+  /**
+   * Whether this person may say who chases it — ADMIN and OWNER only (K15).
+   *
+   * The control is omitted rather than disabled for everybody else, because a
+   * greyed-out select still asks a question they cannot answer. The server
+   * ignores a posted owner from them regardless: this is the tidy version of a
+   * rule, not the rule itself.
+   */
+  canAssign: boolean;
   /** Absent when raising a new one. */
   enquiry?: EnquiryRow;
 }) {
@@ -202,24 +212,40 @@ export function EnquiryForm({
           </span>
         </label>
 
-        <label className="block">
-          <span className="text-[13px] font-medium">Owner</span>
-          <select
-            name="ownerUserId"
-            required
-            defaultValue={enquiry?.ownerUserId ?? defaultOwnerId}
-            className={fieldClass}
-          >
-            {owners.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name} · {o.role.replace(/_/g, " ").toLowerCase()}
-              </option>
-            ))}
-          </select>
-          <span className="text-muted-foreground mt-1 block text-[12px]">
-            Whose job it is to chase this.
-          </span>
-        </label>
+        {canAssign ? (
+          <label className="block">
+            <span className="text-[13px] font-medium">Who chases it</span>
+            <select
+              name="ownerUserId"
+              required
+              defaultValue={enquiry?.ownerUserId ?? defaultOwnerId}
+              className={fieldClass}
+            >
+              {owners.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name} · {o.role.replace(/_/g, " ").toLowerCase()}
+                </option>
+              ))}
+            </select>
+            <span className="text-muted-foreground mt-1 block text-[12px]">
+              Whose job it is to chase this.
+            </span>
+          </label>
+        ) : (
+          <div className="block">
+            <span className="text-[13px] font-medium">Who chases it</span>
+            <p className="text-muted-foreground mt-1.5 text-[13px]">
+              {enquiry
+                ? (owners.find((o) => o.id === enquiry.ownerUserId)?.name ?? "Assigned")
+                : (owners.find((o) => o.id === defaultOwnerId)?.name ?? "You")}
+            </p>
+            <span className="text-muted-foreground mt-1 block text-[12px]">
+              {enquiry
+                ? "An admin or the owner can hand this to somebody else."
+                : "Yours to chase. An admin or the owner can hand it on afterwards."}
+            </span>
+          </div>
+        )}
 
         <label className="block">
           <span className="text-[13px] font-medium">Status</span>
