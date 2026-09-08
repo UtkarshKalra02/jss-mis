@@ -165,3 +165,69 @@ export function selectableIds(
 
   return ids;
 }
+
+/**
+ * The fields the search box looks in, for one row.
+ *
+ * Deliberately the same set the Item Tracker searches (6.4) plus the run
+ * number, because the run is the thing this screen adds. Two screens that
+ * disagree about what "search" means are two screens somebody has to learn
+ * separately.
+ */
+function searchableFields(row: StageUpdateRow): (string | null)[] {
+  return [
+    row.itemCode,
+    row.itemName,
+    row.clientCode,
+    row.clientName,
+    row.poInternalNo,
+    row.currentStageName,
+    row.runNo,
+  ];
+}
+
+/**
+ * Whether one row answers the query.
+ *
+ * Every whitespace-separated term has to match SOME field, which is what makes
+ * "kbc printing" find that client's jobs at the press rather than everything
+ * mentioning either word. Empty query matches everything.
+ */
+export function rowMatches(row: StageUpdateRow, query: string): boolean {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+
+  const fields = searchableFields(row)
+    .filter((f): f is string => !!f)
+    .map((f) => f.toLowerCase());
+
+  return terms.every((term) => fields.some((field) => field.includes(term)));
+}
+
+/**
+ * Narrows the screen to what matches, WITHOUT breaking a plate up.
+ *
+ * A run is kept whole when any one of its jobs matches. Dropping the
+ * non-matching members would leave a plate that says "3 jobs" above one row,
+ * and — worse — a search that happened to leave a single member behind would
+ * turn a ganged job into what looks like an ordinary standalone one, quietly
+ * removing the expansion gate H8 exists to impose. Searching for one job and
+ * being shown the plate it shares is the honest answer.
+ */
+export function filterGroups(
+  groups: readonly StageUpdateGroup[],
+  query: string,
+): StageUpdateGroup[] {
+  if (query.trim() === "") return [...groups];
+
+  return groups.filter((group) =>
+    group.kind === "item"
+      ? rowMatches(group.row, query)
+      : group.rows.some((row) => rowMatches(row, query)),
+  );
+}
+
+/** Every row currently on screen, in display order. */
+export function rowsIn(groups: readonly StageUpdateGroup[]): StageUpdateRow[] {
+  return groups.flatMap((group) => (group.kind === "item" ? [group.row] : group.rows));
+}

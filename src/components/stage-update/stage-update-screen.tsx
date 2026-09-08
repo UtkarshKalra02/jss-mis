@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronRight, Layers } from "lucide-react";
+import { ChevronDown, ChevronRight, Layers, Search } from "lucide-react";
 import { Fragment, useActionState, useEffect, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -14,12 +14,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { formatCommittedDate, formatDaysToCommitted, formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { updateStageAction, type FormState } from "@/modules/stage-update/actions";
 import {
   clientsOn,
+  filterGroups,
   groupByPressRun,
+  rowsIn,
   selectableIds,
   stageSummary,
   type RunGroup,
@@ -92,13 +95,53 @@ export function StageUpdateScreen({
   );
   const groups = useMemo(() => groupByPressRun(rows, totals), [rows, totals]);
 
+  /*
+   * The search is filtering in the browser, not re-querying.
+   *
+   * Unlike the Item Tracker (6.4), which searches every item ever ordered and
+   * therefore has to ask the database, this screen already holds its whole
+   * dataset: open work with quantity still owed, a few hundred rows at the
+   * factory's volume. Filtering what is already here is instant, works with no
+   * connection, and — the reason that decided it — does not remount the grid,
+   * so a tick list and an opened plate survive typing in the box.
+   */
+  const [query, setQuery] = useState("");
+  const visible = useMemo(() => filterGroups(groups, query), [groups, query]);
+
+  const shown = useMemo(() => rowsIn(visible).length, [visible]);
+
   return (
     <>
+      <div className="relative mb-4 max-w-lg">
+        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Item code, name, client, PO number, stage, run…"
+          className="pl-9"
+          aria-label="Search the items on this screen"
+        />
+        {/* Says what is being hidden. A grid quietly showing a subset is the
+            one thing a screen people act from must not do. */}
+        {query.trim() ? (
+          <p className="text-muted-foreground mt-1.5 text-xs" role="status">
+            Showing {shown} of {rows.length} open item{rows.length === 1 ? "" : "s"}.{" "}
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="text-primary hover:underline"
+            >
+              Clear search
+            </button>
+          </p>
+        ) : null}
+      </div>
+
       <div className="hidden md:block">
-        <DesktopGrid rows={rows} groups={groups} stages={stages} />
+        <DesktopGrid groups={visible} stages={stages} query={query} />
       </div>
       <div className="md:hidden">
-        <MobileCards groups={groups} stages={stages} />
+        <MobileCards groups={visible} stages={stages} query={query} />
       </div>
     </>
   );
@@ -154,15 +197,19 @@ function RunStage({ group }: { group: RunGroup }) {
 /* -------------------------------------------------------------------------- */
 
 function DesktopGrid({
-  rows,
   groups,
   stages,
+  query,
 }: {
-  rows: StageUpdateRow[];
+  /** Already narrowed by the search box — everything here is on screen. */
   groups: StageUpdateGroup[];
   stages: StageOption[];
+  /** Only so the empty state can say why the grid is empty. */
+  query: string;
 }) {
   const [state, formAction] = useActionState(updateStageAction, initialState);
+
+  const rows = useMemo(() => rowsIn(groups), [groups]);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [stageCode, setStageCode] = useState("");
@@ -206,6 +253,24 @@ function DesktopGrid({
       setConfirming(false);
     }
   }, [state]);
+
+  /*
+   * A row the search has hidden is dropped from the selection.
+   *
+   * The submit sends whatever ids are ticked, and a hidden tick is an item
+   * nobody can see being advanced — the same accident collapsing a plate
+   * guards against above, arriving by a different route. `stage_event` is
+   * append-only (C6), so there is no undo to fall back on. Narrowing a search
+   * and widening it again therefore starts the selection over, which is the
+   * safe direction to be wrong in.
+   */
+  useEffect(() => {
+    const onScreen = new Set(rows.map((r) => r.poItemId));
+    setSelected((current) => {
+      const kept = new Set([...current].filter((id) => onScreen.has(id)));
+      return kept.size === current.size ? current : kept;
+    });
+  }, [rows]);
 
   const byId = useMemo(() => new Map(rows.map((r) => [r.poItemId, r])), [rows]);
   const chosen = [...selected].map((id) => byId.get(id)).filter(Boolean) as StageUpdateRow[];
@@ -351,10 +416,12 @@ function DesktopGrid({
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {groups.length === 0 ? (
               <tr>
                 <td colSpan={8} className="text-muted-foreground px-3 py-8 text-center">
-                  Nothing open. Every item has been delivered or closed.
+                  {query.trim()
+                    ? `Nothing on this screen matches “${query.trim()}”.`
+                    : "Nothing open. Every item has been delivered or closed."}
                 </td>
               </tr>
             ) : (
@@ -683,16 +750,20 @@ function BackwardConfirm({
 function MobileCards({
   groups,
   stages,
+  query,
 }: {
+  /** Already narrowed by the search box. */
   groups: StageUpdateGroup[];
   stages: StageOption[];
+  /** Only so the empty state can say why the list is empty. */
+  query: string;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   if (groups.length === 0) {
     return (
       <p className="text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
-        Nothing open.
+        {query.trim() ? `Nothing matches “${query.trim()}”.` : "Nothing open."}
       </p>
     );
   }

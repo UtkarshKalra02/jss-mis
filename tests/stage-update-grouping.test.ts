@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   clientsOn,
+  filterGroups,
   groupByPressRun,
+  rowMatches,
+  rowsIn,
   selectableIds,
   stageSummary,
   type RunGroup,
@@ -201,5 +204,72 @@ describe("the expansion gate", () => {
 
     const ids = selectableIds(groups, new Set(["R2"]));
     expect(ids).toHaveLength(2);
+  });
+});
+
+/**
+ * The search box on Stage Update.
+ *
+ * Filtering happens in the browser here rather than in SQL — the screen
+ * already holds every open item — so the matching rules are code rather than a
+ * query, and they are pinned here for the same reason the grouping is. The
+ * property that matters is the last test: narrowing the screen must not be
+ * able to strip a plate down to what looks like an ordinary standalone row,
+ * because that is the expansion gate H8 exists to impose disappearing quietly.
+ */
+describe("searching the stage update screen", () => {
+  it("matches on any of the fields shown", () => {
+    const r = row({
+      itemCode: "NAT-2026-014",
+      itemName: "Mono carton 300gsm",
+      clientCode: "KBC",
+      clientName: "Kaya Beauty Care",
+      poInternalNo: "PO-2026-0044",
+      currentStageName: "Printing",
+    });
+
+    for (const q of ["nat-2026", "carton", "kbc", "kaya", "0044", "printing"]) {
+      expect(rowMatches(r, q)).toBe(true);
+    }
+
+    expect(rowMatches(r, "lamination")).toBe(false);
+  });
+
+  it("requires every term to match something, not just one of them", () => {
+    const r = row({ clientCode: "KBC", currentStageName: "Printing" });
+
+    expect(rowMatches(r, "kbc printing")).toBe(true);
+    expect(rowMatches(r, "kbc lamination")).toBe(false);
+  });
+
+  it("treats an empty or blank query as no filter at all", () => {
+    const groups = groupByPressRun([row(), row()]);
+
+    expect(filterGroups(groups, "")).toHaveLength(2);
+    expect(filterGroups(groups, "   ")).toHaveLength(2);
+  });
+
+  it("drops the items that do not match", () => {
+    const keep = row({ itemCode: "NAT-2026-014" });
+    const drop = row({ itemCode: "ABC-2026-001" });
+
+    const visible = filterGroups(groupByPressRun([keep, drop]), "nat");
+
+    expect(rowsIn(visible).map((r) => r.itemCode)).toEqual(["NAT-2026-014"]);
+  });
+
+  it("keeps a matched plate whole, members and all", () => {
+    const wanted = ganged("R1", { clientCode: "KBC", itemCode: "NAT-2026-014" });
+    const other = ganged("R1", { clientCode: "AAA", itemCode: "ABC-2026-001" });
+
+    const visible = filterGroups(groupByPressRun([wanted, other]), "nat");
+
+    // One group, still a run, still holding both jobs — searching for one job
+    // shows the plate it shares rather than turning it into a standalone row
+    // that could be advanced without anyone seeing whose it was (H8).
+    expect(visible).toHaveLength(1);
+    expect(visible[0]!.kind).toBe("run");
+    expect((visible[0] as RunGroup).rows).toHaveLength(2);
+    expect(selectableIds(visible, new Set())).toEqual([]);
   });
 });
