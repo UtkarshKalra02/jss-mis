@@ -173,6 +173,22 @@ export const ACCESS: Matrix = {
     receipt: "write",
     ar_ledger: "write",
     dispatch: "write", // B1 — section 6.8 lists ACCOUNTS
+
+    /**
+     * Pradeep updates stages too, at Utkarsh's direction.
+     *
+     * Spec 6.7 names PLANNER and FLOOR, and this widens it. The reasoning is
+     * the same one that put dispatch on this role: he is already the person
+     * closing a delivery out, and a stage he can see but not move is a message
+     * he has to send Preeti to have someone press a button he is sitting in
+     * front of.
+     *
+     * WRITE, not read. There is no read-only Stage Update to grant — both the
+     * screen and the action require "write", because a grid whose every
+     * control is disabled is a worse answer than no menu entry.
+     */
+    stage_update: "write",
+
     reports: "read", // B1
     item_tracker: "read",
     job_card: "read",
