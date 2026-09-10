@@ -42,11 +42,24 @@ export function ClientPicker({
   clients,
   defaultClientId,
   defaultName,
+  canCreate,
+  label = "Client",
 }: {
   clients: ClientOption[];
-  /** Set when editing an enquiry that already points at a client. */
+  /** Set when editing a record that already points at a client. */
   defaultClientId?: string;
   defaultName?: string;
+  /**
+   * Whether this person may bring a new client into being (K19).
+   *
+   * Gated on the `client` resource, so ADMIN and ORDER_DESK create wherever
+   * they are standing and everybody else picks from what exists. The panel
+   * says which of those it is BEFORE the save rather than after, because
+   * "type a name, submit, get refused" is a worse way to learn a permission
+   * than a sentence under the box. The server checks it again regardless.
+   */
+  canCreate: boolean;
+  label?: string;
 }) {
   const index = useMemo(
     () => buildClientIndex(clients.map((c) => ({ id: c.id, code: c.code, name: c.name }))),
@@ -79,7 +92,7 @@ export function ClientPicker({
   return (
     <div className="block">
       <label className="block">
-        <span className="text-[13px] font-medium">Client</span>
+        <span className="text-[13px] font-medium">{label}</span>
         <input
           name="clientName"
           required
@@ -101,7 +114,9 @@ export function ClientPicker({
       <div id="client-picker-status" className="mt-1.5 text-[12px]" role="status">
         {!typed.trim() ? (
           <span className="text-muted-foreground">
-            Anyone can send an enquiry. If they are not a client yet, one will be created.
+            {canCreate
+              ? "Type the name. If they are not a client yet, one will be created."
+              : "Type the name of an existing client."}
           </span>
         ) : resolvedId && (match?.kind === "matched" || chosenStillValid) ? (
           <span className="text-on-time">
@@ -140,10 +155,15 @@ export function ClientPicker({
               ) : null}
             </div>
           </div>
-        ) : (
+        ) : canCreate ? (
           <span className="text-at-risk">
             No client matches “{typed.trim()}”. Saving will create one, with a generated
             code and nothing else filled in.
+          </span>
+        ) : (
+          <span className="text-overdue">
+            No client matches “{typed.trim()}”, and your role cannot create one. Pick an
+            existing client, or ask an admin to add them first.
           </span>
         )}
       </div>

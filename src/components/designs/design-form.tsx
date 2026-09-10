@@ -8,6 +8,7 @@ import { FabricationPicker } from "@/components/designs/fabrication-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ClientPicker } from "@/components/clients/client-picker";
 import type { ClientOption } from "@/modules/designs/queries";
 import type { FabricationOptionRow, Selection } from "@/modules/fabrication/queries";
 import {
@@ -55,9 +56,6 @@ function Field({
   );
 }
 
-const selectClass =
-  "border-input bg-background h-9 w-full rounded-md border px-3 text-[13px] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none";
-
 /**
  * Die and plate status options come from the Postgres enum, not from a list
  * typed here — non-negotiable 5. Adding a value to the enum makes it appear in
@@ -67,12 +65,15 @@ export function DesignForm({
   mode,
   design,
   clients,
+  canCreateClient,
   fabricationOptions,
   fabricationSelected,
 }: {
   mode: "create" | "edit";
   design?: DesignValues;
   clients: ClientOption[];
+  /** Whether this person may create a client from the picker (K19). */
+  canCreateClient: boolean;
   fabricationOptions: FabricationOptionRow[];
   fabricationSelected: Map<string, Selection>;
 }) {
@@ -97,24 +98,16 @@ export function DesignForm({
         <h2 className="text-sm font-medium">Job</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="clientId">Client</Label>
-            <select
-              id="clientId"
-              name="clientId"
-              required
-              defaultValue={design?.clientId ?? ""}
-              className={selectClass}
-            >
-              <option value="" disabled>
-                Choose a client…
-              </option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.code} — {c.name}
-                  {c.isActive ? "" : " (inactive)"}
-                </option>
-              ))}
-            </select>
+            {/* Typed, not chosen (K19). A design is often the FIRST thing
+                recorded for a customer who has not ordered yet, so a list of
+                existing clients cannot express the case the screen exists for.
+                Same picker and same matching as the enquiry register. */}
+            <ClientPicker
+              clients={clients}
+              defaultClientId={design?.clientId}
+              defaultName={clients.find((c) => c.id === design?.clientId)?.name}
+              canCreate={canCreateClient}
+            />
             <p className="text-muted-foreground text-xs">
               A design belongs to one client. Nothing is ganged across clients in v1.
             </p>

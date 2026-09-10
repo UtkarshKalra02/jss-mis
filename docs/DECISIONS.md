@@ -26,6 +26,10 @@ people reading the screen are not the people reading the migration.
 and ACCOUNTS get read and search (Punit cannot enter a PO without picking a client).
 OWNER and FLOOR get nothing.
 
+> **Amended by K19 (10 Sep 2026).** ORDER_DESK now has FULL client write — create, edit and
+> deactivate. The reasoning below about PLANNER and ACCOUNTS still stands, and K19 also
+> closed a hole where they could create clients anyway.
+
 **A4 — User bootstrapping.** Users are seeded with **no usable password**
 (`password_hash` null — the account exists but cannot authenticate). Passwords are set
 one at a time via a CLI command. Passwords are never written into a config or seed file:
@@ -3090,3 +3094,63 @@ It is not fixed by hardcoding the lists, which non-negotiable 5 forbids: the val
 derived from the schema. The fix is to read them on the server and pass them down as props,
 which is a change to three components and their pages, and is worth doing when those screens
 are next touched rather than inside a hotfix.
+
+---
+
+## K19 — the design master types its client, and ORDER_DESK owns the client list
+
+Asked for on 10 Sep 2026: "the designer can also add client names". The Design Master
+belongs to ORDER_DESK (spec 6.5), so the designer is Punit, and the design form had exactly
+the dropdown of existing clients the enquiry form had before K13.
+
+**A design is often the FIRST thing recorded for a customer.** Somebody sends artwork before
+they send an order, so a list of existing clients cannot express the case the screen exists
+for. It gets the same picker and the same matching as the enquiry register.
+
+### The hole this uncovered, which mattered more than the request
+
+**K13 had quietly broken A3.** The audit wrapper checks the actor's ROLE against write-ness
+and refuses OWNER; it does not check the `client` resource. The resource guard lives on the
+action, and `createEnquiryAction` guards on `enquiry: "write"`. So the moment the enquiry
+picker could create a client, everybody with enquiry write could — ORDER_DESK, PLANNER and
+ACCOUNTS — while A3 said ADMIN alone. That shipped to production unnoticed, and adding the
+same picker to designs would have widened it rather than opened it.
+
+**Creation is now gated on the `client` resource itself**, in one function both pickers call.
+The matrix is the single source of truth again: ADMIN and ORDER_DESK create clients wherever
+they are standing, PLANNER and ACCOUNTS are told to pick an existing one, and it reads the
+same on the enquiry screen and the design screen because it is one rule rather than a
+screen's opinion. Choosing an existing client is not creating one and is deliberately not
+gated.
+
+**ORDER_DESK gets FULL client write, not a create-only capability.** A narrower "may create,
+may not edit" shape was offered and not taken. What that hands over is worth naming: renaming
+or deactivating a client reaches every PO, challan and invoice already pointing at it. The
+matrix now plainly says so rather than a screen quietly permitting half of it.
+
+### One implementation, not two
+
+`resolveClientId` moved to `src/modules/clients/resolve.ts` and both modules call it. A
+second copy would be a second answer to "are these the same company" — the argument F31 made
+when the importer's matcher was written, and the reason the matcher is called here rather
+than reimplemented.
+
+Creation happens INSIDE the caller's transaction, so a client conjured for a design that then
+fails to insert rolls back with it, and the allocated design code is given back rather than
+burnt.
+
+### Smaller consequences
+
+The picker now takes `canCreate` and says which case the person is in BEFORE the save —
+"saving will create one" against "your role cannot create one" — because learning a
+permission by being refused after typing is worse than a sentence under the box. The server
+checks again regardless; the panel is the tidy version, not the rule.
+
+`quickDesignSchema` keeps a REQUIRED `clientId`. The dialog is opened from PO capture where a
+client is already chosen and posts it as a hidden field; inheriting the full form's now
+optional id would have let a dialog with no client reach an insert against a NOT NULL column
+and fail as a database error rather than as a sentence.
+
+The "add a client first" empty state on `/designs/new` now shows only for somebody who cannot
+create one. With the picker, an empty client master is no longer a dead end for ADMIN or
+ORDER_DESK.

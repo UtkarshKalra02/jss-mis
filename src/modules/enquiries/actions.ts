@@ -5,15 +5,14 @@ import { eq } from "drizzle-orm";
 
 import { requireAccess } from "@/auth/guard";
 import { db } from "@/db";
-import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor, type Tx } from "@/db/audit";
-import { client, enquiry, purchaseOrder } from "@/db/schema";
+import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/db/audit";
+import { enquiry, purchaseOrder } from "@/db/schema";
 import { actionError } from "@/lib/action-error";
 import { allocateNumber } from "@/lib/numbering";
-import { buildClientIndex, clientCodeFor, matchClient } from "@/modules/imports/match";
-import { liveClientCodes } from "@/modules/imports/queries";
+import { resolveClientId } from "@/modules/clients/resolve";
 
 import { canAssignEnquiryOwner, resolveEnquiryOwner } from "./permissions";
-import { getEnquiryRecord, listClientsForMatching } from "./queries";
+import { getEnquiryRecord } from "./queries";
 import {
   TERMINAL_STATUSES,
   createEnquirySchema,
@@ -58,76 +57,6 @@ const fail = (error: string): FormState => ({ ok: false, error });
 
 function firstIssue(error: { issues: { message: string }[] }): string {
   return error.issues[0]?.message ?? "That did not look right.";
-}
-
-/**
- * Turns what the form said about the client into a client id.
- *
- * THE MATCHING IS RE-RUN HERE, against live rows, even when the picker already
- * resolved an id in the browser. That copy of the client list was loaded when
- * the page was, and somebody else may have created the same customer in the
- * minutes since — which is exactly how a client master grows two rows for one
- * customer.
- *
- * Behaviour by outcome, and it mirrors the importer's (F32) deliberately:
- *
- *   matched   — used silently. An exact match after normalising is not a
- *               question worth asking.
- *   create    — a client is created, with a generated code and nothing else.
- *   review    — REFUSED. Something resembles it, and guessing is how orders get
- *               attached to the wrong customer. The picker asks this question
- *               in the browser; reaching here means the answer went stale.
- *   ambiguous — refused for the same reason, more so.
- *
- * An explicitly chosen id is honoured without re-matching, because a person has
- * already answered the question the matcher would ask.
- */
-async function resolveClientId(
-  tx: Tx,
-  actor: Actor,
-  input: { clientId?: string; clientName: string },
-): Promise<{ ok: true; clientId: string } | { ok: false; error: string }> {
-  if (input.clientId) {
-    const [chosen] = await tx
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.id, input.clientId));
-
-    if (chosen) return { ok: true, clientId: chosen.id };
-    // Chosen and then deleted. Fall through and match the name instead of
-    // failing on an id nobody can act on.
-  }
-
-  const clients = await listClientsForMatching(tx);
-  const match = matchClient(input.clientName, buildClientIndex(clients));
-
-  if (match.kind === "matched") return { ok: true, clientId: match.client.id };
-
-  if (match.kind === "review" || match.kind === "ambiguous") {
-    const names = match.candidates.map((c) => `${c.code} — ${c.name}`).join(", ");
-    return {
-      ok: false,
-      error:
-        match.kind === "ambiguous"
-          ? `Two existing clients match that name (${names}). Choose one on the form.`
-          : `That name is close to an existing client (${names}). Choose one on the form, or change the name if it really is somebody new.`,
-    };
-  }
-
-  const taken = await liveClientCodes(tx);
-  const created = await auditedInsert(
-    actor,
-    client,
-    {
-      // The name is stored exactly as it was typed. Normalising is for
-      // comparing; what somebody wrote is what the client master shows.
-      code: clientCodeFor(input.clientName, taken),
-      name: input.clientName,
-    },
-    tx,
-  );
-
-  return { ok: true, clientId: created.id };
 }
 
 function refreshed(id?: string) {

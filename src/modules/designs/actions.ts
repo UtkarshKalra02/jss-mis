@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
+import { resolveClientId } from "@/modules/clients/resolve";
 import { db } from "@/db";
 import {
   auditedInsert,
@@ -64,6 +65,15 @@ function removedTo(path: string, message: string): never {
   redirect(`${path}?removed=${encodeURIComponent(message)}`);
 }
 
+/**
+ * A client question the server cannot answer on its own (K19).
+ *
+ * Thrown rather than returned because the resolution happens inside the
+ * design's transaction: a throw rolls back the allocated design code with it,
+ * so a refused save does not burn a number.
+ */
+class ClientResolutionError extends Error {}
+
 /** Spec 6.5: the Design Master belongs to ORDER_DESK (and ADMIN). */
 async function requireDesignWriter(): Promise<Actor> {
   const user = await requireAccess("design", "write");
@@ -73,6 +83,7 @@ async function requireDesignWriter(): Promise<Actor> {
 function parse(formData: FormData) {
   return designSchema.safeParse({
     clientId: formData.get("clientId"),
+    clientName: formData.get("clientName"),
     jobName: formData.get("jobName"),
     jobSize: formData.get("jobSize"),
     gsm: formData.get("gsm"),
@@ -112,12 +123,23 @@ export async function createDesignAction(
       // the number back rather than leaving a gap.
       const designCode = await allocateNumber(tx, "DSN");
 
+      /*
+       * The typed client, resolved against live rows INSIDE this transaction
+       * (K19) — so a client created for a design that then fails to insert
+       * rolls back with it rather than being left behind.
+       */
+      const resolved = await resolveClientId(tx, actor, {
+        clientId: v.clientId,
+        clientName: v.clientName,
+      });
+      if (!resolved.ok) throw new ClientResolutionError(resolved.error);
+
       const row = await auditedInsert(
         actor,
         design,
         {
           designCode,
-          clientId: v.clientId,
+          clientId: resolved.clientId,
           jobName: v.jobName,
           jobSize: orNull(v.jobSize),
           gsm: orNull(v.gsm),
@@ -142,6 +164,9 @@ export async function createDesignAction(
     return ok(`${created.designCode} — ${created.jobName} added.`, `/designs/${created.id}`);
   } catch (error) {
     unstable_rethrow(error);
+    // Written for the person at the desk and names the candidates, so it
+    // is passed through rather than flattened by actionError.
+    if (error instanceof ClientResolutionError) return fail(error.message);
     return fail(actionError(error, "Could not add the design."));
   }
 }
@@ -169,12 +194,18 @@ export async function updateDesignAction(
         throw new Error("A fabrication value was posted against the wrong process.");
       }
 
+      const resolved = await resolveClientId(tx, actor, {
+        clientId: v.clientId,
+        clientName: v.clientName,
+      });
+      if (!resolved.ok) throw new ClientResolutionError(resolved.error);
+
       await auditedUpdate(
         actor,
         design,
         id,
         {
-          clientId: v.clientId,
+          clientId: resolved.clientId,
           jobName: v.jobName,
           jobSize: orNull(v.jobSize),
           gsm: orNull(v.gsm),
@@ -194,6 +225,9 @@ export async function updateDesignAction(
     return ok("Saved.");
   } catch (error) {
     unstable_rethrow(error);
+    // Written for the person at the desk and names the candidates, so it
+    // is passed through rather than flattened by actionError.
+    if (error instanceof ClientResolutionError) return fail(error.message);
     return fail(actionError(error, "Could not save the changes."));
   }
 }

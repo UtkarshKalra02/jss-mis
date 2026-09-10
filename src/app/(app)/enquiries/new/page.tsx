@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { requireAccess } from "@/auth/guard";
+import { can } from "@/auth/roles";
 import { EnquiryForm } from "@/components/enquiries/enquiry-form";
 import { listClientOptions } from "@/modules/designs/queries";
 import { listOwnerOptions, listSourceOptions } from "@/modules/enquiries/queries";
@@ -36,6 +37,7 @@ export default async function NewEnquiryPage() {
           owners={owners}
           defaultOwnerId={user.id}
           canAssign={canAssignEnquiryOwner(user.role)}
+          canCreateClient={can(user.role, "client", "write")}
         />
       </div>
     </div>

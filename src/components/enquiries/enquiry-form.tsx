@@ -5,7 +5,7 @@ import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
-import { ClientPicker } from "@/components/enquiries/client-picker";
+import { ClientPicker } from "@/components/clients/client-picker";
 import { todayIST } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import {
@@ -55,6 +55,7 @@ export function EnquiryForm({
   owners,
   defaultOwnerId,
   canAssign,
+  canCreateClient,
   enquiry,
 }: {
   clients: ClientOption[];
@@ -71,6 +72,8 @@ export function EnquiryForm({
    * rule, not the rule itself.
    */
   canAssign: boolean;
+  /** Whether this person may create a client from the picker (K19). */
+  canCreateClient: boolean;
   /** Absent when raising a new one. */
   enquiry?: EnquiryRow;
 }) {
@@ -105,6 +108,7 @@ export function EnquiryForm({
           clients={clients}
           defaultClientId={enquiry?.clientId}
           defaultName={enquiry?.clientName}
+          canCreate={canCreateClient}
         />
 
         <label className="block">

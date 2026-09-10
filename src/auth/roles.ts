@@ -129,7 +129,20 @@ export const ACCESS: Matrix = {
     // Read only: the ganged badge on the Item Tracker links to the run, so
     // anybody who can see an item can see the run it was printed in (H6).
     press_run: "read",
-    client: "read", // A3 — cannot enter a PO without picking a client
+    /**
+     * Punit owns the client master too, at Utkarsh's direction (amends A3).
+     *
+     * A3 gave creation to ADMIN alone, on the reading that the client list is
+     * configuration. It is not: Punit is the one taking the call from somebody
+     * who has never ordered before, and a design or an enquiry he cannot
+     * record until an admin acts is work that goes back onto paper.
+     *
+     * This is FULL write — create, edit, deactivate — and that is the part
+     * worth knowing. Renaming or deactivating a client reaches every PO,
+     * challan and invoice already pointing at it. The narrower "may create,
+     * may not edit" shape was offered and not taken (K19).
+     */
+    client: "write",
 
     /**
      * F28. The importer writes purchase orders AND dispatches, so granting it

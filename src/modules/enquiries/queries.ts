@@ -160,25 +160,6 @@ export async function openEnquiryCount(runner: Runner = db): Promise<number> {
   return row?.n ?? 0;
 }
 
-/**
- * Every live client, in the shape the importer's matcher expects.
- *
- * Read through the caller's transaction so the enquiry action matches against
- * the same snapshot it is about to write into — matching against `db` from
- * inside a transaction would compare a typed name to rows this transaction
- * cannot see, which is how two enquiries entered a minute apart create two
- * clients for one customer.
- */
-export async function listClientsForMatching(
-  runner: Runner = db,
-): Promise<{ id: string; code: string; name: string }[]> {
-  return runner
-    .select({ id: client.id, code: client.code, name: client.name })
-    .from(client)
-    .where(isNull(client.deletedAt))
-    .orderBy(asc(client.name));
-}
-
 export type SourceOption = { id: string; code: string; name: string };
 
 /**

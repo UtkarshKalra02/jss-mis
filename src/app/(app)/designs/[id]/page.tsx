@@ -68,6 +68,7 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
               mode="edit"
               design={design}
               clients={clients}
+            canCreateClient={can(user.role, "client", "write")}
               fabricationOptions={fabricationOptions}
               fabricationSelected={fabricationSelected}
             />

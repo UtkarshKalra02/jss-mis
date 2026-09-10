@@ -33,7 +33,22 @@ const optionalUrl = z
   });
 
 export const designSchema = z.object({
-  clientId: z.uuid({ message: "Choose the client this design belongs to." }),
+  /*
+   * EITHER an existing client, OR a name to resolve against the master (K19).
+   *
+   * The picker fills `clientId` in when the typed name already resolved in the
+   * browser; `clientName` is always sent, and the action re-resolves it against
+   * live rows because the browser's copy of the client list can be stale.
+   */
+  clientId: z.preprocess(
+    (v) => (v === null || v === "" ? undefined : v),
+    z.uuid().optional(),
+  ),
+  clientName: z
+    .string()
+    .trim()
+    .min(2, "Say which client this design belongs to.")
+    .max(200, "That is too long for a client name."),
 
   jobName: z
     .string()
@@ -103,13 +118,26 @@ export type DesignInput = z.infer<typeof designSchema>;
  * would put two ways of creating a design in the app, which is one more than
  * anybody should have to keep in agreement.
  */
-export const quickDesignSchema = designSchema.pick({
-  clientId: true,
-  jobName: true,
-  jobSize: true,
-  paperType: true,
-  gsm: true,
-});
+export const quickDesignSchema = designSchema
+  .pick({
+    clientId: true,
+    jobName: true,
+    jobSize: true,
+    paperType: true,
+    gsm: true,
+  })
+  /*
+   * clientId is REQUIRED here, unlike on the full form.
+   *
+   * The dialog is opened from PO capture, where a client has already been
+   * chosen, and it posts that id as a hidden field — there is no name to type
+   * and no picker on it. Inheriting the full form's optional clientId (K19)
+   * would let a dialog with no client at all reach an insert against a NOT
+   * NULL column, which fails as a database error rather than as a sentence.
+   */
+  .extend({
+    clientId: z.uuid({ message: "Choose the client this design belongs to." }),
+  });
 
 export type QuickDesignInput = z.infer<typeof quickDesignSchema>;
 
