@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { NOT_STARTED, filterSummary, groupByStage } from "@/modules/items/grouping";
+import {
+  NOT_STARTED,
+  NO_COMMITMENT_LABEL,
+  filterSummary,
+  groupItems,
+} from "@/modules/items/grouping";
 import type { ItemSearchRow } from "@/modules/items/queries";
 import type { StageOption } from "@/modules/stage-update/precedence";
 
 /**
- * Arranging pending work for the printed sheet (K16).
+ * Arranging pending work for the printed sheet (K16, extended by K17).
  *
  * Tested without a database or a browser, on the reasoning F25 gives for the
  * stage precedence rules: this is the logic somebody will argue about while
@@ -23,8 +28,10 @@ function row(over: Partial<ItemSearchRow> = {}): ItemSearchRow {
     itemName: `Item ${n}`,
     clientCode: "AAA",
     clientName: "Client A",
+    clientId: "client-a",
     poInternalNo: "PO-2026-0001",
     clientPoNo: null,
+    poDate: "2026-08-01",
     orderedQty: 1000,
     dispatchedQty: 0,
     pendingQty: 1000,
@@ -58,17 +65,17 @@ describe("grouping pending work by stage", () => {
 
     // Lamination holds three and Design one; process order still wins, because
     // the sheet is read walking the floor.
-    expect(groupByStage(rows, STAGES).map((g) => g.stageCode)).toEqual([
+    expect(groupItems(rows, "stage", STAGES).map((g) => g.key)).toEqual([
       "DESIGN",
       "LAMINATION",
     ]);
   });
 
   it("omits stages holding nothing", () => {
-    const groups = groupByStage([row()], STAGES);
+    const groups = groupItems([row()], "stage", STAGES);
 
     expect(groups).toHaveLength(1);
-    expect(groups[0]!.stageCode).toBe("PRINTING");
+    expect(groups[0]!.key).toBe("PRINTING");
   });
 
   it("puts work that has not started FIRST, not last", () => {
@@ -77,12 +84,12 @@ describe("grouping pending work by stage", () => {
       row({ currentStage: null, currentStageName: null }),
     ];
 
-    const groups = groupByStage(rows, STAGES);
+    const groups = groupItems(rows, "stage", STAGES);
 
     // Work nobody has begun is what this sheet exists to surface. Below
     // fourteen stage blocks it would never be read.
-    expect(groups[0]!.stageCode).toBeNull();
-    expect(groups[0]!.stageName).toBe(NOT_STARTED);
+    expect(groups[0]!.key).toBeNull();
+    expect(groups[0]!.label).toBe(NOT_STARTED);
   });
 
   it("totals the pieces owed in each block", () => {
@@ -92,21 +99,10 @@ describe("grouping pending work by stage", () => {
       row({ currentStage: "DESIGN", currentStageName: "Design", pendingQty: 90 }),
     ];
 
-    const groups = groupByStage(rows, STAGES);
+    const groups = groupItems(rows, "stage", STAGES);
 
-    expect(groups.find((g) => g.stageCode === "PRINTING")!.pendingQty).toBe(650);
-    expect(groups.find((g) => g.stageCode === "DESIGN")!.pendingQty).toBe(90);
-  });
-
-  it("keeps the row order it was given inside each block", () => {
-    const urgent = row({ itemCode: "ITM-URGENT", isOverdue: true });
-    const later = row({ itemCode: "ITM-LATER" });
-
-    const [printing] = groupByStage([urgent, later], STAGES);
-
-    // Inherited, never recomputed — the rows arrive overdue first, so the most
-    // urgent job in a stage is at the top of its block.
-    expect(printing!.rows.map((r) => r.itemCode)).toEqual(["ITM-URGENT", "ITM-LATER"]);
+    expect(groups.find((g) => g.key === "PRINTING")!.pendingQty).toBe(650);
+    expect(groups.find((g) => g.key === "DESIGN")!.pendingQty).toBe(90);
   });
 
   it("never drops an item whose stage is no longer in the stage table", () => {
@@ -115,29 +111,113 @@ describe("grouping pending work by stage", () => {
     // A sheet headed "all pending work" must not quietly omit some.
     const rows = [row({ currentStage: "RETIRED", currentStageName: "Retired" }), row()];
 
-    const groups = groupByStage(rows, STAGES);
-    const codes = groups.map((g) => g.stageCode);
+    const groups = groupItems(rows, "stage", STAGES);
 
-    expect(codes).toContain("RETIRED");
+    expect(groups.map((g) => g.key)).toContain("RETIRED");
     expect(groups.flatMap((g) => g.rows)).toHaveLength(2);
   });
 });
 
-describe("what the sheet says produced it", () => {
-  it("names the risk filter and the search term", () => {
-    const summary = filterSummary({ query: "NAT", openOnly: true, risk: "overdue" });
+describe("grouping by client", () => {
+  it("keys off the client id, not the name", () => {
+    // Two clients can be typed with the same name — the importer creates them
+    // and F32 allows it. Grouping by name would merge two customers' work onto
+    // one block, which is the one mistake this sheet must never make.
+    const rows = [
+      row({ clientId: "c1", clientCode: "AAA", clientName: "Same Name Ltd" }),
+      row({ clientId: "c2", clientCode: "BBB", clientName: "Same Name Ltd" }),
+    ];
 
-    expect(summary).toContain("overdue items only");
-    expect(summary).toContain("NAT");
+    expect(groupItems(rows, "client", STAGES)).toHaveLength(2);
   });
 
-  it("says when delivered and cancelled work is included", () => {
-    expect(filterSummary({ query: "", openOnly: false })).toContain("including delivered");
+  it("orders blocks alphabetically, which is how somebody scans for a name", () => {
+    const rows = [
+      row({ clientId: "z", clientCode: "ZZZ", clientName: "Zenith" }),
+      row({ clientId: "a", clientCode: "AAA", clientName: "Apex" }),
+    ];
+
+    expect(groupItems(rows, "client", STAGES).map((g) => g.key)).toEqual(["a", "z"]);
+  });
+});
+
+describe("grouping by month due", () => {
+  it("orders months chronologically, not by size", () => {
+    const rows = [
+      row({ committedDate: "2026-11-15" }),
+      row({ committedDate: "2026-09-02" }),
+      row({ committedDate: "2026-09-20" }),
+    ];
+
+    expect(groupItems(rows, "month", STAGES).map((g) => g.key)).toEqual(["2026-09", "2026-11"]);
+  });
+
+  it("puts work with no commitment LAST, unlike not-started work", () => {
+    const rows = [row({ committedDate: null }), row({ committedDate: "2026-09-02" })];
+
+    const groups = groupItems(rows, "month", STAGES);
+
+    // An item with no committed date cannot be late, so it does not belong at
+    // the top of a page about what is due (F8). Not-started work is the
+    // opposite case and sorts first — see the stage tests above.
+    expect(groups.at(-1)!.key).toBeNull();
+    expect(groups.at(-1)!.label).toBe(NO_COMMITMENT_LABEL);
+  });
+
+  it("groups by the COMMITTED date, not the PO date the range filters on", () => {
+    // The two dates are deliberately different. An order taken in August and
+    // due in October belongs under October here.
+    const rows = [row({ poDate: "2026-08-01", committedDate: "2026-10-05" })];
+
+    expect(groupItems(rows, "month", STAGES)[0]!.key).toBe("2026-10");
+  });
+});
+
+describe("row order inside a block", () => {
+  it("is inherited from the query and never recomputed", () => {
+    // The sort is applied in SQL so the row cap takes the right rows. Blocks
+    // preserve what they were given; re-sorting here would print a different
+    // thousand rows from the ones the limit selected.
+    const first = row({ itemCode: "ITM-ZZZ", pendingQty: 1 });
+    const second = row({ itemCode: "ITM-AAA", pendingQty: 9999 });
+
+    const [printing] = groupItems([first, second], "stage", STAGES);
+
+    expect(printing!.rows.map((r) => r.itemCode)).toEqual(["ITM-ZZZ", "ITM-AAA"]);
+  });
+});
+
+describe("what the sheet says produced it", () => {
+  it("names the clients and stages that were ticked", () => {
+    const summary = filterSummary({
+      query: "",
+      clientNames: ["NMW", "KBC"],
+      stageNames: ["Printing"],
+    });
+
+    expect(summary).toContain("NMW, KBC");
+    expect(summary).toContain("Printing");
+  });
+
+  it("says the date range is on the ORDER date, not the due date", () => {
+    const summary = filterSummary({
+      query: "",
+      clientNames: [],
+      stageNames: [],
+      poDateFrom: "2026-08-01",
+      poDateTo: "2026-08-31",
+    });
+
+    // Unlabelled, a range would be read as whichever date the reader had in
+    // mind — and this sheet also groups by committed date.
+    expect(summary).toContain("ordered");
   });
 
   it("still says what it is showing when nothing is filtered", () => {
     // The unfiltered sheet is the one most likely to be mistaken for "the whole
     // picture" later, so it describes itself too rather than staying silent.
-    expect(filterSummary({ query: "", openOnly: true })).toContain("open items");
+    expect(filterSummary({ query: "", clientNames: [], stageNames: [] })).toContain(
+      "still owed",
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -32,6 +32,10 @@ export type ItemSearchRow = {
   clientName: string;
   poInternalNo: string;
   clientPoNo: string | null;
+  /** Grouping keys off the id, not the code — two clients can share a name. */
+  clientId: string;
+  /** When the order came in. What the report's date range filters on (K17). */
+  poDate: string;
   orderedQty: number;
   dispatchedQty: number;
   pendingQty: number;
@@ -60,9 +64,32 @@ export type ItemSearchRow = {
  */
 export type RiskFilter = "overdue" | "at-risk";
 
+/**
+ * How the pending-work report orders its rows (K17).
+ *
+ * Applied in SQL rather than after grouping, so the row cap takes the top N by
+ * the order somebody actually asked for — a limit applied to one ordering and
+ * then re-sorted in the browser silently prints the wrong thousand rows.
+ */
+export type ItemSortKey = "urgency" | "itemCode" | "client" | "pendingQty" | "stage";
+
+/** Sentinel for "no stage event yet", which no `IN` list can match. */
+export const NO_STAGE = "__none__";
+
 export async function searchItems(
   query: string,
-  opts: { openOnly?: boolean; risk?: RiskFilter; limit?: number } = {},
+  opts: {
+    openOnly?: boolean;
+    risk?: RiskFilter;
+    limit?: number;
+    /** Report filters (K17). All absent means the tracker's own behaviour. */
+    clientIds?: readonly string[];
+    /** Stage codes, or NO_STAGE for work that has not started. */
+    stageCodes?: readonly string[];
+    poDateFrom?: string;
+    poDateTo?: string;
+    sort?: ItemSortKey;
+  } = {},
 ): Promise<ItemSearchRow[]> {
   const term = query.trim();
   const like = `%${term}%`;
@@ -107,6 +134,66 @@ export async function searchItems(
         ? eq(vPoItemStatus.isAtRisk, true)
         : undefined;
 
+  /*
+   * REPORT FILTERS (K17). Each is absent unless the report asks for it, so the
+   * Item Tracker's own call — which passes none of them — builds exactly the
+   * query it always did.
+   */
+  const clients =
+    opts.clientIds && opts.clientIds.length > 0
+      ? inArray(vPoItemStatus.clientId, [...opts.clientIds])
+      : undefined;
+
+  /*
+   * "Not started" cannot be expressed in an IN list, because its stage is
+   * NULL. Ticking it alongside real stages has to mean "these stages OR no
+   * stage at all", so the sentinel is split out and the two are ORed.
+   */
+  const wantsNoStage = opts.stageCodes?.includes(NO_STAGE) ?? false;
+  const namedStages = (opts.stageCodes ?? []).filter((c) => c !== NO_STAGE);
+
+  const stages =
+    (opts.stageCodes?.length ?? 0) === 0
+      ? undefined
+      : or(
+          namedStages.length > 0
+            ? inArray(vPoItemStatus.currentStage, namedStages)
+            : undefined,
+          wantsNoStage ? isNull(vPoItemStatus.currentStage) : undefined,
+        );
+
+  // ON PO DATE, which is when the order came in — deliberately not the
+  // committed date, which is what the "month due" grouping reads. The sheet
+  // labels both so the two cannot be confused on paper.
+  const poFrom = opts.poDateFrom ? gte(vPoItemStatus.poDate, opts.poDateFrom) : undefined;
+  const poTo = opts.poDateTo ? lte(vPoItemStatus.poDate, opts.poDateTo) : undefined;
+
+  /*
+   * The default is the tracker's ordering and every other production screen's:
+   * overdue first, then the nearest commitment. The alternatives exist for the
+   * report and are each tie-broken by item code, so two rows that compare
+   * equal do not swap places between two printings of the same sheet.
+   */
+  const byUrgency = [
+    desc(vPoItemStatus.isOverdue),
+    sql`${vPoItemStatus.committedDate} asc nulls last`,
+    asc(vPoItemStatus.itemCode),
+  ];
+
+  const ordering =
+    opts.sort === "itemCode"
+      ? [asc(vPoItemStatus.itemCode)]
+      : opts.sort === "client"
+        ? [asc(vPoItemStatus.clientName), asc(vPoItemStatus.itemCode)]
+        : opts.sort === "pendingQty"
+          ? [desc(vPoItemStatus.pendingQty), asc(vPoItemStatus.itemCode)]
+          : opts.sort === "stage"
+            ? [
+                sql`${vPoItemStatus.currentStageSequence} asc nulls first`,
+                asc(vPoItemStatus.itemCode),
+              ]
+            : byUrgency;
+
   return db
     .select({
       poItemId: vPoItemStatus.poItemId,
@@ -116,6 +203,8 @@ export async function searchItems(
       clientName: vPoItemStatus.clientName,
       poInternalNo: vPoItemStatus.poInternalNo,
       clientPoNo: vPoItemStatus.clientPoNo,
+      clientId: vPoItemStatus.clientId,
+      poDate: vPoItemStatus.poDate,
       orderedQty: vPoItemStatus.orderedQty,
       dispatchedQty: vPoItemStatus.dispatchedQty,
       pendingQty: vPoItemStatus.pendingQty,
@@ -130,15 +219,11 @@ export async function searchItems(
       priority: vPoItemStatus.priority,
     })
     .from(vPoItemStatus)
-    .where(and(matches, openOnly, risk))
-    // Overdue first, then the nearest commitment. Items with no committed date
-    // sort last: NULLS LAST is explicit because Postgres puts them first for
-    // ascending order, which would push historical rows above live work.
-    .orderBy(
-      desc(vPoItemStatus.isOverdue),
-      sql`${vPoItemStatus.committedDate} asc nulls last`,
-      asc(vPoItemStatus.itemCode),
-    )
+    .where(and(matches, openOnly, risk, clients, stages, poFrom, poTo))
+    // Items with no committed date sort last under the default: NULLS LAST is
+    // explicit because Postgres puts them first for ascending order, which
+    // would push historical rows above live work.
+    .orderBy(...ordering)
     .limit(opts.limit ?? 200);
 }
 

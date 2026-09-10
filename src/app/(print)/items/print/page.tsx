@@ -2,80 +2,150 @@ import type { Metadata } from "next";
 import Image from "next/image";
 
 import { requireAccess } from "@/auth/guard";
-import { ItemsPrintBar } from "@/components/items/print-bar";
+import { ReportFilters } from "@/components/items/report-filters";
 import { formatCommittedDate, formatDaysToCommitted, formatDate, formatQty } from "@/lib/format";
 import { todayIST } from "@/lib/dates";
-import { filterSummary, groupByStage, type StageGroup } from "@/modules/items/grouping";
-import { searchItems, type ItemSearchRow, type RiskFilter } from "@/modules/items/queries";
+import { listClientOptions } from "@/modules/designs/queries";
+import {
+  GROUP_LABELS,
+  SORT_LABELS,
+  filterSummary,
+  groupItems,
+  type GroupBy,
+  type ItemGroup,
+} from "@/modules/items/grouping";
+import {
+  NO_STAGE,
+  searchItems,
+  type ItemSearchRow,
+  type ItemSortKey,
+} from "@/modules/items/queries";
 import { listAllStages } from "@/modules/stage-update/queries";
 
 export const metadata: Metadata = { title: "Pending work · print" };
 
 /**
- * THE PENDING WORK SHEET — every open item and where it has reached, on paper.
+ * THE PENDING WORK SHEET — every open item and where it has reached (K16),
+ * built to order (K17).
  *
- * INTERNAL. It carries every client's jobs on one page, so it is for the floor
- * and for the queue meeting and must never be handed to a customer. A
+ * INTERNAL. It carries several clients' jobs on one page, so it is for the
+ * floor and the queue meeting and must never be handed to a customer. A
  * client-facing status sheet is a different document scoped to one client, and
  * is deliberately not this.
  *
- * IT PRINTS WHAT THE TRACKER WAS SHOWING. The same `q`, `all` and `risk`
- * parameters the Item Tracker reads are read here, so one Print link gives you
- * everything, or just the overdue ones, or just one client, without a second
- * mechanism existing to say the same thing (F22). THE SHEET STATES WHICH
- * FILTER PRODUCED IT — a printed subset that does not admit to being one is
- * worse than a filtered screen, because the paper outlives the search box and
- * nobody holding it can see what was typed.
+ * ALWAYS PENDING WORK. Open items with quantity still owed, and no filter can
+ * widen that — a sheet headed "Pending Work" that could be made to contain
+ * delivered jobs would be a sheet whose title depends on what somebody ticked.
+ * The report narrows; it never broadens.
  *
- * TWO SHAPES, chosen with `?group=`:
+ * THE FILTERS LIVE IN THE URL and the QUERY DOES THE WORK. Clients, stages and
+ * the ordered-between range are all predicates in SQL, so the row cap takes the
+ * right rows and the count in the header cannot disagree with the rows beneath
+ * it. Grouping is a pure function over what comes back, which is why the three
+ * shapes cannot drift apart — they are one dataset arranged three ways.
  *
- *   stage   — a block per stage in process order. Answers "where is
- *             everything", which is the walking-the-floor question.
- *   urgency — one flat table, overdue first. Answers "what is late", which is
- *             the 6pm meeting question.
- *
- * Both were asked for. They are the same rows arranged twice, not two reports:
- * the grouping is a pure function over what the tracker already returns.
+ * TWO DIFFERENT DATES, on purpose. The range filters on PO DATE — when the
+ * order came in — while "month due" groups by COMMITTED DATE. "Orders taken in
+ * August, grouped by when they are due" is the capacity question worth asking,
+ * and both are labelled on the sheet so neither can be read as the other.
  */
 
-/** Generous, and honest when it bites — see the note by `truncated` below. */
+/** Generous, and honest when it bites — see the note by `truncated`. */
 const PRINT_LIMIT = 1000;
+
+function csv(value: string | undefined): string[] {
+  return (value ?? "").split(",").map((v) => v.trim()).filter(Boolean);
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const date = (v: string | undefined) => (v && ISO_DATE.test(v) ? v : undefined);
 
 export default async function ItemsPrintPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; all?: string; risk?: string; group?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    clients?: string;
+    stages?: string;
+    from?: string;
+    to?: string;
+    group?: string;
+    sort?: string;
+  }>;
 }) {
   await requireAccess("item_tracker");
 
   const sp = await searchParams;
   const query = sp.q ?? "";
-  const openOnly = sp.all !== "1";
-  const risk: RiskFilter | undefined =
-    sp.risk === "overdue" || sp.risk === "at-risk" ? sp.risk : undefined;
-  const group = sp.group === "urgency" ? "urgency" : "stage";
+  const clientIds = csv(sp.clients);
+  const stageCodes = csv(sp.stages);
+  const poDateFrom = date(sp.from);
+  const poDateTo = date(sp.to);
 
-  const [rows, stages] = await Promise.all([
-    searchItems(query, { openOnly, risk, limit: PRINT_LIMIT }),
+  // Anything unrecognised falls back to the default rather than to an empty
+  // sheet — a mistyped URL should print the report, not nothing.
+  const groupBy: GroupBy =
+    sp.group === "client" || sp.group === "month" ? sp.group : "stage";
+  const sort: ItemSortKey =
+    sp.sort === "itemCode" ||
+    sp.sort === "client" ||
+    sp.sort === "pendingQty" ||
+    sp.sort === "stage"
+      ? sp.sort
+      : "urgency";
+
+  const [rows, stages, clients] = await Promise.all([
+    searchItems(query, {
+      openOnly: true,
+      limit: PRINT_LIMIT,
+      clientIds,
+      stageCodes,
+      poDateFrom,
+      poDateTo,
+      sort,
+    }),
     listAllStages(),
+    listClientOptions(),
   ]);
 
   /*
    * The query is capped, and a capped sheet has to say so.
    *
-   * A supervisor counting pieces off this page against the floor will find the
-   * numbers short and no explanation for it — which is exactly the failure the
-   * "2 of 3 jobs shown" line on Stage Update exists to prevent (H8).
+   * A supervisor counting pieces off this page against the floor would find
+   * the numbers short with no explanation — exactly the failure the "2 of 3
+   * jobs shown" line prevents on Stage Update (H8).
    */
   const truncated = rows.length === PRINT_LIMIT;
 
   const totalPending = rows.reduce((sum, r) => sum + r.pendingQty, 0);
   const overdue = rows.filter((r) => r.isOverdue).length;
-  const groups = group === "stage" ? groupByStage(rows, stages) : [];
+  const groups = groupItems(rows, groupBy, stages);
+
+  // Names rather than ids, because the sheet is read by somebody who has never
+  // seen a uuid and cannot look one up from paper.
+  const clientNames = clientIds
+    .map((id) => clients.find((c) => c.id === id)?.code)
+    .filter((c): c is string => Boolean(c));
+
+  const stageNames = stageCodes
+    .map((code) =>
+      code === NO_STAGE ? "Not started" : stages.find((s) => s.code === code)?.name,
+    )
+    .filter((s): s is string => Boolean(s));
 
   return (
     <>
-      <ItemsPrintBar group={group} />
+      <ReportFilters
+        clients={clients}
+        stages={stages}
+        selectedClients={clientIds}
+        selectedStages={stageCodes}
+        query={query}
+        poDateFrom={poDateFrom ?? ""}
+        poDateTo={poDateTo ?? ""}
+        groupBy={groupBy}
+        sort={sort}
+      />
 
       <div className="print-sheet">
         <header className="flex items-start justify-between gap-4 border-b-2 border-black pb-2">
@@ -98,38 +168,32 @@ export default async function ItemsPrintPage({
 
         {/* What produced this sheet, and what it adds up to. Both on the paper,
             because neither is recoverable from the paper otherwise. */}
-        <section className="print-avoid-break mt-2 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-neutral-400 pb-2">
+        <section className="print-avoid-break mt-2 border-b border-neutral-400 pb-2">
           <p className="print-hint">
             {rows.length} item{rows.length === 1 ? "" : "s"} ·{" "}
             <span className="tabular-nums">{formatQty(totalPending)}</span> pieces still owed
-            {overdue > 0 ? ` · ${overdue} overdue` : ""}
+            {overdue > 0 ? ` · ${overdue} overdue` : ""} · {GROUP_LABELS[groupBy]},{" "}
+            {SORT_LABELS[sort]}
           </p>
-          <p className="print-hint">
-            {group === "stage" ? "Grouped by stage" : "Most urgent first"} ·{" "}
-            {filterSummary({ query, openOnly, risk })}
+          <p className="print-hint mt-0.5">
+            {filterSummary({ query, clientNames, stageNames, poDateFrom, poDateTo })}
           </p>
         </section>
 
         {truncated ? (
           <p className="print-hint mt-2 border border-black px-2 py-1">
             Showing the first {PRINT_LIMIT} items only. There is more pending work than fits
-            this sheet — narrow the filter on the tracker and print again.
+            this sheet — narrow the filters and print again.
           </p>
         ) : null}
 
         {rows.length === 0 ? (
-          <p className="mt-6 text-center text-[11pt]">
-            Nothing pending against this filter.
-          </p>
-        ) : group === "stage" ? (
+          <p className="mt-6 text-center text-[11pt]">Nothing pending against these filters.</p>
+        ) : (
           <div className="mt-3 space-y-4">
             {groups.map((g) => (
-              <StageBlock key={g.stageCode ?? "__none"} group={g} />
+              <Block key={g.key ?? "__none"} group={g} showStage={groupBy !== "stage"} />
             ))}
-          </div>
-        ) : (
-          <div className="mt-3">
-            <ItemTable rows={rows} showStage />
           </div>
         )}
 
@@ -142,18 +206,18 @@ export default async function ItemsPrintPage({
   );
 }
 
-/** One stage's worth of work, with what it holds stated in the heading. */
-function StageBlock({ group }: { group: StageGroup }) {
+/** One block, with what it holds stated in the heading. */
+function Block({ group, showStage }: { group: ItemGroup; showStage: boolean }) {
   return (
     <section className="print-avoid-break">
       <div className="flex items-baseline justify-between border-b border-black pb-0.5">
-        <h2 className="text-[11pt] font-bold tracking-[0.04em] uppercase">{group.stageName}</h2>
+        <h2 className="text-[11pt] font-bold tracking-[0.04em] uppercase">{group.label}</h2>
         <p className="print-hint tabular-nums">
           {group.rows.length} item{group.rows.length === 1 ? "" : "s"} ·{" "}
           {formatQty(group.pendingQty)} pcs
         </p>
       </div>
-      <ItemTable rows={group.rows} />
+      <ItemTable rows={group.rows} showStage={showStage} />
     </section>
   );
 }
@@ -161,48 +225,42 @@ function StageBlock({ group }: { group: StageGroup }) {
 /**
  * The rows.
  *
- * `showStage` only in the flat shape — inside a stage block the column would
- * repeat the heading on every line, which is the sort of thing that makes a
- * dense sheet unreadable rather than informative.
+ * `showStage` is off when the blocks ARE the stages — the column would repeat
+ * the heading on every line, which is what makes a dense sheet unreadable
+ * rather than informative.
  *
  * NO COLOUR ANYWHERE. print.css is explicit black on white, so "overdue" is
- * carried by the words in the Due column ("12 days overdue") rather than by
- * red, which a laser printer would drop to save ink.
+ * carried by the words in the Due column ("12 days overdue", set bold) rather
+ * than by red, which a laser printer would drop to save ink.
  */
-function ItemTable({ rows, showStage }: { rows: ItemSearchRow[]; showStage?: boolean }) {
+function ItemTable({ rows, showStage }: { rows: ItemSearchRow[]; showStage: boolean }) {
   return (
     <table className="w-full border-collapse text-[9.5pt]">
       <thead>
         <tr>
-          <th className="border-b border-neutral-500 px-1 py-0.5 text-left font-bold">Item</th>
-          <th className="border-b border-neutral-500 px-1 py-0.5 text-left font-bold">Name</th>
-          <th className="border-b border-neutral-500 px-1 py-0.5 text-left font-bold">Client</th>
-          <th className="border-b border-neutral-500 px-1 py-0.5 text-left font-bold">PO</th>
-          {showStage ? (
-            <th className="border-b border-neutral-500 px-1 py-0.5 text-left font-bold">Stage</th>
-          ) : null}
-          <th className="border-b border-neutral-500 px-1 py-0.5 text-right font-bold">Pending</th>
-          <th className="border-b border-neutral-500 px-1 py-0.5 text-left font-bold">Due</th>
+          <Th>Item</Th>
+          <Th>Name</Th>
+          <Th>Client</Th>
+          <Th>PO</Th>
+          <Th>Ordered</Th>
+          {showStage ? <Th>Stage</Th> : null}
+          <Th align="right">Pending</Th>
+          <Th>Due</Th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => (
           <tr key={r.poItemId}>
-            <td className="border-b border-neutral-300 px-1 py-0.5 tabular-nums">{r.itemCode}</td>
-            <td className="border-b border-neutral-300 px-1 py-0.5">{r.itemName}</td>
-            <td className="border-b border-neutral-300 px-1 py-0.5">{r.clientCode}</td>
-            <td className="border-b border-neutral-300 px-1 py-0.5 tabular-nums">
-              {r.poInternalNo}
-            </td>
-            {showStage ? (
-              <td className="border-b border-neutral-300 px-1 py-0.5">
-                {r.currentStageName ?? "Not started"}
-              </td>
-            ) : null}
-            <td className="border-b border-neutral-300 px-1 py-0.5 text-right tabular-nums">
-              {formatQty(r.pendingQty)}
-            </td>
-            <td className="border-b border-neutral-300 px-1 py-0.5">
+            <Td className="tabular-nums">{r.itemCode}</Td>
+            <Td>{r.itemName}</Td>
+            <Td>{r.clientCode}</Td>
+            <Td className="tabular-nums">{r.poInternalNo}</Td>
+            {/* The date the range filters on, on the sheet, so a filtered
+                report can be checked against its own rows. */}
+            <Td className="tabular-nums">{formatDate(r.poDate)}</Td>
+            {showStage ? <Td>{r.currentStageName ?? "Not started"}</Td> : null}
+            <Td className="text-right tabular-nums">{formatQty(r.pendingQty)}</Td>
+            <Td>
               {r.committedDate ? (
                 <>
                   <span className="tabular-nums">{formatCommittedDate(r.committedDate)}</span>
@@ -215,10 +273,26 @@ function ItemTable({ rows, showStage }: { rows: ItemSearchRow[]; showStage?: boo
                 // F8: a null commitment is a real state, not a gap to fill in.
                 <span className="print-hint">no commitment recorded</span>
               )}
-            </td>
+            </Td>
           </tr>
         ))}
       </tbody>
     </table>
   );
+}
+
+function Th({ children, align }: { children: React.ReactNode; align?: "right" }) {
+  return (
+    <th
+      className={`border-b border-neutral-500 px-1 py-0.5 font-bold ${
+        align === "right" ? "text-right" : "text-left"
+      }`}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <td className={`border-b border-neutral-300 px-1 py-0.5 ${className ?? ""}`}>{children}</td>;
 }

@@ -39,11 +39,13 @@ export default async function ItemsPage({
    * the parsed values rather than passing searchParams through, so a mistyped
    * `risk` that the screen ignored cannot reach the sheet either.
    */
-  const printParams = new URLSearchParams();
-  if (q) printParams.set("q", q);
-  if (!openOnly) printParams.set("all", "1");
-  if (riskFilter) printParams.set("risk", riskFilter);
-  const printQuery = printParams.size > 0 ? `?${printParams}` : "";
+  /*
+   * Only the search term travels to the report (K17). The report has its own
+   * client, stage and date filters and is always pending work, so `all` and
+   * `risk` have nothing to map onto — carrying them would produce a sheet
+   * whose header described filters the panel could not show.
+   */
+  const printQuery = q ? `?q=${encodeURIComponent(q)}` : "";
 
   return (
     <div>

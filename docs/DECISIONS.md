@@ -2929,6 +2929,11 @@ phasing. The floor plan is tomorrow's jobs grouped by station and needs the plan
 to exist first. This is a print view of a Phase 2 screen that already shipped, which
 completes that screen rather than pulling Phase 4 forward.
 
+> **Extended by K17 (10 Sep 2026).** The two shapes became three group-by options with their
+> own filter panel, and the sheet stopped borrowing the tracker's filters. Everything below
+> about ordering, "not started", deactivated stages and the sheet stating its own filter
+> still holds.
+
 **Two shapes, both asked for, one set of rows.**
 
 - `?group=stage` — a block per stage in the stage table's own sequence, with a count and a
@@ -2974,3 +2979,61 @@ carried by the words in the Due column — "12 days overdue", set bold — rathe
 which a laser printer drops to save ink. The header says "Internal — not for issue to a
 customer", because the sheet carries every client's jobs on one page. A client-facing status
 sheet would be a different document scoped to one client, and is deliberately not this.
+
+---
+
+## K17 — the pending work sheet becomes a report you build
+
+Asked for and built 10 Sep 2026, extending **K16**. "We can add filter what type of data I
+need for printing — select this this clients, this this month or date, this this stage, and
+sort by option and group by option, then to be printed."
+
+The sheet stops borrowing the Item Tracker's filters and gets its own panel: tick clients,
+tick stages, set an ordered-between range, choose a group-by and a sort. The panel is
+`print-hide`, so what comes out of the printer is the sheet alone.
+
+**It narrows and never broadens.** Always open items with quantity still owed. A sheet
+headed "Pending Work" that could be made to contain delivered jobs would be a sheet whose
+title depended on what somebody ticked, so the tracker's include-everything toggle is
+deliberately not carried over — only the search term travels from the tracker, because
+`all` and `risk` have nothing to map onto here.
+
+**The filters are SQL, not a browser-side sieve.** `searchItems` gained optional
+`clientIds`, `stageCodes`, `poDateFrom`, `poDateTo` and `sort`; the tracker passes none of
+them and builds exactly the query it always did. It matters that they are predicates: the
+1000-row cap then takes the rows somebody actually asked for, whereas filtering after the
+limit would print a subset of a subset with no way to tell.
+
+**Sorting is in SQL for the same reason, and grouping never reorders.** The sort is applied
+to the query, blocks preserve arrival order, and re-sorting inside a block would mean the
+cap selected one thousand rows and the sheet printed a different ordering of them.
+
+**Three group-by options: stage, client, month due.** A flat, ungrouped list was offered and
+deliberately not chosen, so the sheet is always blocked. Group-by and sort-by are
+independent — "group by client, sort by most urgent" gives a block per client with their
+worst job at the top, which is the shape a client call actually needs.
+
+**TWO DIFFERENT DATES, and this is the thing most likely to be misread.** The range filters
+on **PO date** — when the order came in — while "month due" groups by **committed date**.
+That is not an inconsistency: "orders taken in August, grouped by when they are due" is the
+capacity question worth asking. Both are labelled on the sheet, the filter summary says
+"ordered 1 Aug to 31 Aug" rather than a bare range, and the PO date is now a column so a
+filtered report can be checked against its own rows.
+
+**Grouping by client keys off `client_id`, never the name.** The importer can create two
+clients with the same typed name (F32), and grouping by name would merge two customers'
+work into one block — the one mistake this sheet must not make. A test pins it.
+
+**"Not started" is tickable as a stage.** Its stage is NULL, which no `IN` list can match, so
+the filter splits the sentinel out and ORs an `IS NULL` against the named stages. An item
+nobody has started is exactly what somebody filters for, and it would have been unreachable
+otherwise.
+
+**Empty means all, and says so.** No clients ticked shows every client; the panel prints
+"All clients" above the list rather than leaving an empty checklist reading as "nothing
+selected, nothing shown".
+
+**Under "month due", work with no committed date sorts LAST** — the opposite of "not
+started", which sorts first under stage grouping. Deliberate: unstarted work is urgent by
+omission, whereas an item with no commitment cannot be late (F8) and does not belong at the
+top of a page about what is due.
