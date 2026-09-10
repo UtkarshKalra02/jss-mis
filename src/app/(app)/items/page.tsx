@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { requireAccess } from "@/auth/guard";
@@ -33,6 +34,17 @@ export default async function ItemsPage({
   const riskFilter: RiskFilter | undefined =
     risk === "overdue" || risk === "at-risk" ? risk : undefined;
 
+  /*
+   * The tracker's own filters, handed to the print route verbatim. Built from
+   * the parsed values rather than passing searchParams through, so a mistyped
+   * `risk` that the screen ignored cannot reach the sheet either.
+   */
+  const printParams = new URLSearchParams();
+  if (q) printParams.set("q", q);
+  if (!openOnly) printParams.set("all", "1");
+  if (riskFilter) printParams.set("risk", riskFilter);
+  const printQuery = printParams.size > 0 ? `?${printParams}` : "";
+
   return (
     <div>
       <h1 className="page-title">Item tracker</h1>
@@ -44,9 +56,19 @@ export default async function ItemsPage({
         <Suspense fallback={<Skeleton className="h-9 w-full max-w-lg" />}>
           <ItemSearch initialQuery={q} />
         </Suspense>
-        <Suspense fallback={null}>
-          <OpenOnlyToggle openOnly={openOnly} />
-        </Suspense>
+        <div className="flex items-center gap-4">
+          <Suspense fallback={null}>
+            <OpenOnlyToggle openOnly={openOnly} />
+          </Suspense>
+          {/* Carries the filters through, so the sheet is what is on screen
+              rather than a second, differently-filtered report (K16). */}
+          <Link
+            href={`/items/print${printQuery}`}
+            className="text-primary text-[13px] hover:underline"
+          >
+            Print
+          </Link>
+        </div>
       </div>
 
       <div className="mt-6">

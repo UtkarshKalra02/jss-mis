@@ -2910,3 +2910,67 @@ is the owner field itself when anything is smuggled in beside it.
 Amit, so an enquiry can be assigned to an OWNER. J26 forbids delegating a TASK upwards and
 the same argument arguably applies, but nobody asked for it and inventing a restriction
 would block a case that might be real. Worth revisiting if it ever gets used that way.
+
+---
+
+## K16 — the pending work sheet
+
+Asked for and built 10 Sep 2026: "all the pending orders and their stages, and it can be
+printed as well". The third print surface, after the job card (J7) and the challan (K14).
+
+**No new query and no new view.** The Item Tracker already returns exactly these rows —
+item, client, PO, ordered, pending, stage, committed — filtered to open work with quantity
+still owed. This is a print surface over `searchItems`, not a report with its own definition
+of "pending". A second definition is how two screens start disagreeing about what the
+factory owes.
+
+**It is therefore NOT the Phase 4 daily floor plan**, and the distinction matters for
+phasing. The floor plan is tomorrow's jobs grouped by station and needs the planning board
+to exist first. This is a print view of a Phase 2 screen that already shipped, which
+completes that screen rather than pulling Phase 4 forward.
+
+**Two shapes, both asked for, one set of rows.**
+
+- `?group=stage` — a block per stage in the stage table's own sequence, with a count and a
+  piece total per block. The walking-the-floor question: where is everything.
+- `?group=urgency` — one flat table, overdue first then nearest committed date, with a stage
+  column. The 6pm meeting question: what is late.
+
+The grouping is a pure function over rows the tracker already returns, so the two shapes
+cannot drift apart — they are one dataset arranged twice, not two reports. The shape lives
+in the URL rather than in component state, so it survives a refresh and can be sent to
+somebody (F22).
+
+**Block order is the stage sequence, never the counts.** A supervisor reads the sheet
+walking the floor in process order, and an order that changed with the counts would be
+unreadable two days running. Stages holding nothing are omitted; a printed list of empty
+headings is noise on a page somebody has to carry.
+
+**"Not started" sorts FIRST.** Work nobody has picked up is what a pending-work sheet exists
+to surface, and it is the block that would be least read if it sat after fourteen stages. It
+is also deliberately not labelled "No stage", which reads as missing data rather than as a
+real and interesting state.
+
+**An item whose stage is no longer in the stage table is still listed**, under its raw code,
+last. Reachable for real: a stage is deactivated after items have passed through it, and
+`stage_event` is append-only (C6) so the history keeps pointing at it. A sheet headed "all
+pending work" that quietly omitted some is the one thing it must not be, and a test pins it.
+
+**The sheet says what produced it.** The print reads the same `q`, `all` and `risk`
+parameters the tracker does, so one Print link covers everything, the overdue only, or a
+single client — and the filter is printed on the paper. A filtered screen that does not say
+so is bad; a filtered SHEET that does not say so is worse, because the paper outlives the
+search box and nobody holding it can see what was typed. The row count, the piece total and
+the overdue count are on it for the same reason.
+
+**The 1000-row cap admits to itself.** `searchItems` takes a limit and this passes a
+generous one, but a sheet that silently stopped at the cap would have a supervisor counting
+pieces against the floor and finding them short with no explanation — the failure the
+"2 of 3 jobs shown" line prevents on Stage Update (H8). Hitting the cap prints a boxed line
+saying so.
+
+**No colour, marked internal.** `print.css` is explicit black on white, so overdue is
+carried by the words in the Due column — "12 days overdue", set bold — rather than by red,
+which a laser printer drops to save ink. The header says "Internal — not for issue to a
+customer", because the sheet carries every client's jobs on one page. A client-facing status
+sheet would be a different document scoped to one client, and is deliberately not this.
