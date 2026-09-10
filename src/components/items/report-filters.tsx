@@ -6,8 +6,9 @@ import { useTransition } from "react";
 
 import { cn } from "@/lib/utils";
 import type { ClientOption } from "@/modules/designs/queries";
-import type { GroupBy } from "@/modules/items/grouping";
-import { NO_STAGE, type ItemSortKey } from "@/modules/items/queries";
+// report-options has NO imports of its own. Importing a value from
+// items/queries here is what put the database driver in the browser (K18).
+import { NO_STAGE, type GroupBy, type ItemSortKey } from "@/modules/items/report-options";
 import type { StageOption } from "@/modules/stage-update/precedence";
 
 /**
@@ -56,7 +57,12 @@ export function ReportFilters({
   const push = (mutate: (q: URLSearchParams) => void) => {
     const q = new URLSearchParams(params.toString());
     mutate(q);
-    startTransition(() => router.replace(q.size > 0 ? `${pathname}?${q}` : pathname));
+    // `q.toString()` rather than `q.size`, which Safari only learned in 17 —
+    // there it is undefined, and `undefined > 0` is quietly false, so every
+    // filter would drop back to the bare path instead of throwing where
+    // somebody would notice.
+    const qs = q.toString();
+    startTransition(() => router.replace(qs ? `${pathname}?${qs}` : pathname));
   };
 
   const set = (key: string, value: string) =>

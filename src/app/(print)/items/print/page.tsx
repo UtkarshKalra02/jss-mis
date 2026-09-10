@@ -6,20 +6,15 @@ import { ReportFilters } from "@/components/items/report-filters";
 import { formatCommittedDate, formatDaysToCommitted, formatDate, formatQty } from "@/lib/format";
 import { todayIST } from "@/lib/dates";
 import { listClientOptions } from "@/modules/designs/queries";
+import { filterSummary, groupItems, type ItemGroup } from "@/modules/items/grouping";
+import { searchItems, type ItemSearchRow } from "@/modules/items/queries";
 import {
   GROUP_LABELS,
-  SORT_LABELS,
-  filterSummary,
-  groupItems,
-  type GroupBy,
-  type ItemGroup,
-} from "@/modules/items/grouping";
-import {
   NO_STAGE,
-  searchItems,
-  type ItemSearchRow,
+  SORT_LABELS,
+  type GroupBy,
   type ItemSortKey,
-} from "@/modules/items/queries";
+} from "@/modules/items/report-options";
 import { listAllStages } from "@/modules/stage-update/queries";
 
 export const metadata: Metadata = { title: "Pending work · print" };

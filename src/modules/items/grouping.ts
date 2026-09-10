@@ -2,6 +2,7 @@ import { formatDate } from "@/lib/format";
 import type { StageOption } from "@/modules/stage-update/precedence";
 
 import type { ItemSearchRow } from "./queries";
+import type { GroupBy } from "./report-options";
 
 /**
  * Arranging pending work for the printed sheet (K16, extended by K17).
@@ -16,8 +17,6 @@ import type { ItemSearchRow } from "./queries";
  * asked for; every block below preserves it. Re-sorting here would mean the
  * cap took the top thousand by one ordering and the sheet printed another.
  */
-
-export type GroupBy = "stage" | "client" | "month";
 
 export type ItemGroup = {
   /** Stable identity for React and for tests. Null is the "missing" bucket. */
@@ -159,20 +158,6 @@ function group(key: string | null, label: string, rows: ItemSearchRow[]): ItemGr
 }
 
 /* -------------------------------------------------------------------------- */
-
-export const GROUP_LABELS: Record<GroupBy, string> = {
-  stage: "Grouped by stage",
-  client: "Grouped by client",
-  month: "Grouped by month due",
-};
-
-export const SORT_LABELS = {
-  urgency: "most urgent first",
-  itemCode: "by item code",
-  client: "by client",
-  pendingQty: "largest quantity first",
-  stage: "by stage order",
-} as const;
 
 /**
  * What the sheet says produced it.

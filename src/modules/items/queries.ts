@@ -15,6 +15,8 @@ import {
 } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
 
+import { NO_STAGE, type ItemSortKey } from "./report-options";
+
 /**
  * The Item Tracker — spec 6.4, "the stop asking people screen".
  *
@@ -64,17 +66,13 @@ export type ItemSearchRow = {
  */
 export type RiskFilter = "overdue" | "at-risk";
 
-/**
- * How the pending-work report orders its rows (K17).
- *
- * Applied in SQL rather than after grouping, so the row cap takes the top N by
- * the order somebody actually asked for — a limit applied to one ordering and
- * then re-sorted in the browser silently prints the wrong thousand rows.
+/*
+ * The sort keys and the no-stage sentinel live in report-options.ts, which has
+ * no imports — the filter panel is a client component and cannot reach into
+ * this file for a value without dragging `@/db` into the browser (K18).
+ * Re-exported so server callers still have one place to look.
  */
-export type ItemSortKey = "urgency" | "itemCode" | "client" | "pendingQty" | "stage";
-
-/** Sentinel for "no stage event yet", which no `IN` list can match. */
-export const NO_STAGE = "__none__";
+export { NO_STAGE, type ItemSortKey } from "./report-options";
 
 export async function searchItems(
   query: string,

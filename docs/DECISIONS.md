@@ -3037,3 +3037,56 @@ selected, nothing shown".
 started", which sorts first under stage grouping. Deliberate: unstarted work is urgent by
 omission, whereas an item with no commitment cannot be late (F8) and does not belong at the
 top of a page about what is due.
+
+---
+
+## K18 — a client component may not import a VALUE from a server module
+
+Found in production on 10 Sep 2026: `/items/print` died with "Application error: a
+client-side exception has occurred" the moment it loaded. Nothing about the report was
+wrong; the page could not start.
+
+**What happened.** `report-filters.tsx` is `"use client"` and imported the `NO_STAGE`
+sentinel from `modules/items/queries.ts`. That is a VALUE import, so the bundler pulled the
+whole module into the browser bundle — and `items/queries` imports `@/db`, which imports
+`src/lib/env.ts`, which validates `DATABASE_URL` and `AUTH_SECRET` **at import time** and
+throws when they are absent. In a browser they are always absent, so the module threw before
+React rendered anything.
+
+Every other import in that file was `import type`, which TypeScript erases and which was
+never the problem. One value import was enough.
+
+**The build did not catch it and neither did the tests.** `next build` succeeded, typecheck
+and lint were clean, and 34 test files passed — none of which load a page in a browser. The
+signal was in the build output all along and was read past:
+
+```
+/items          4.04 kB    148 kB
+/items/print   64.5 kB    216 kB      <- 64 kB for a filter panel
+```
+
+After the fix, 2.05 kB and 121 kB. **A client bundle far larger than the component justifies
+is the symptom of server code being shipped**, and that number is worth a glance whenever a
+new client component appears.
+
+**The fix.** `src/modules/items/report-options.ts` holds what the panel and the query both
+need — the sort keys, the group-by union, the `NO_STAGE` sentinel and the label maps — and
+has **no imports at all**. `queries.ts` re-exports from it so server callers still have one
+place to look.
+
+**The general rule, which is the reason this is written down.** A `"use client"` file may
+import types from anywhere, because types are erased. It may NOT import a value from any
+module that transitively reaches `@/db` — and `env.ts` throwing at import time is what turns
+that from bloat into a white screen.
+
+**One instance of the lesser form is knowingly left standing.**
+`modules/enquiries/validation.ts` value-imports `enquiryStatusEnum` from `@/db/schema`, and
+three enquiry client components import the derived arrays from it. `@/db/schema` does NOT
+reach `@/db` or `env.ts` — it only imports `drizzle-orm/pg-core` — so those pages work; they
+just carry roughly 110 kB of the schema builder into the browser (`/enquiries` first load
+259 kB against `/items` 148 kB).
+
+It is not fixed by hardcoding the lists, which non-negotiable 5 forbids: the values must stay
+derived from the schema. The fix is to read them on the server and pass them down as props,
+which is a change to three components and their pages, and is worth doing when those screens
+are next touched rather than inside a hotfix.
