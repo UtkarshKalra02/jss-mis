@@ -148,36 +148,8 @@ describe("what the audit wrapper lets an OWNER do to an enquiry", () => {
     });
   });
 
-  it("still refuses an OWNER creating or deleting an enquiry", async () => {
-    await inRollback(async (tx) => {
-      const f = await fixture(tx);
-      const amit = owner(f.users[0]!.id);
-
-      const [client] = (
-        await tx.execute(
-          sql`insert into client (code, name) values (${uniq("EQ2")}, 'Another') returning id`,
-        )
-      ).rows as { id: string }[];
-      const [source] = (
-        await tx.execute(sql`select id from enquiry_source where code = 'OTHER'`)
-      ).rows as { id: string }[];
-
-      const insert = await expectFailure(tx, (sp) =>
-        auditedInsert(
-          amit,
-          enquiry,
-          {
-            enquiryNo: uniq("ENQ-"),
-            clientId: client!.id,
-            enquiryDate: "2026-09-08",
-            sourceId: source!.id,
-            itemDescription: "Amit should not be able to raise this",
-            ownerUserId: f.users[1]!.id,
-          },
-          sp,
-        ),
-      );
-      expect(insert.threw).toBe(true);
-    });
-  });
+  // Creating an enquiry became an OWNER carve-out of its own in K20; both
+  // halves of that are pinned in tests/owner-create.test.ts. What K15 still
+  // guarantees is that the one-field update is the only UPDATE shape he has,
+  // which the cases above cover.
 });

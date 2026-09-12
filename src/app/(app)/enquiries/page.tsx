@@ -43,7 +43,9 @@ export default async function EnquiriesPage({
   }>;
 }) {
   const user = await requireAccess("enquiry");
-  const canWrite = can(user.role, "enquiry", "write");
+  // "New enquiry" is offered on "create", which OWNER holds (K20). Nothing on
+  // this list edits a row, so nothing here needs "write".
+  const canCreate = can(user.role, "enquiry", "create");
 
   const sp = await searchParams;
 
@@ -75,7 +77,7 @@ export default async function EnquiriesPage({
     <div>
       <div className="flex items-baseline justify-between">
         <h1 className="page-title">Enquiries</h1>
-        {canWrite ? (
+        {canCreate ? (
           <Button asChild size="sm">
             <Link href="/enquiries/new">New enquiry</Link>
           </Button>
@@ -102,7 +104,7 @@ export default async function EnquiriesPage({
 
       <div className="mt-6">
         <Suspense key={key} fallback={<Skeleton className="h-96 w-full" />}>
-          <Results filters={filters} canWrite={canWrite} filtered={key !== "Open::::"} />
+          <Results filters={filters} canCreate={canCreate} filtered={key !== "Open::::"} />
         </Suspense>
       </div>
     </div>
@@ -112,11 +114,11 @@ export default async function EnquiriesPage({
 /** Split out so the filters stay interactive while this re-runs (section 7). */
 async function Results({
   filters,
-  canWrite,
+  canCreate,
   filtered,
 }: {
   filters: Filters;
-  canWrite: boolean;
+  canCreate: boolean;
   filtered: boolean;
 }) {
   const rows = await listEnquiries(filters);
@@ -128,7 +130,7 @@ async function Results({
       emptyMessage={
         filtered
           ? "Nothing matches those filters."
-          : canWrite
+          : canCreate
             ? "No open enquiries. Record the next one that comes in — that is what makes the win rate mean something."
             : "No open enquiries."
       }

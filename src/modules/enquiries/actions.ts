@@ -26,9 +26,10 @@ import {
  * Enquiry writes.
  *
  * EVERY write goes through the audit wrapper (non-negotiable 3), which is also
- * where B2 is enforced: `assertCanWrite` refuses an OWNER outright, so Amit
- * cannot create or edit an enquiry even if a route guard were ever loosened.
- * The wrapper's only OWNER carve-out is delegation, and it does not reach here.
+ * where B2 is enforced. Two of its OWNER carve-outs reach this module: Amit may
+ * RECORD an enquiry (K20) and may say who chases one (K15). He cannot edit,
+ * change the status of, link, or remove one, and the wrapper refuses those
+ * even if a route guard were ever loosened.
  */
 
 export type FormState = {
@@ -98,7 +99,8 @@ export async function createEnquiryAction(
   _prev: FormState,
   form: FormData,
 ): Promise<FormState> {
-  const user = await requireAccess("enquiry", "write");
+  // "create", not "write": the one action here an OWNER may reach (K20).
+  const user = await requireAccess("enquiry", "create");
   const actor: Actor = { id: user.id, role: user.role };
 
   const parsed = createEnquirySchema.safeParse(parseEnquiryForm(form));
@@ -265,12 +267,12 @@ export async function setEnquiryStatusAction(
 /**
  * Says who chases this enquiry, and does nothing else.
  *
- * THE ONLY WRITE PATH AN OWNER HAS INTO THIS MODULE. `enquiry` is `read` for
+ * THE ONLY UPDATE AN OWNER MAY MAKE IN THIS MODULE. `enquiry` is `create` for
  * OWNER in the matrix, so `requireAccess("enquiry", "write")` — which every
- * other action here calls — refuses Amit outright. This one asks for read and
+ * other update here calls — refuses Amit outright. This one asks for read and
  * then checks the narrower capability, and the update it issues touches one
- * field, which is the only shape the audit wrapper will accept from an OWNER
- * (K15).
+ * field, which is the only update shape the audit wrapper will accept from an
+ * OWNER (K15).
  *
  * ADMIN reaches it the ordinary way.
  */

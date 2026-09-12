@@ -58,13 +58,20 @@ function removedTo(path: string, message: string): never {
 /**
  * Client master writes.
  *
- * Access follows decision A3: ADMIN creates, edits and deactivates; the desk
- * roles read only. That is enforced by requireAccess("client", "write") here,
- * not by hiding the buttons — a PLANNER who posts this form directly still
- * gets refused.
+ * Access follows decision A3 as widened by K19 and K20: ADMIN and ORDER_DESK
+ * create, edit and deactivate; OWNER creates and nothing more; the other roles
+ * read only. That is enforced by requireAccess here, not by hiding the
+ * buttons — a PLANNER who posts this form directly still gets refused, and so
+ * does an OWNER who posts the edit form.
  */
 async function requireClientWriter(): Promise<Actor> {
   const user = await requireAccess("client", "write");
+  return { id: user.id, role: user.role };
+}
+
+/** The create action alone asks for "create", which is what admits OWNER. */
+async function requireClientCreator(): Promise<Actor> {
+  const user = await requireAccess("client", "create");
   return { id: user.id, role: user.role };
 }
 
@@ -95,7 +102,7 @@ export async function createClientAction(
   formData: FormData,
 ): Promise<FormState> {
   try {
-    const actor = await requireClientWriter();
+    const actor = await requireClientCreator();
 
     const parsed = parse(formData);
     if (!parsed.success) return fail(parsed.error.issues[0]!.message);

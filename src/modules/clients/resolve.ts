@@ -58,8 +58,8 @@ export async function listClientsForMatching(
  * caller happens to be filling in. That distinction is the whole point of this
  * function existing: when the enquiry picker checked nothing, anyone who could
  * raise an enquiry could create a client, and the role matrix said otherwise
- * (K19). Here the matrix is the single source of truth, so ADMIN and
- * ORDER_DESK create clients wherever they are standing, and PLANNER and
+ * (K19). Here the matrix is the single source of truth, so ADMIN, ORDER_DESK
+ * and OWNER (K20) create clients wherever they are standing, and PLANNER and
  * ACCOUNTS are told to pick an existing one — on the enquiry screen and the
  * design screen alike, because it is one rule rather than a screen's opinion.
  *
@@ -100,7 +100,7 @@ export async function resolveClientId(
     };
   }
 
-  if (!can(actor.role, "client", "write")) {
+  if (!can(actor.role, "client", "create")) {
     return {
       ok: false,
       error: `“${input.clientName}” is not a client yet, and your role cannot create one. Choose an existing client, or ask an admin to add them first.`,

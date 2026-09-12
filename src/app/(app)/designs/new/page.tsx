@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "New design · JSS MIS" };
 
 export default async function NewDesignPage() {
   const user = await requireAccess("design", "write");
-  const canCreateClient = can(user.role, "client", "write");
+  const canCreateClient = can(user.role, "client", "create");
 
   const [clients, fabricationOptions] = await Promise.all([
     listClientOptions(),

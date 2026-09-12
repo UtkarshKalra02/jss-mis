@@ -16,13 +16,18 @@
  * Client master access follows decision A3: ADMIN writes, the three desk roles
  * read, OWNER and FLOOR get nothing.
  *
- * OWNER is read-only EVERYWHERE (decision B2), with exactly one documented
- * exception: `delegation`. G2 granted that so Amit could mark his own tasks
- * done; J26 turned it round — he DELEGATES, and nobody may delegate to him.
- * That grant is what lets him REACH the screen; what he may actually write is
- * decided by the audit wrapper and is much narrower than the grant.
+ * OWNER is read-only EVERYWHERE (decision B2), with three documented
+ * exceptions, each narrower than the grant that reaches it:
+ *   - `delegation` is "write". G2 granted that so Amit could mark his own
+ *     tasks done; J26 turned it round — he DELEGATES, and nobody may delegate
+ *     to him.
+ *   - `enquiry` and `client` are "create" (K20). He may record an enquiry and
+ *     add a client, and that is all: what already exists he still cannot edit
+ *     or remove.
+ * A grant is what lets him REACH a screen; what he may actually write is
+ * decided by the audit wrapper and is narrower than the grant.
  *
- * Enforcement is not here in either case. The hard check is inside the audit
+ * Enforcement is not here in any case. The hard check is inside the audit
  * wrapper, so a future screen that forgets to call assertCan() still cannot let
  * an OWNER write.
  */
@@ -69,8 +74,20 @@ export const RESOURCES = [
 
 export type Resource = (typeof RESOURCES)[number];
 
-/** "write" implies "read". Absent means no access at all. */
-export type Access = "read" | "write";
+/**
+ * Three levels, each implying the ones below: "write" > "create" > "read".
+ * Absent means no access at all.
+ *
+ * "create" exists for one role (K20). OWNER may add an enquiry or a client
+ * without being able to edit or remove one, and a two-level matrix cannot say
+ * that — "write" would render every edit control on a screen where the audit
+ * wrapper refuses every edit, which is the exact shape of the bug that kept
+ * the owner from delegating (J26 correction). The matrix says what the screen
+ * may offer; it must not offer what the wrapper will refuse.
+ */
+export type Access = "read" | "create" | "write";
+
+const RANK: Record<Access, number> = { read: 0, create: 1, write: 2 };
 
 type Matrix = Record<Role, Partial<Record<Resource, Access>>>;
 
@@ -294,7 +311,6 @@ export const ACCESS: Matrix = {
    */
   OWNER: {
     dashboard: "read",
-    enquiry: "read",
     quotation: "read",
     purchase_order: "read",
     design: "read",
@@ -309,7 +325,14 @@ export const ACCESS: Matrix = {
     receipt: "read",
     ar_ledger: "read", // B1 — section 6.10 lists OWNER
     reports: "read", // B1
-    client: "read",
+
+    /**
+     * K20: he records what a client asked for, and adds the client if they
+     * are new — an owner who takes the call should not have to relay it to a
+     * desk. Create only; editing and removing stay refused by the wrapper.
+     */
+    enquiry: "create",
+    client: "create",
 
     /** J26 widened this from G2's narrow self-write. See the audit wrapper. */
     delegation: "write",
@@ -333,7 +356,7 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   PLANNER: "Job planning, stage updates and dispatch.",
   ACCOUNTS: "Invoices, receipts, AR ledger and dispatch.",
   FLOOR: "Stage updates only, on a phone.",
-  OWNER: "Sees everything, changes nothing — and delegates.",
+  OWNER: "Sees everything, edits nothing — delegates, records enquiries, adds clients.",
 };
 
 /** Where each role lands after logging in. */
@@ -349,7 +372,7 @@ export const LANDING_ROUTE: Record<Role, string> = {
 export function can(role: Role, resource: Resource, access: Access = "read"): boolean {
   const granted = ACCESS[role]?.[resource];
   if (!granted) return false;
-  return access === "read" ? true : granted === "write";
+  return RANK[granted] >= RANK[access];
 }
 
 /** Thrown by assertCan. Caught at the route boundary and rendered as 403. */

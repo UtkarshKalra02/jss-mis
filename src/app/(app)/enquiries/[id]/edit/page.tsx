@@ -45,7 +45,7 @@ export default async function EditEnquiryPage({
           owners={owners}
           defaultOwnerId={user.id}
           canAssign={canAssignEnquiryOwner(user.role)}
-          canCreateClient={can(user.role, "client", "write")}
+          canCreateClient={can(user.role, "client", "create")}
           enquiry={enquiry}
         />
       </div>

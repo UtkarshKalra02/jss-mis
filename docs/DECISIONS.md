@@ -3162,3 +3162,50 @@ and fail as a database error rather than as a sentence.
 The "add a client first" empty state on `/designs/new` now shows only for somebody who cannot
 create one. With the picker, an empty client master is no longer a dead end for ADMIN or
 ORDER_DESK.
+
+---
+
+## K20 — the owner records an enquiry and adds a client
+
+Asked for by Utkarsh on 12 Sep 2026: "owner can add enquiry and client".
+
+**What changed.** OWNER may create an enquiry and create a client. That is the whole of
+it: he cannot edit either, change an enquiry's status, link or unlink a PO, deactivate a
+client, or remove anything. K15's one-field assignment stands. Every other role is
+unchanged.
+
+**Why it is defensible.** Amit takes calls. An enquiry he has to relay to a desk to be
+typed is an enquiry recorded a day late or not at all, and a new customer on that call is
+a client nobody else can add for him. Creating is the one write that cannot rewrite
+anybody else's work — a row he adds is a row that did not exist, not a row somebody
+else keyed and now finds changed — so it sits on the right side of the line B2 draws,
+which is that the owner does not run the business through other people's screens.
+
+**The matrix grew a level: `read` < `create` < `write`.** This is the structural decision
+and the reason the change is not a one-liner. A two-level matrix cannot say "may add,
+may not edit"; granting OWNER `write` would have rendered every edit control on every
+enquiry and client screen, each of which the audit wrapper would then refuse — the exact
+shape of the bug fixed this morning under J26, where the owner had the permission and a
+form that could not use it. `can()` compares rank, so every existing `"write"` check
+still means what it meant, and `"create"` is what the New-enquiry button, the Add-client
+button, both create actions, and the typed-client-name resolver (`resolveClientId`) now
+ask for. Nothing else asks for it.
+
+**B2 now has three exceptions, declared in the same place.** `OWNER_CREATABLE_TABLES` in
+`src/db/audit.ts` — `enquiry` and `client` — is checked by `auditedInsert` beside the J26
+and K15 carve-outs. Updates and soft deletes are untouched, so the refusal on everything
+that already exists is the same code path it was yesterday. The cost is the one J26 and
+K15 each wrote down: the third exception is easier to add than the first, and this one is
+a whole row rather than a field. `tests/owner-create.test.ts` pins both halves — the two
+inserts work, the client resolver creates for him, and updates, deletes and inserts on
+any other table are still refused. `tests/audit.test.ts` and `tests/delegation-owner.test.ts`
+had pinned the general rule on `client` inserts; they now pin it on `app_user`, which
+has no carve-out.
+
+**What Amit sees.** "New enquiry" and "Add client" on the two lists; the enquiry form with
+the "who chases it" select he already had under K15; a client form. Opening an enquiry or
+a client he added shows the same read-only view he sees for everybody else's — creating
+is not owning, and a client he keyed with a typo is corrected by the order desk, not by
+him. That asymmetry is deliberate and is the point at which this stops being a widening
+of B2 and starts being a repeal of it; if it turns out to be the wrong line, the change is
+one more field list beside the other two, not a rethink.

@@ -105,9 +105,13 @@ describe("audit wrapper", () => {
   });
 
   it("refuses every write from an OWNER (B2)", async () => {
+    // `client` gained an OWNER insert carve-out in K20 (pinned, both ways, in
+    // tests/owner-create.test.ts), so the general rule is pinned on the
+    // update and delete here and on the insert against a table with no
+    // exception at all.
     await inRollback(async (tx) => {
       await expect(
-        auditedInsert(OWNER, client, { code: uniq("T"), name: "Nope" }, tx),
+        auditedInsert(OWNER, appUser, { username: uniq("u"), name: "Nope", role: "FLOOR" }, tx),
       ).rejects.toBeInstanceOf(ReadOnlyRoleError);
 
       const existing = await auditedInsert(ADMIN, client, { code: uniq("T"), name: "X" }, tx);

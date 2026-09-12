@@ -11,7 +11,7 @@ import {
   type Actor,
   type Tx,
 } from "@/db/audit";
-import { client, delegationTask } from "@/db/schema";
+import { appUser, delegationTask } from "@/db/schema";
 
 import { expectFailure, inRollback, uniq } from "./helpers";
 
@@ -137,13 +137,15 @@ describe("an OWNER delegates (J26)", () => {
     });
   });
 
-  it("cannot insert into any OTHER table, which is still all of them", async () => {
+  it("cannot insert into any table outside the documented exceptions", async () => {
+    // `client` and `enquiry` joined the exceptions in K20 (tests/owner-create
+    // pins those), so the rule is pinned here on a table with no carve-out.
     await inRollback(async (tx) => {
       const owner = await makeUser(tx, "OWNER");
       const actor: Actor = { id: owner, role: "OWNER" };
 
       const result = await expectDenied(tx, (sp) =>
-        auditedInsert(actor, client, { code: uniq("OW"), name: "Nope" }, sp),
+        auditedInsert(actor, appUser, { username: uniq("nope"), name: "Nope", role: "FLOOR" }, sp),
       );
 
       expect(result.denied).toBe(true);

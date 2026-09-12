@@ -18,9 +18,11 @@ export default async function ClientsPage({
 }: {
   searchParams: Promise<{ imported?: string }>;
 }) {
-  // Read is enough to see the list; ADMIN alone gets the Add button (A3).
+  // Read is enough to see the list. The Add button is offered on "create",
+  // which OWNER holds as well as the writers (K20); what the list says about
+  // itself follows the same line, since adding is the only thing it offers.
   const user = await requireAccess("client");
-  const canWrite = can(user.role, "client", "write");
+  const canCreate = can(user.role, "client", "create");
 
   const { imported } = await searchParams;
   const importedUnreviewed = imported === "1";
@@ -34,14 +36,14 @@ export default async function ClientsPage({
     <div>
       <div className="flex items-baseline justify-between">
         <h1 className="page-title">Clients</h1>
-        {canWrite ? (
+        {canCreate ? (
           <Button asChild size="sm">
             <Link href="/clients/new">Add client</Link>
           </Button>
         ) : null}
       </div>
       <p className="text-muted-foreground mt-1 text-[13px]">
-        {canWrite
+        {canCreate
           ? "Sort by any column, or filter inline under Code, Name and City."
           : "Read-only. Ask an administrator to add or change a client."}
       </p>
@@ -67,7 +69,7 @@ export default async function ClientsPage({
           emptyMessage={
             importedUnreviewed
               ? "Nothing waiting. Every client the importer created has been checked."
-              : canWrite
+              : canCreate
                 ? "No clients yet. Add the first one to get started."
                 : "No clients yet."
           }

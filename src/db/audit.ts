@@ -23,11 +23,11 @@ import { auditLog } from "./schema";
  *
  *   B2. OWNER is read-only.     Checked here, at the choke point, rather than
  *      per screen — so a future page that forgets its guard still cannot let
- *      an OWNER write anything. There are exactly TWO documented exceptions —
- *      delegation (G2/J26) and saying who chases an enquiry (K15) — and both
- *      are declared below rather than in the modules that benefit from them:
- *      a rule enforced in one file and excepted in another is a rule that
- *      quietly stops being true.
+ *      an OWNER write anything. There are exactly THREE documented exceptions
+ *      — delegation (G2/J26), saying who chases an enquiry (K15), and adding
+ *      an enquiry or a client (K20) — and all three are declared below rather
+ *      than in the modules that benefit from them: a rule enforced in one
+ *      file and excepted in another is a rule that quietly stops being true.
  *
  * If you find yourself wanting to bypass this for a bulk operation, pass a
  * transaction in instead (every function takes an optional `tx`), so the whole
@@ -221,6 +221,39 @@ function isOwnerEnquiryAssignment(
   return keys.length > 0 && keys.every((field) => OWNER_ASSIGNABLE_FIELDS.has(field));
 }
 
+/* -------------------------------------------------------------------------- */
+/* The THIRD exception to B2 — adding an enquiry or a client (K20)             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * AN OWNER MAY INSERT INTO `enquiry` AND `client`, AND UPDATE NEITHER.
+ *
+ * Amit takes calls. An enquiry he has to relay to a desk to be typed is an
+ * enquiry recorded a day late or not at all, and a new customer on that call
+ * is a client nobody else can add for him. So he records the enquiry and adds
+ * the client himself — and that is the whole of it. What already exists he
+ * still cannot edit or remove: updates to `client` are refused, updates to
+ * `enquiry` are refused except the K15 field, and soft delete refuses him as
+ * it always has. Creating is the one write that cannot rewrite anybody else's
+ * work.
+ *
+ * The matrix grants him "create" and not "write" on both resources, so the
+ * screens offer exactly what this permits. That pairing is the lesson of the
+ * J26 correction: a form that asks a question the wrapper will refuse is not a
+ * permission, it is a bug with a delay on it.
+ *
+ * WHAT THIS COSTS. B2 now has three exceptions, and the third is a whole row
+ * rather than a field. tests/owner-create.test.ts pins both halves — that the
+ * two inserts work, and that nothing else on either table came with them.
+ * Adding a table to this set is a change that will look innocuous a year from
+ * now.
+ */
+const OWNER_CREATABLE_TABLES: ReadonlySet<string> = new Set(["enquiry", "client"]);
+
+function isOwnerCreate(table: PgTable): boolean {
+  return OWNER_CREATABLE_TABLES.has(getTableName(table));
+}
+
 export class RecordNotFoundError extends Error {
   constructor(table: string, id: string) {
     super(`No ${table} with id ${id}.`);
@@ -330,11 +363,15 @@ export async function auditedInsert<T extends AuditableTable>(
   values: InferInsertModel<T>,
   tx?: Runner,
 ): Promise<InferSelectModel<T>> {
-  // An OWNER may raise a delegated task for somebody else, and nothing else
-  // (J26). Every other insert by an OWNER is still refused here.
+  // An OWNER may raise a delegated task for somebody else (J26), or add an
+  // enquiry or a client (K20), and nothing else. Every other insert by an
+  // OWNER is still refused here.
   if (
     actor.role !== "OWNER" ||
-    !isOwnerDelegationInsert(actor, table, values as Record<string, unknown>)
+    !(
+      isOwnerDelegationInsert(actor, table, values as Record<string, unknown>) ||
+      isOwnerCreate(table)
+    )
   ) {
     assertCanWrite(actor);
   }

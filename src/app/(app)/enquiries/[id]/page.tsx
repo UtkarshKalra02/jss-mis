@@ -159,9 +159,9 @@ export default async function EnquiryDetailPage({
         ) : null}
       </section>
 
-      {/* OUTSIDE the canWrite block on purpose. An OWNER has `enquiry: "read"`
+      {/* OUTSIDE the canWrite block on purpose. An OWNER has `enquiry: "create"`
           and reaches none of the controls below, but K15 gives him this one —
-          it is the only write he has in this module. */}
+          the only change he may make to an enquiry that already exists. */}
       {canAssign ? (
         <section className="mt-8">
           <h2 className="text-sm font-medium">Who chases it</h2>

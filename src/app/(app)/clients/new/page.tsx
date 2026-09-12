@@ -7,7 +7,8 @@ import { ClientForm } from "@/components/clients/client-form";
 export const metadata: Metadata = { title: "Add client · JSS MIS" };
 
 export default async function NewClientPage() {
-  await requireAccess("client", "write");
+  // "create", not "write": OWNER may add a client (K20) but not edit one.
+  await requireAccess("client", "create");
 
   return (
     <div className="max-w-3xl">

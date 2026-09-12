@@ -11,7 +11,8 @@ import { canAssignEnquiryOwner } from "@/modules/enquiries/permissions";
 export const metadata: Metadata = { title: "New enquiry · JSS MIS" };
 
 export default async function NewEnquiryPage() {
-  const user = await requireAccess("enquiry", "write");
+  // "create", not "write": OWNER may record an enquiry (K20) but not edit one.
+  const user = await requireAccess("enquiry", "create");
 
   const [clients, sources, owners] = await Promise.all([
     listClientOptions(),
@@ -37,7 +38,7 @@ export default async function NewEnquiryPage() {
           owners={owners}
           defaultOwnerId={user.id}
           canAssign={canAssignEnquiryOwner(user.role)}
-          canCreateClient={can(user.role, "client", "write")}
+          canCreateClient={can(user.role, "client", "create")}
         />
       </div>
     </div>
