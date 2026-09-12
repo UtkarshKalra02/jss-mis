@@ -25,7 +25,9 @@ import {
   findDuplicatePoNo,
   getPoItem,
   getPurchaseOrder,
+  listPoItems,
 } from "./queries";
+import { removalBlockers } from "./removal";
 import { createPoSchema, poHeaderSchema, poItemSchema } from "./validation";
 
 /**
@@ -415,6 +417,53 @@ export async function removePoItemAction(
   } catch (error) {
     unstable_rethrow(error);
     return fail(actionError(error, "Could not remove the item."));
+  }
+}
+
+/**
+ * Removing a whole purchase order is for one entered by mistake — the same
+ * rule as removing an item, applied to all of them at once (K21).
+ *
+ * Refused if anything on it has been dispatched, for the reason the item
+ * action gives: the challans would still say it went out. A PO that was real
+ * and then dropped is cancelled, not removed. Everything happens in one
+ * transaction — every item and then the header — so a refusal or a failure
+ * part-way leaves the order exactly as it was rather than half gone.
+ */
+export async function removePurchaseOrderAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requirePoWriter();
+    const id = String(formData.get("id") ?? "");
+
+    const existing = await getPurchaseOrder(id);
+    if (!existing) return fail("That purchase order no longer exists.");
+
+    const items = await listPoItems(id);
+    const blockers = removalBlockers(items);
+    if (blockers.length > 0) {
+      const named = blockers.map((b) => `${b.itemCode} (${b.dispatchedQty})`).join(", ");
+      return fail(
+        `${existing.internalNo} has dispatches against ${named} and cannot be removed. Cancel it instead — that keeps the delivery history intact.`,
+      );
+    }
+
+    await db.transaction(async (tx) => {
+      for (const item of items) await auditedSoftDelete(actor, poItem, item.id, tx);
+      await auditedSoftDelete(actor, purchaseOrder, id, tx);
+    });
+
+    revalidatePath("/purchase-orders");
+    // Server redirect, for the reason removePoItemAction gives (J13): this
+    // order's own screen now reads a row that no longer exists.
+    redirect(
+      `/purchase-orders?removed=${encodeURIComponent(`${existing.internalNo} removed.`)}`,
+    );
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(actionError(error, "Could not remove the purchase order."));
   }
 }
 

@@ -16,6 +16,7 @@ import {
   listDesignOptions,
   listPoItems,
 } from "@/modules/purchase-orders/queries";
+import { removalBlockers } from "@/modules/purchase-orders/removal";
 import {
   formatCommittedDate,
   formatDaysToCommitted,
@@ -160,7 +161,12 @@ export default async function PurchaseOrderPage({
         <div className="mt-8 max-w-3xl space-y-4">
           <PoHeaderForm po={po} clients={clients} />
           <PoItemForm mode="add" purchaseOrderId={id} designs={designsForClient} />
-          <PurchaseOrderControls poId={po.id} internalNo={po.internalNo} status={po.status} />
+          <PurchaseOrderControls
+            poId={po.id}
+            internalNo={po.internalNo}
+            status={po.status}
+            dispatchedItems={removalBlockers(items).map((b) => b.itemCode)}
+          />
         </div>
       ) : (
         <p className="text-muted-foreground mt-8 text-sm">

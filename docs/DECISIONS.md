@@ -3209,3 +3209,38 @@ is not owning, and a client he keyed with a typo is corrected by the order desk,
 him. That asymmetry is deliberate and is the point at which this stops being a widening
 of B2 and starts being a repeal of it; if it turns out to be the wrong line, the change is
 one more field list beside the other two, not a rethink.
+
+---
+
+## K21 — a purchase order entered by mistake is removed, not cancelled
+
+Asked for by Utkarsh on 12 Sep 2026, pointing at PO-2026-0015 (NAT, cancelled, ₹19,700,
+nothing pending): "Delete this PO". There was no way to. The order desk could cancel an
+order and could remove a single item, but a whole order keyed in error stayed on the list
+as a cancelled row forever.
+
+**Remove is the item rule applied to the whole order.** `removePurchaseOrderAction`
+soft-deletes every item and then the header, in one transaction, so a failure part-way
+leaves the order whole rather than half gone. It is refused if anything on the order has
+been dispatched, for exactly the reason `removePoItemAction` refuses (I-series): the
+challans would still say it went out. `removalBlockers()` in
+`src/modules/purchase-orders/removal.ts` is that rule as a pure function, so the page can
+explain the refusal before the button is pressed and a test can pin it without a session.
+Status is deliberately not the test — a cancelled or closed item with nothing delivered is
+no bar; a delivery is.
+
+**Soft delete, as always (non-negotiable 7).** The rows stay, with `deleted_at` set and an
+audit row each. Stage events and job-card lines on those items keep pointing at rows
+nothing displays, which is the position the item action already took and is the correct
+one: what happened, happened, and hiding an order does not unhappen the events under it.
+
+**Cancel and Remove sit together on the order's page, and say which one you want.** Remove
+is for a mistake; Cancel is for an order that was real and then dropped. The copy on both
+panels says so, because the difference matters to the OTD number and not to the person
+in a hurry.
+
+**Why this was built rather than run.** The row is on production, which the laptop cannot
+reach by design (DEPLOYMENT.md §1 — the dev branch has no purchase orders at all). A
+one-off script pointed at production is the thing that section exists to prevent, and the
+need is not one-off: the next mistaken PO would have raised the same question. A button
+the order desk can press is the answer both times.

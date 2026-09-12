@@ -11,6 +11,7 @@ import type { ClientOption } from "@/modules/designs/queries";
 import {
   addPoItemAction,
   removePoItemAction,
+  removePurchaseOrderAction,
   setPoItemCancelledAction,
   setPurchaseOrderCancelledAction,
   updatePoHeaderAction,
@@ -390,31 +391,55 @@ export function PurchaseOrderControls({
   poId,
   internalNo,
   status,
+  dispatchedItems,
 }: {
   poId: string;
   internalNo: string;
   status: string;
+  /** Item codes with something delivered — what makes the order unremovable. */
+  dispatchedItems: string[];
 }) {
   const [state, formAction] = useActionState(setPurchaseOrderCancelledAction, initialState);
+  const [removeState, removeAction] = useActionState(removePurchaseOrderAction, initialState);
   const cancelled = status === "Cancelled";
+  const removable = dispatchedItems.length === 0;
 
   return (
-    <section className="rounded-lg border p-4">
-      <h2 className="text-sm font-medium">
-        {cancelled ? "Reinstate purchase order" : "Cancel purchase order"}
-      </h2>
-      <p className="text-muted-foreground mt-1 text-[13px]">
-        {cancelled
-          ? `${internalNo} and its cancelled items go back to being live. Each item settles on its derived status.`
-          : `${internalNo} and every open item on it are cancelled together. Items already delivered are left alone — that happened, and cancelling the order does not unhappen it.`}
-      </p>
+    <div className="space-y-4">
+      <section className="rounded-lg border p-4">
+        <h2 className="text-sm font-medium">
+          {cancelled ? "Reinstate purchase order" : "Cancel purchase order"}
+        </h2>
+        <p className="text-muted-foreground mt-1 text-[13px]">
+          {cancelled
+            ? `${internalNo} and its cancelled items go back to being live. Each item settles on its derived status.`
+            : `${internalNo} and every open item on it are cancelled together. Items already delivered are left alone — that happened, and cancelling the order does not unhappen it.`}
+        </p>
 
-      <form action={formAction} className="mt-3">
-        <input type="hidden" name="id" value={poId} />
-        <input type="hidden" name="cancel" value={cancelled ? "false" : "true"} />
-        <Submit label={cancelled ? "Reinstate" : "Cancel PO"} variant="outline" />
-      </form>
-      <Feedback state={state} />
-    </section>
+        <form action={formAction} className="mt-3">
+          <input type="hidden" name="id" value={poId} />
+          <input type="hidden" name="cancel" value={cancelled ? "false" : "true"} />
+          <Submit label={cancelled ? "Reinstate" : "Cancel PO"} variant="outline" />
+        </form>
+        <Feedback state={state} />
+      </section>
+
+      <section className="border-overdue/30 rounded-lg border p-4">
+        <h2 className="text-sm font-medium">Remove purchase order</h2>
+        <p className="text-muted-foreground mt-1 text-[13px]">
+          {removable
+            ? `For an order entered by mistake. ${internalNo} and every item on it are removed together. Cancelling is what you want if the order was real and then dropped.`
+            : `${internalNo} has dispatches against ${dispatchedItems.join(", ")}, so it cannot be removed — the challans would still say it went out. Cancel it instead.`}
+        </p>
+
+        {removable ? (
+          <form action={removeAction} className="mt-3">
+            <input type="hidden" name="id" value={poId} />
+            <Submit label="Remove PO" variant="destructive" />
+          </form>
+        ) : null}
+        <Feedback state={removeState} />
+      </section>
+    </div>
   );
 }
