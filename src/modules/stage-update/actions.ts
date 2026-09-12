@@ -12,6 +12,8 @@ import { stage, stageEvent } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
 import { actionError } from "@/lib/action-error";
 
+import { describeMoves, pairMoves } from "./moves";
+
 export type FormState = { ok: boolean; error: string | null; message?: string };
 
 const ok = (message?: string): FormState => ({ ok: true, error: null, message });
@@ -24,8 +26,9 @@ async function requireStageWriter(): Promise<Actor> {
 }
 
 const schema = z.object({
-  poItemIds: z.array(z.uuid()).min(1, "Choose at least one item."),
-  stageCode: z.string().trim().min(1, "Choose a stage."),
+  moves: z
+    .array(z.object({ poItemId: z.uuid(), stageCode: z.string().min(1) }))
+    .min(1, "Choose at least one item."),
   remarks: z
     .string()
     .trim()
@@ -44,13 +47,16 @@ const schema = z.object({
 });
 
 /**
- * Moves one or more items to a stage.
+ * Moves one or more items, each to its own stage (K22).
  *
  * The single-row action and the bulk action are the same function, because
  * they are the same operation: spec 6.7 asks for "row action → set new stage"
  * and "bulk select → set same stage for many rows", and writing those as two
  * code paths is how they drift into disagreeing about backward moves or
- * remarks.
+ * remarks. The form sends (item, stage) pairs; "the same stage for many rows"
+ * is simply many pairs with the same stage, and the phone card is one pair.
+ * The time and the remarks are shared across the batch — one "here is what
+ * happened", not a timestamp per row.
  *
  * Every event is appended through the audit wrapper (F1), so a stage change is
  * logged like every other write and an OWNER cannot make one. All of them
@@ -69,9 +75,14 @@ export async function updateStageAction(
   try {
     const actor = await requireStageWriter();
 
+    const paired = pairMoves(
+      formData.getAll("poItemId").map(String),
+      formData.getAll("stageCode").map(String),
+    );
+    if (!paired.ok) return fail(paired.error);
+
     const parsed = schema.safeParse({
-      poItemIds: formData.getAll("poItemId").map(String),
-      stageCode: formData.get("stageCode"),
+      moves: paired.moves,
       remarks: formData.get("remarks"),
       eventAt: formData.get("eventAt"),
     });
@@ -84,13 +95,16 @@ export async function updateStageAction(
     const eventAt = v.eventAt ? new Date(`${v.eventAt}:00+05:30`) : new Date();
     if (Number.isNaN(eventAt.getTime())) return fail("That is not a valid date and time.");
 
-    const [target] = await db
+    // Every target is checked before anything is written, so one bad code
+    // refuses the batch rather than writing the rest and reporting a mystery.
+    const wanted = [...new Set(v.moves.map((m) => m.stageCode))];
+    const targets = await db
       .select({ code: stage.code, name: stage.name })
       .from(stage)
-      .where(and(eq(stage.code, v.stageCode), isNull(stage.deletedAt)))
-      .limit(1);
-
-    if (!target) return fail(`"${v.stageCode}" is not a stage.`);
+      .where(and(inArray(stage.code, wanted), isNull(stage.deletedAt)));
+    const nameOf = new Map(targets.map((t) => [t.code, t.name]));
+    const unknown = wanted.find((code) => !nameOf.has(code));
+    if (unknown) return fail(`"${unknown}" is not a stage.`);
 
     const written = await db.transaction(async (tx) => {
       // Only items that are actually live get an event. A row the person had
@@ -101,43 +115,43 @@ export async function updateStageAction(
         .from(vPoItemStatus)
         .where(
           and(
-            inArray(vPoItemStatus.poItemId, v.poItemIds),
+            inArray(
+              vPoItemStatus.poItemId,
+              v.moves.map((m) => m.poItemId),
+            ),
             eq(vPoItemStatus.status, "Open"),
           ),
         );
+      const isLive = new Set(live.map((l) => l.poItemId));
 
-      for (const item of live) {
+      const done: { stageName: string }[] = [];
+      for (const move of v.moves) {
+        if (!isLive.has(move.poItemId)) continue;
         await auditedAppend(
           actor,
           stageEvent,
           {
-            poItemId: item.poItemId,
-            stageCode: target.code,
+            poItemId: move.poItemId,
+            stageCode: move.stageCode,
             eventAt,
             remarks: v.remarks ?? null,
           },
           tx,
         );
+        done.push({ stageName: nameOf.get(move.stageCode)! });
       }
 
-      return live.length;
+      return done;
     });
 
     revalidatePath("/stage-update");
     revalidatePath("/items");
 
-    if (written === 0) {
+    if (written.length === 0) {
       return fail("Nothing was updated — those items are no longer open.");
     }
 
-    const skipped = v.poItemIds.length - written;
-
-    return ok(
-      `${written} item${written === 1 ? "" : "s"} moved to ${target.name}.` +
-        (skipped > 0
-          ? ` ${skipped} skipped — no longer open.`
-          : ""),
-    );
+    return ok(describeMoves(written, v.moves.length - written.length));
   } catch (error) {
     unstable_rethrow(error);
     return fail(actionError(error, "Could not update the stage."));

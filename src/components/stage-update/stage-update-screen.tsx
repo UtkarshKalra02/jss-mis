@@ -211,8 +211,14 @@ function DesktopGrid({
 
   const rows = useMemo(() => rowsIn(groups), [groups]);
 
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [stageCode, setStageCode] = useState("");
+  /**
+   * THE SELECTION IS A MAP OF ITEM → STAGE (K22). A ticked row with no stage
+   * yet is present with "". Until K22 this was a Set plus ONE stage code for
+   * the whole form, which made the per-row picker a lie: choosing a stage on
+   * one row silently changed it for every ticked row. Now each row's picker is
+   * that row's, and the toolbar's select is a way of filling several at once.
+   */
+  const [picks, setPicks] = useState<Map<string, string>>(new Map());
   const [remarks, setRemarks] = useState("");
   const [eventAt, setEventAt] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -231,8 +237,8 @@ function DesktopGrid({
         next.delete(runId);
         // Collapsing must not leave hidden rows ticked — the next bulk update
         // would carry items nobody can see.
-        setSelected((sel) => {
-          const kept = new Set(sel);
+        setPicks((sel) => {
+          const kept = new Map(sel);
           const group = groups.find((g) => g.kind === "run" && g.pressRunId === runId);
           if (group?.kind === "run") for (const r of group.rows) kept.delete(r.poItemId);
           return kept;
@@ -245,8 +251,7 @@ function DesktopGrid({
   // includes rows somebody already moved.
   useEffect(() => {
     if (state.ok) {
-      setSelected(new Set());
-      setStageCode("");
+      setPicks(new Map());
       setRemarks("");
       // The dialog would otherwise stay open over an empty selection, listing
       // the items it had just moved as though they were still to be confirmed.
@@ -266,27 +271,65 @@ function DesktopGrid({
    */
   useEffect(() => {
     const onScreen = new Set(rows.map((r) => r.poItemId));
-    setSelected((current) => {
-      const kept = new Set([...current].filter((id) => onScreen.has(id)));
+    setPicks((current) => {
+      const kept = new Map([...current].filter(([id]) => onScreen.has(id)));
       return kept.size === current.size ? current : kept;
     });
   }, [rows]);
 
   const byId = useMemo(() => new Map(rows.map((r) => [r.poItemId, r])), [rows]);
-  const chosen = [...selected].map((id) => byId.get(id)).filter(Boolean) as StageUpdateRow[];
+  const stageByCode = useMemo(() => new Map(stages.map((s) => [s.code, s])), [stages]);
 
-  const target = stages.find((s) => s.code === stageCode);
+  const selected = picks; // read as a set of ids below
+  const chosen = [...picks.keys()].map((id) => byId.get(id)).filter(Boolean) as StageUpdateRow[];
 
-  // Which of the selected rows would be going backwards (F4).
-  const backwards = target
-    ? chosen.filter((r) => isBackwardMove(r.currentStageSequence, target.sequence))
-    : [];
+  /** Each ticked row with the stage it is going to, once every row has one. */
+  const moves = chosen.map((row) => ({ row, target: stageByCode.get(picks.get(row.poItemId) ?? "") }));
+  const unstaged = moves.filter((m) => !m.target).length;
+  const ready = chosen.length > 0 && unstaged === 0;
+
+  // Which of the moves would be going backwards (F4), each against its own target.
+  const backwards = moves.filter(
+    (m): m is { row: StageUpdateRow; target: StageOption } =>
+      !!m.target && isBackwardMove(m.row.currentStageSequence, m.target.sequence),
+  );
+
+  /**
+   * What the toolbar select shows: the one stage every ticked row shares, or
+   * nothing when they differ or none is set yet. Choosing here fills every
+   * ticked row; a row can be changed on its own afterwards.
+   */
+  const stagesPicked = new Set([...picks.values()].filter(Boolean));
+  const commonStage = stagesPicked.size === 1 ? [...stagesPicked][0]! : "";
+  const mixed = stagesPicked.size > 1;
+
+  const setStageForAll = (code: string) =>
+    setPicks((current) => {
+      const next = new Map(current);
+      for (const id of next.keys()) next.set(id, code);
+      return next;
+    });
+
+  const pick = (id: string, code: string) =>
+    setPicks((current) => new Map(current).set(id, code));
 
   const toggle = (id: string) =>
-    setSelected((current) => {
-      const next = new Set(current);
+    setPicks((current) => {
+      const next = new Map(current);
       if (next.has(id)) next.delete(id);
-      else next.add(id);
+      else next.set(id, "");
+      return next;
+    });
+
+  /** Ticks these ids (keeping any stage already chosen) or unticks them. */
+  const setTicked = (ids: readonly string[], on: boolean) =>
+    setPicks((current) => {
+      const next = new Map(current);
+      for (const id of ids) {
+        if (on) {
+          if (!next.has(id)) next.set(id, "");
+        } else next.delete(id);
+      }
       return next;
     });
 
@@ -307,26 +350,30 @@ function DesktopGrid({
    */
   return (
     <form id={FORM_ID} action={formAction}>
+      {/* One (item, stage) pair per row, in order — the action pairs them
+          positionally (pairMoves). */}
       {chosen.map((r) => (
-        <input key={r.poItemId} type="hidden" name="poItemId" value={r.poItemId} />
+        <Fragment key={r.poItemId}>
+          <input type="hidden" name="poItemId" value={r.poItemId} />
+          <input type="hidden" name="stageCode" value={picks.get(r.poItemId) ?? ""} />
+        </Fragment>
       ))}
-      <input type="hidden" name="stageCode" value={stageCode} />
       <input type="hidden" name="remarks" value={remarks} />
       <input type="hidden" name="eventAt" value={eventAt} />
 
       <div className="bg-muted/40 flex flex-wrap items-end gap-3 rounded-lg border p-3">
         <div className="space-y-1">
           <label htmlFor="bulk-stage" className="text-muted-foreground text-xs">
-            Move {selected.size > 0 ? `${selected.size} selected` : "selected"} to
+            Move {selected.size > 0 ? `all ${selected.size} selected` : "all selected"} to
           </label>
           <select
             id="bulk-stage"
-            value={stageCode}
-            onChange={(e) => setStageCode(e.target.value)}
+            value={commonStage}
+            onChange={(e) => setStageForAll(e.target.value)}
             disabled={selected.size === 0}
             className={cn(inputClass, "w-56")}
           >
-            <option value="">Choose a stage…</option>
+            <option value="">{mixed ? "Several stages — see rows" : "Choose a stage…"}</option>
             {stages.map((s) => (
               <option key={s.code} value={s.code}>
                 {s.name}
@@ -363,19 +410,24 @@ function DesktopGrid({
 
         {/* A backward move is confirmed, never blocked (F4). */}
         {backwards.length > 0 ? (
-          <Button
-            type="button"
-            disabled={selected.size === 0 || !stageCode}
-            onClick={() => setConfirming(true)}
-          >
+          <Button type="button" disabled={!ready} onClick={() => setConfirming(true)}>
             Update {selected.size}
           </Button>
         ) : (
-          <div className={selected.size === 0 || !stageCode ? "pointer-events-none opacity-50" : ""}>
+          <div className={!ready ? "pointer-events-none opacity-50" : ""}>
             <Submit label={`Update ${selected.size || ""}`.trim()} />
           </div>
         )}
       </div>
+
+      {/* Says why Update is off, rather than leaving a dead button. */}
+      {chosen.length > 0 && unstaged > 0 ? (
+        <p className="text-muted-foreground mt-2 text-xs" role="status">
+          Choose a stage for {unstaged === chosen.length ? "the" : `${unstaged} of the`}{" "}
+          {chosen.length === 1 ? "selected item" : `${chosen.length} selected items`} — on each
+          row, or all at once above.
+        </p>
+      ) : null}
 
       <p className="text-muted-foreground mt-2 text-xs">
         Leave the time blank for now. Stage events record when work HAPPENED, not when it
@@ -401,7 +453,7 @@ function DesktopGrid({
                 <input
                   type="checkbox"
                   checked={allSelected}
-                  onChange={(e) => setSelected(e.target.checked ? new Set(selectable) : new Set())}
+                  onChange={(e) => setTicked(selectable, e.target.checked)}
                   className="accent-primary size-4"
                   aria-label="Select every item that is currently shown"
                 />
@@ -434,18 +486,8 @@ function DesktopGrid({
                       stages={stages}
                       selected={selected}
                       toggle={toggle}
-                      stageCode={stageCode}
-                      onPick={(code) => {
-                        // ADDS, never replaces. Ticking several rows and then
-                        // choosing a stage from one of their dropdowns is the
-                        // obvious way to use this screen, and replacing the
-                        // selection here threw the other rows away silently —
-                        // which made bulk select look like it did not exist.
-                        setSelected((current) =>
-                          new Set(current).add(group.row.poItemId),
-                        );
-                        setStageCode(code);
-                      }}
+                      stageCode={picks.get(group.row.poItemId) ?? ""}
+                      onPick={(code) => pick(group.row.poItemId, code)}
                     />
                   );
                 }
@@ -467,16 +509,7 @@ function DesktopGrid({
                           <input
                             type="checkbox"
                             checked={allInRun}
-                            onChange={(e) =>
-                              setSelected((current) => {
-                                const next = new Set(current);
-                                for (const id of memberIds) {
-                                  if (e.target.checked) next.add(id);
-                                  else next.delete(id);
-                                }
-                                return next;
-                              })
-                            }
+                            onChange={(e) => setTicked(memberIds, e.target.checked)}
                             className="accent-primary size-4"
                             aria-label={`Select all ${group.rows.length} jobs on run ${group.runNo}`}
                           />
@@ -538,16 +571,9 @@ function DesktopGrid({
                             stages={stages}
                             selected={selected}
                             toggle={toggle}
-                            stageCode={stageCode}
+                            stageCode={picks.get(row.poItemId) ?? ""}
                             inRun
-                            onPick={(code) => {
-                              // Adds, never replaces — same rule as a
-                              // standalone row above.
-                              setSelected((current) =>
-                                new Set(current).add(row.poItemId),
-                              );
-                              setStageCode(code);
-                            }}
+                            onPick={(code) => pick(row.poItemId, code)}
                           />
                         ))
                       : null}
@@ -563,8 +589,7 @@ function DesktopGrid({
         open={confirming}
         onOpenChange={setConfirming}
         formId={FORM_ID}
-        rows={backwards}
-        targetName={target?.name ?? ""}
+        moves={backwards}
         clients={[...clientsInSelection]}
       />
     </form>
@@ -590,8 +615,10 @@ function ItemRow({
 }: {
   row: StageUpdateRow;
   stages: StageOption[];
-  selected: Set<string>;
+  /** The ids that are ticked. */
+  selected: ReadonlyMap<string, unknown>;
   toggle: (id: string) => void;
+  /** THIS row's stage, and nobody else's (K22). */
   stageCode: string;
   onPick: (code: string) => void;
   inRun?: boolean;
@@ -632,11 +659,12 @@ function ItemRow({
         ) : null}
       </td>
       <td className="px-3 py-1">
-        {/* Per row, F4's precedence guides what is offered first. */}
+        {/* Per row, F4's precedence guides what is offered first. Choosing
+            here ticks the row and sets ITS stage; other rows are untouched. */}
         <StagePicker
           stages={stages}
           jobType={row.jobType}
-          value={selected.has(row.poItemId) ? stageCode : ""}
+          value={stageCode}
           onChange={onPick}
           className={inputClass}
           ariaLabel={`Move ${row.itemCode} to`}
@@ -662,29 +690,33 @@ function ItemRow({
 function BackwardConfirm({
   open,
   onOpenChange,
-  rows,
-  targetName,
+  moves,
   clients,
   formId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  rows: StageUpdateRow[];
-  targetName: string;
+  /** Only the moves going backwards, each with its own target (K22). */
+  moves: { row: StageUpdateRow; target: StageOption }[];
   /** Every client in the selection, so a cross-client move says so (H8). */
   clients: string[];
   /** The form to submit. The dialog is portalled out of it (see FORM_ID). */
   formId: string;
 }) {
+  const rows = moves.map((m) => m.row);
+  const targets = new Set(moves.map((m) => m.target.name));
+  const title =
+    targets.size === 1 ? `Move backwards to ${[...targets][0]}?` : "Move backwards?";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Move backwards to {targetName}?</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {rows.length === 1
               ? "This item is further along than that."
-              : `${rows.length} of the selected items are further along than that.`}{" "}
+              : `${rows.length} of the selected items are further along than where they are going.`}{" "}
             That is allowed — rework happens — and it is recorded as a new event rather than
             undoing the old one.
           </DialogDescription>
@@ -701,11 +733,12 @@ function BackwardConfirm({
         ) : null}
 
         <ul className="max-h-56 space-y-1 overflow-y-auto text-[13px]">
-          {rows.map((r) => (
+          {moves.map(({ row: r, target }) => (
             <li key={r.poItemId} className="flex items-center gap-2">
               <span className="tabular-nums">{r.itemCode}</span>
               <span className="text-muted-foreground truncate">{r.itemName}</span>
               <StagePill name={r.currentStageName} colour={r.currentStageColour} />
+              <span className="text-muted-foreground">→ {target.name}</span>
             </li>
           ))}
         </ul>

@@ -3244,3 +3244,50 @@ reach by design (DEPLOYMENT.md §1 — the dev branch has no purchase orders at 
 one-off script pointed at production is the thing that section exists to prevent, and the
 need is not one-off: the next mistaken PO would have raised the same question. A button
 the order desk can press is the answer both times.
+
+---
+
+## K22 — each row on Stage Update goes to its own stage
+
+Reported by Utkarsh on 12 Sep 2026: "I can't stage update individual items individually —
+all items I select have to be updated to the same stage."
+
+**What was wrong.** The desktop grid held a Set of ticked ids and ONE stage code for the
+whole form. The dropdown at the end of each row looked like that row's control but was
+not: choosing a stage there ticked the row and set the single shared stage, so picking
+Printing on A and then Lamination on B silently moved A to Lamination too. The server
+action matched — a list of ids and one `stageCode`. It was built to the letter of spec 6.7
+("bulk select → set same stage for many rows at once") and the per-row picker had been
+intended as a shortcut for starting a bulk selection. It read as a broken per-row control,
+which is what it was.
+
+**The shape now.** The form's state is a map of item → stage. A row's dropdown sets that
+row's stage and nothing else. The toolbar select is "move all N selected to", which fills
+every ticked row with the same stage; any row can then be changed on its own, and when the
+ticked rows disagree the toolbar says "Several stages — see rows" rather than pretending
+to a value. Update is off until every ticked row has a stage, and a line under the toolbar
+says how many still need one — a dead button with no reason is a screen that has to be
+worked out.
+
+**The wire format is (item, stage) pairs.** `poItemId` and `stageCode` are repeated
+fields paired positionally by `pairMoves()` in `src/modules/stage-update/moves.ts`, and
+the phone card sends exactly one pair — so FLOOR's view is unchanged and both views go
+through one function. A length mismatch refuses the batch outright rather than zipping to
+the shorter list, because silently dropping the last row of a batch is the worst way this
+could fail; the same item sent twice takes the last pick, which is what the person saw
+when they pressed Update. Every target is checked before anything is written.
+
+**Time and remarks stay shared across the batch.** Confirmed with Utkarsh. The 6pm update
+is "here is what happened today", and per-row timestamps would triple the typing for a
+case that hardly arises. If a row genuinely happened at a different time it is submitted
+as its own batch.
+
+**Backward moves are confirmed per row against that row's target (F4, F26).** The
+dialog lists each item with its current stage and where it is going; the title names the
+target when all the backward moves share one and asks plainly otherwise. Nothing about
+the ganged-plate gate changes (H8): a collapsed run still offers no checkbox and no
+picker, and expanding one reveals ordinary rows.
+
+**What the screen says back** is grouped by target: "3 items moved — 2 to Printing, 1 to
+Lamination." `describeMoves()` is the other half of the moves module, and
+`tests/stage-moves.test.ts` pins both.
