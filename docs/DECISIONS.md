@@ -2481,6 +2481,14 @@ removed `design.die_id` over.
 The rule is about the ROLE and not about Amit. An owner who can be assigned work from a
 form is an org chart that anybody with the delegation screen can rewrite upwards.
 
+> **Corrected 12 Sep 2026.** J26 changed the permission, the action, the audit wrapper and
+> the trigger, and missed the one screen that gathers the input: the new-task page still
+> gave everybody but ADMIN a list of exactly themselves. For the owner that was a form whose
+> only choice was the one target every layer below refuses, so he could not delegate at
+> all. The page now hands ADMIN and OWNER the assignable list, and the select defaults to
+> the first name when the viewer is not in it. Four layers enforced the rule and the fifth
+> asked the wrong question — which is the reason the rule is not enforced in the form.
+
 
 ---
 

@@ -34,30 +34,37 @@ function Submit() {
  * without a date is not delegated — it is mentioned. The whole module produces
  * one number and that number is measured against this field.
  *
- * Who appears in the person list is decided on the SERVER and passed in: a
- * non-admin gets exactly themselves. The action re-checks it (canDelegateTo),
- * so the short list is a convenience and not the control.
+ * Who appears in the person list is decided on the SERVER and passed in: ADMIN
+ * and OWNER get everyone they may delegate to, anybody else gets exactly
+ * themselves. The action re-checks it (canDelegateTo), so the short list is a
+ * convenience and not the control.
+ *
+ * The owner is not in his own list (J26), so the select cannot default to him;
+ * it defaults to the viewer when present and to the first name otherwise.
  */
 export function DelegateForm({
   assignees,
   viewerId,
-  isAdmin,
+  picksAnyone,
 }: {
   assignees: Assignee[];
   viewerId: string;
-  isAdmin: boolean;
+  picksAnyone: boolean;
 }) {
   const [state, formAction] = useActionState(createTaskAction, initialState);
+  const defaultAssignee = assignees.some((a) => a.id === viewerId)
+    ? viewerId
+    : assignees[0]?.id;
 
   return (
     <form action={formAction} className="space-y-5">
       <label className="block">
         <span className="text-[13px] font-medium">Who is it for?</span>
-        {isAdmin ? (
+        {picksAnyone ? (
           <select
             name="assignedTo"
             required
-            defaultValue={viewerId}
+            defaultValue={defaultAssignee}
             className="border-input bg-background mt-1.5 h-9 w-full rounded-md border px-2 text-[13px]"
           >
             {assignees.map((a) => (
@@ -71,7 +78,7 @@ export function DelegateForm({
             <input type="hidden" name="assignedTo" value={viewerId} />
             <p className="text-muted-foreground mt-1.5 text-[13px]">
               {assignees.find((a) => a.id === viewerId)?.name ?? "You"} — you can delegate to
-              yourself. An admin delegates to anyone else.
+              yourself. An admin or the owner delegates to anyone else.
             </p>
           </>
         )}
