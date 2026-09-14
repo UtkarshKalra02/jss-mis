@@ -3291,3 +3291,142 @@ picker, and expanding one reveals ordinary rows.
 **What the screen says back** is grouped by target: "3 items moved — 2 to Printing, 1 to
 Lamination." `describeMoves()` is the other half of the moves module, and
 `tests/stage-moves.test.ts` pins both.
+
+---
+
+## L. Job planning — Phase 4's board (spec 6.6)
+
+Built 14 Sep 2026. The first Phase 4 screen, in order: job cards (J) and press runs (H)
+were its schema half and shipped earlier; this is the screen the 6pm meeting runs off.
+Utkarsh approved the shape below before anything was written, and chose to leave the
+Hindi stage names blank (L3).
+
+## L1 — the board plans JOB CARDS, not PO items
+
+Spec 6.6 says *"Assign item → creates `job_card` with `planned_date`"*. That was written
+before J1 made a card a document a person releases with paper, plate and machine detail,
+before J14 moved that act to the planner, and before J25 let one card cover several
+items. The release form has a dozen fields. The 6pm meeting is twenty jobs in fifteen
+minutes; it is not where a dozen fields get typed twenty times.
+
+**So a row on the board is a card, and "assign" writes one column.** `planCardsAction`
+touches `planned_date` and nothing else — deliberately not a second way of editing the
+card, on J6's reasoning about a stale copy of one form overwriting a correction made on
+another. Paper, plate and machine stay on the card's own plan form.
+
+**Left panel: cards that need a day.** Open cards (Planned / In Process / On Hold) with
+quantity still owed and *either* no planned date *or* a planned date that has passed. The
+second half is what keeps the board honest: a card planned for yesterday and still open
+has **slipped**, the meeting's first question is what happened to it, and it is shown
+with its old date in amber rather than quietly re-listed as new. Urgency is the most
+urgent covered item — earliest committed date, overdue if any is — read from
+`v_po_item_status`, so the board's red and amber are the tracker's red and amber
+(non-negotiables 1 and 2 hold; nothing here recomputes a stage or a pending quantity).
+Ordered overdue-first, then nearest commitment, like every worklist in the system.
+
+**Right panel: one day, grouped by station**, defaulting to tomorrow because that is the
+question the meeting is answering. The day lives in the URL (F22), so the board can be
+refreshed, sent, or printed without losing its place. A seven-day strip shows what each
+day already holds. The only control is "take off", which clears the date and returns the
+card to the left; a card that needs a different day is taken off and planned again — two
+clicks, one code path, no second form. A day that has passed is a record, not a plan,
+and has no controls.
+
+**Items with no card cannot be planned from here** — there is nothing to date. They are
+counted under the left panel ("N open items have no job card yet") and the release
+screen is linked. The alternative, a quick-release from the board that mints a card with
+only a date on it, was rejected: it would put twenty blank cards a night into the JC
+series, and J11's "the screen says what is missing rather than the schema refusing" is
+about one card somebody is looking at, not a batch nobody is.
+
+**Access is the matrix as it stood.** PLANNER and ADMIN write, OWNER reads with no
+controls (B2). ACCOUNTS raises cards (K11) and does not get the board — `job_card` and
+`job_planning` are separate resources precisely so that one does not imply the other
+(J2). Widening is one line if Utkarsh asks.
+
+## L2 — the station is the card's current stage, and nothing is stored for it
+
+Spec 6.6 groups tomorrow "by stage/station" and there is no station table. Two readings
+were offered:
+
+- **Derived:** the station is the first covered item's current stage. The stage table is
+  the factory's own vocabulary for where work is, ADMIN edits it, and its names, colours
+  and (now) Hindi come from the database and nowhere else — non-negotiable 5 by
+  construction. Nothing stored, nothing to go stale, nothing extra to type at the meeting.
+- **Chosen:** a `planned_stage` picked per card at assignment, defaulting to the current
+  stage. More truthful about intent — "tomorrow this goes to lamination" — and more
+  typing, plus a column and a migration.
+
+**Derived was chosen, and its cost is stated.** A card planned from a pre-production
+stage (Approved, Material Ready) is listed under that stage with its machine on the row,
+rather than under the press it will go to. On the floor plan those blocks come first in
+sequence order, which is also where "jobs starting tomorrow" belong, so the sheet still
+reads. If the meeting finds the grouping wrong, the chosen station is the upgrade and it
+is a column and a select, not a redesign — recorded in the backlog.
+
+`groupByStation` in `src/modules/planning/floor-plan.ts` is one pure function used by
+both the right panel and the printed sheet, on K16's reasoning: one dataset arranged
+once, so the paper cannot disagree with the screen it was printed from.
+
+**H8 applies unchanged, as that decision said it must.** A ganged plate is one row on the
+board; it carries no checkbox until opened; the open header carries "select all N in this
+run"; collapsing clears ticks inside; a hidden (searched-away) row is dropped from the
+selection. The plate-grouping helpers in `src/modules/stage-update/grouping.ts` were made
+generic over the row type rather than copied — `groupByPressRun`, `stageSummary`,
+`clientsOn`, `selectableRows`, `filterGroupsBy` — and Stage Update's own behaviour and
+tests are untouched. `selectableIds` remains for it as a thin wrapper.
+
+## L3 — a Hindi name per stage, blank until somebody who knows it types it
+
+The floor plan toggles English / Hindi (Devanagari). Job names, client codes and card
+numbers print as typed. Stage names come from the stage table, so a Hindi map inside the
+component was never an option (non-negotiable 5): `stage.name_hi` was added, nullable,
+editable on Admin › Stages, with every reader falling back to `name` when it is null.
+Migration 0036 is additive — migrate first, then deploy.
+
+**Not backfilled, at Utkarsh's direction.** The factory's own word for each stage is not
+something the build can vouch for, and a guessed translation on the sheet the floor works
+from would be a placeholder presenting as a fact (A2). Until Preeti types them, a Hindi
+sheet prints English stage names — "English on a Hindi sheet", never a gap.
+
+**The fixed words on the sheet — headings and column labels — are the build's own
+Hindi**, in a dictionary in `floor-plan.ts`. They are ordinary words (काम, ग्राहक, मशीन,
+मात्रा) but nobody at the factory has read them yet, and the screen above the Hindi sheet
+says so. Correct them in that file if the floor reads them differently.
+
+## L4 — a whole plate moves with its cards, only when all of them move
+
+A press run has its own `run_date`; its member cards have `planned_date`. Planning all
+the cards on a run for Wednesday while the run still says Tuesday is a sheet that
+disagrees with itself, so when **every** live card on a run is in the selection, the
+run's date is written to match, in the same transaction, and the message says so ("1
+plate moved with them"). When only some are selected the run is left alone and the board
+shows the gap — moving the run because one of its three jobs was planned would silently
+re-date two other clients' jobs, which is the accident the expansion gate exists to
+prevent. Clearing dates never touches the run: `run_date` is NOT NULL, and "not planned"
+is a statement about the cards, not the plate. `runsMovedWith()` is the pure rule;
+`tests/planning.test.ts` pins it.
+
+## L5 — today's dispatch on the dashboard
+
+Asked for as "everyday's dispatch to be showed in the dashboard itself". Three readings
+were offered — what went out today, what was due today, or both — and both was chosen.
+
+**Two facts, kept apart in one panel.** What went out is today's challans, each with its
+client, first item, item count and pieces, linking to the challan for roles with the
+Dispatch grant. What was promised is the count of open items committed for today, with
+how many of those are **not yet READY** — read from the view's own `is_at_risk`, which is
+true for an open item committed inside the window and not at READY or DISPATCHED, and
+today is always inside the window because its floor is zero. Reading the flag rather than
+naming the stage keeps the READY rule in exactly one place.
+
+**A Draft challan dated today is listed, marked, and kept out of the totals.** Drafts
+consume nothing in the views (F22) and are excluded from every quantity figure elsewhere,
+but a challan somebody is halfway through typing at 5pm is part of the answer to "what is
+going out today". Cancelled ones are simply gone. The date is the challan's
+`dispatch_date` in IST — the date OTD reads (F3) — not when it was typed.
+
+"Committed for today" links to the Item Tracker with a new `risk=due-today` filter, which
+is `days_to_committed = 0` from the view — the same mechanism the overdue and at-risk
+tiles already use, in the neutral tone because due today is a fact about the calendar
+and some of those items are READY and going out tonight.

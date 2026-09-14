@@ -255,6 +255,30 @@ designs use it".
 
 ---
 
+## ~~Job planning board (Phase 4)~~ — BUILT
+
+Built 14 Sep 2026; see decisions **L1–L5** in [`DECISIONS.md`](DECISIONS.md).
+
+Spec 6.6, planning **job cards** rather than items, with the printed daily floor plan in
+English or Hindi and today's dispatch on the dashboard.
+
+### Left open, deliberately
+
+- **A chosen station per card.** The board groups tomorrow by the card's *current stage*
+  (L2). If the meeting finds that a job at Material Ready should be listed under the press
+  it is going to, add a nullable `planned_stage_code` (FK to `stage.code`) on `job_card`,
+  a select in the board's toolbar defaulting to the current stage, and read it in
+  `groupByStation` before falling back to the current stage. One column, one select.
+- **Hindi stage names are blank** until typed on Admin › Stages (L3), and the sheet's
+  column headings are unverified translations in `src/modules/planning/floor-plan.ts`.
+  Both are one edit away once somebody on the floor has read a Hindi sheet.
+- **"Move to another day" in one step.** Today it is take off, then plan again. A per-card
+  date picker on the right panel is straightforward if the two-step turns out to grate.
+- **ACCOUNTS does not get the board.** Pradeep raises cards (K11) but `job_planning` was
+  left on the matrix as it stood (L1). One line to widen.
+
+---
+
 ## The kitting gate — NOT BUILT, and not what "Job Kitting" is
 
 Captured 2 Sep 2026, alongside the rename recorded as **I10** in
