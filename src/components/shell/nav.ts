@@ -221,4 +221,5 @@ export const BUILT: ReadonlySet<Resource> = new Set<Resource>([
   "tooling",
   "job_card",
   "enquiry",
+  "job_planning",
 ]);
