@@ -1,8 +1,8 @@
-import { and, eq, gt, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
-import { dispatch, dispatchLine, poItem, stage } from "@/db/schema";
+import { client, dispatch, dispatchLine, poItem, stage } from "@/db/schema";
 import { vPoItemStatus, vOtd } from "@/db/views";
 
 /**
@@ -267,4 +267,116 @@ export async function wipByStage(runner: Runner = db): Promise<WipStage[]> {
       vPoItemStatus.currentStageSequence,
     )
     .orderBy(vPoItemStatus.currentStageSequence) as Promise<WipStage[]>;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Today's dispatch                                                            */
+/* -------------------------------------------------------------------------- */
+
+export type TodaysChallan = {
+  dispatchId: string;
+  challanNo: string;
+  clientCode: string;
+  clientName: string;
+  status: string;
+  /** Distinct items on the challan, and pieces across them. */
+  items: number;
+  qty: number;
+  /** The first line's item name, so the row reads as a job and not a number. */
+  firstItemName: string | null;
+  vehicleNo: string | null;
+};
+
+export type TodaysDispatch = {
+  challans: TodaysChallan[];
+  /** Across every challan dated today that is not cancelled. */
+  items: number;
+  qty: number;
+  /** Open items whose committed date is today. */
+  dueToday: number;
+  /** Of those, the ones not yet at READY — `is_at_risk` from the view. */
+  dueTodayNotReady: number;
+};
+
+/**
+ * What went out today and what was promised for today — the everyday panel
+ * on the dashboard (L5).
+ *
+ * THE DATE IS THE CHALLAN'S `dispatch_date` in IST, not when it was typed.
+ * A challan back-entered tomorrow for goods that left tonight belongs to
+ * tonight, which is also the date OTD reads (F3).
+ *
+ * A DRAFT COUNTS AS TODAY'S WORK AND SAYS SO. Drafts consume nothing in the
+ * views (F22) and are excluded from every quantity figure elsewhere, but a
+ * challan somebody is halfway through typing at 5pm is part of the answer to
+ * "what is going out today", so it is listed with its status and its pieces
+ * are kept out of the totals. Cancelled ones are simply gone.
+ *
+ * "NOT YET READY" IS THE VIEW'S OWN RULE. `is_at_risk` is true for an open
+ * item committed inside the window and not at READY or DISPATCHED, and today
+ * is always inside the window (its floor is zero). Reading the flag rather
+ * than naming the stage keeps the READY rule in one place — the view — which
+ * is what non-negotiable 1 is protecting.
+ */
+export async function todaysDispatch(runner: Runner = db): Promise<TodaysDispatch> {
+  const lines = runner
+    .select({
+      dispatchId: dispatchLine.dispatchId,
+      items: sql<number>`count(distinct ${dispatchLine.poItemId})::int`.as("items"),
+      qty: sql<number>`coalesce(sum(${dispatchLine.qty}), 0)::int`.as("qty"),
+      firstItemName: sql<string | null>`(array_agg(${poItem.itemName} order by ${dispatchLine.createdAt}))[1]`.as(
+        "first_item_name",
+      ),
+    })
+    .from(dispatchLine)
+    .innerJoin(poItem, eq(poItem.id, dispatchLine.poItemId))
+    .where(isNull(dispatchLine.deletedAt))
+    .groupBy(dispatchLine.dispatchId)
+    .as("lines");
+
+  const [challans, [due]] = await Promise.all([
+    runner
+      .select({
+        dispatchId: dispatch.id,
+        challanNo: dispatch.challanNo,
+        clientCode: client.code,
+        clientName: client.name,
+        status: dispatch.status,
+        items: sql<number>`coalesce(${lines.items}, 0)::int`,
+        qty: sql<number>`coalesce(${lines.qty}, 0)::int`,
+        firstItemName: lines.firstItemName,
+        vehicleNo: dispatch.vehicleNo,
+      })
+      .from(dispatch)
+      .innerJoin(client, eq(client.id, dispatch.clientId))
+      .leftJoin(lines, eq(lines.dispatchId, dispatch.id))
+      .where(
+        and(
+          isNull(dispatch.deletedAt),
+          sql`${dispatch.status} <> 'Cancelled'`,
+          sql`${dispatch.dispatchDate} = today_ist()`,
+        ),
+      )
+      .orderBy(desc(dispatch.challanNo)),
+
+    runner
+      .select({
+        dueToday: sql<number>`count(*) filter (where ${vPoItemStatus.daysToCommitted} = 0)::int`,
+        dueTodayNotReady: sql<number>`count(*) filter (
+          where ${vPoItemStatus.daysToCommitted} = 0 and ${vPoItemStatus.isAtRisk}
+        )::int`,
+      })
+      .from(vPoItemStatus)
+      .where(and(eq(vPoItemStatus.status, "Open"), gt(vPoItemStatus.pendingQty, 0))),
+  ]);
+
+  const sent = challans.filter((c) => c.status === "Dispatched");
+
+  return {
+    challans,
+    items: sent.reduce((n, c) => n + c.items, 0),
+    qty: sent.reduce((n, c) => n + c.qty, 0),
+    dueToday: due?.dueToday ?? 0,
+    dueTodayNotReady: due?.dueTodayNotReady ?? 0,
+  };
 }

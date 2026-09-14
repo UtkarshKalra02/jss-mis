@@ -64,7 +64,7 @@ export type ItemSearchRow = {
  * Job card number is matched through an EXISTS rather than a join, so an item
  * with three job cards still returns once.
  */
-export type RiskFilter = "overdue" | "at-risk";
+export type RiskFilter = "overdue" | "at-risk" | "due-today";
 
 /*
  * The sort keys and the no-stage sentinel live in report-options.ts, which has
@@ -130,7 +130,11 @@ export async function searchItems(
       ? eq(vPoItemStatus.isOverdue, true)
       : opts.risk === "at-risk"
         ? eq(vPoItemStatus.isAtRisk, true)
-        : undefined;
+        : opts.risk === "due-today"
+          // The dashboard's today's-dispatch panel links here (L5). The same
+          // column the view computes days-to-committed from, not a JS clock.
+          ? eq(vPoItemStatus.daysToCommitted, 0)
+          : undefined;
 
   /*
    * REPORT FILTERS (K17). Each is absent unless the report asks for it, so the

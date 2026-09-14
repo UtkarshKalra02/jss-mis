@@ -26,17 +26,26 @@ export function RiskBanner({ risk, count }: { risk: RiskFilter; count: number })
   const clearHref = `${pathname}${clear.size ? `?${clear}` : ""}`;
 
   const overdue = risk === "overdue";
+  // Due today is a fact about the calendar, not a warning — some of these are
+  // READY and going out tonight — so it takes the neutral tone (L5).
+  const neutral = risk === "due-today";
 
   return (
     <div
       className={`flex flex-wrap items-center justify-between gap-3 rounded-md px-3 py-2 ${
-        overdue ? "bg-overdue-bg" : "bg-at-risk-bg"
+        overdue ? "bg-overdue-bg" : neutral ? "bg-neutral-status-bg" : "bg-at-risk-bg"
       }`}
     >
-      <p className={`text-[13px] font-medium ${overdue ? "text-overdue" : "text-at-risk"}`}>
+      <p
+        className={`text-[13px] font-medium ${
+          overdue ? "text-overdue" : neutral ? "text-neutral-status" : "text-at-risk"
+        }`}
+      >
         {overdue
           ? `${count} overdue item${count === 1 ? "" : "s"} — committed date passed, quantity still owed`
-          : `${count} item${count === 1 ? "" : "s"} at risk — committed soon and not yet ready`}
+          : neutral
+            ? `${count} item${count === 1 ? "" : "s"} committed for today`
+            : `${count} item${count === 1 ? "" : "s"} at risk — committed soon and not yet ready`}
       </p>
 
       <Link href={clearHref} className="text-[13px] underline underline-offset-2">

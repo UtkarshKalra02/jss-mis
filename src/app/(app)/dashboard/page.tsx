@@ -1,15 +1,19 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
 import { openEnquiryCount } from "@/modules/enquiries/queries";
 import { MetricCard, type Trend } from "@/components/shell/metric-card";
-import { formatINR, formatPercent, formatQty } from "@/lib/format";
+import { todayIST } from "@/lib/dates";
+import { formatDate, formatINR, formatPercent, formatQty } from "@/lib/format";
 import {
   dispatchedThisMonth,
   otdSummary,
+  todaysDispatch,
   wipByStage,
   workloadCounts,
+  type TodaysDispatch,
   type WipStage,
 } from "@/modules/dashboard/queries";
 import { taskCountsFor } from "@/modules/delegation/queries";
@@ -43,16 +47,18 @@ export default async function DashboardPage() {
   const showEnquiries = can(user.role, "enquiry");
   const showTasks = can(user.role, "delegation");
   const canSeeItems = can(user.role, "item_tracker");
+  const canSeeDispatch = can(user.role, "dispatch");
 
   // One round of parallel reads. Each is a single aggregate query; running
   // them in sequence would put five Neon round trips end to end on the first
   // screen everybody opens.
-  const [otd, workload, dispatched, wip, atRiskWindowDays, tasks, openEnquiries] =
+  const [otd, workload, dispatched, wip, today, atRiskWindowDays, tasks, openEnquiries] =
     await Promise.all([
     otdSummary(),
     workloadCounts(),
     dispatchedThisMonth(),
     wipByStage(),
+    todaysDispatch(),
     getAtRiskWindowDays(),
     showTasks ? taskCountsFor(user.id) : Promise.resolve({ pending: 0, overdue: 0 }),
     showEnquiries ? openEnquiryCount() : Promise.resolve(0),
@@ -219,10 +225,124 @@ export default async function DashboardPage() {
         ) : null}
       </div>
 
-      <div className="mt-3 rounded-lg border px-4 py-3.5">
-        <p className="text-muted-foreground text-[12px] font-medium">WIP by stage</p>
-        <WipBars stages={wip} />
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        {/* Everyday's dispatch (L5): what left today and what was promised
+            for today. Every role sees the figures; the challan links need the
+            Dispatch grant, and the due-today link the tracker's. */}
+        <TodayPanel today={today} canSeeDispatch={canSeeDispatch} canSeeItems={canSeeItems} />
+
+        <div className="rounded-lg border px-4 py-3.5">
+          <p className="text-muted-foreground text-[12px] font-medium">WIP by stage</p>
+          <WipBars stages={wip} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Today's dispatch — the panel Utkarsh asked for on the dashboard itself.
+ *
+ * TWO FACTS, KEPT APART. What went out is a list of challans with pieces and
+ * items; what was promised is a count of open items committed for today, with
+ * how many of them are not yet READY. Neither is folded into the other, and a
+ * Draft challan is listed with its status and left out of the totals — see
+ * `todaysDispatch`.
+ */
+function TodayPanel({
+  today,
+  canSeeDispatch,
+  canSeeItems,
+}: {
+  today: TodaysDispatch;
+  canSeeDispatch: boolean;
+  canSeeItems: boolean;
+}) {
+  const sent = today.challans.filter((c) => c.status === "Dispatched").length;
+
+  return (
+    <div className="rounded-lg border px-4 py-3.5">
+      <div className="flex items-baseline justify-between">
+        <p className="text-muted-foreground text-[12px] font-medium">Today&apos;s dispatch</p>
+        <p className="text-muted-foreground text-[12px] tabular-nums">{formatDate(todayIST())}</p>
+      </div>
+
+      <p className="mt-2 text-[22px] leading-none font-semibold tracking-tight tabular-nums">
+        {formatQty(today.qty)}
+        <span className="text-muted-foreground ml-1.5 text-[13px] font-normal">
+          pcs
+          {sent > 0
+            ? ` · ${formatQty(today.items)} item${today.items === 1 ? "" : "s"} on ${sent} challan${sent === 1 ? "" : "s"}`
+            : ""}
+        </span>
+      </p>
+
+      {/* Due today. A neutral fact with a coloured second half: some of these
+          are READY and going out tonight, and "not yet ready" is the part
+          somebody has to act on. */}
+      <p className="text-muted-foreground mt-1.5 text-[13px]">
+        {today.dueToday === 0 ? (
+          "Nothing committed for today."
+        ) : (
+          <>
+            {canSeeItems ? (
+              <Link href="/items?risk=due-today" className="text-foreground hover:underline">
+                {today.dueToday} item{today.dueToday === 1 ? "" : "s"} committed for today
+              </Link>
+            ) : (
+              <span className="text-foreground">
+                {today.dueToday} item{today.dueToday === 1 ? "" : "s"} committed for today
+              </span>
+            )}
+            {today.dueTodayNotReady > 0 ? (
+              <span className="text-at-risk font-medium">
+                {" "}
+                · {today.dueTodayNotReady} not yet ready
+              </span>
+            ) : (
+              <span className="text-on-time"> · all ready or gone</span>
+            )}
+          </>
+        )}
+      </p>
+
+      {today.challans.length === 0 ? (
+        <p className="text-muted-foreground/50 mt-4 mb-2 text-center text-[13px]">
+          Nothing has gone out yet today.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y border-t">
+          {today.challans.map((c) => (
+            <li key={c.dispatchId} className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
+              <div className="min-w-0">
+                <p className="truncate">
+                  {canSeeDispatch ? (
+                    <Link href={`/dispatch/${c.dispatchId}`} className="text-primary tabular-nums hover:underline">
+                      {c.challanNo}
+                    </Link>
+                  ) : (
+                    <span className="tabular-nums">{c.challanNo}</span>
+                  )}
+                  <span className="ml-2" title={c.clientName}>
+                    {c.clientCode}
+                  </span>
+                  {c.firstItemName ? (
+                    <span className="text-muted-foreground">
+                      {" · "}
+                      {c.firstItemName}
+                      {c.items > 1 ? ` +${c.items - 1}` : ""}
+                    </span>
+                  ) : null}
+                  {c.status === "Draft" ? (
+                    <span className="text-muted-foreground ml-2 text-[11px] uppercase">draft</span>
+                  ) : null}
+                </p>
+              </div>
+              <span className="shrink-0 tabular-nums">{formatQty(c.qty)} pcs</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
   MIN_FOR_TREND,
   dispatchedThisMonth,
   otdSummary,
+  todaysDispatch,
   wipByStage,
   workloadCounts,
 } from "@/modules/dashboard/queries";
@@ -365,6 +366,60 @@ describe("WIP by stage", () => {
       const afterWip = (await wipByStage(tx)).find((b) => b.code === "UV")?.items ?? 0;
 
       expect(afterWip).toBe(withWip - 1);
+    });
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Today's dispatch (L5)                                                       */
+/* -------------------------------------------------------------------------- */
+
+describe("today's dispatch", () => {
+  it("lists today's challans, keeps a draft out of the totals, and counts what is due today", async () => {
+    await inRollback(async (tx) => {
+      const before = await todaysDispatch(tx);
+
+      // Committed TODAY, no stage event yet — so due today and not ready.
+      const { clientId, itemId } = await makeItem(tx, { committedOffset: 0 });
+      const sentId = await dispatchItem(tx, clientId, itemId, 400, 0);
+
+      // A draft dated today: listed, said to be a draft, not counted.
+      const draft = await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatch,
+        {
+          challanNo: await allocateNumber(tx, "CH", "2026-01-05"),
+          clientId,
+          dispatchDate: sql`today_ist()` as never,
+          status: "Draft",
+        },
+        tx,
+      );
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatchLine,
+        { dispatchId: draft.id, poItemId: itemId, qty: 100 },
+        tx,
+      );
+
+      // Yesterday's challan is not today's.
+      await dispatchItem(tx, clientId, itemId, 50, 1);
+
+      const today = await todaysDispatch(tx);
+
+      const sent = today.challans.find((c) => c.dispatchId === sentId);
+      expect(sent).toMatchObject({ status: "Dispatched", items: 1, qty: 400 });
+      expect(sent?.firstItemName).toBe("Dashboard carton");
+
+      const listedDraft = today.challans.find((c) => c.dispatchId === draft.id);
+      expect(listedDraft?.status).toBe("Draft");
+
+      expect(today.qty).toBe(before.qty + 400);
+      expect(today.items).toBe(before.items + 1);
+
+      // 1000 ordered, 450 gone, still owed, committed today, no READY event.
+      expect(today.dueToday).toBe(before.dueToday + 1);
+      expect(today.dueTodayNotReady).toBe(before.dueTodayNotReady + 1);
     });
   });
 });

@@ -32,7 +32,7 @@ export default async function ItemsPage({
   // Anything other than the two known values is treated as no filter, so a
   // mistyped URL shows the whole list rather than an empty one.
   const riskFilter: RiskFilter | undefined =
-    risk === "overdue" || risk === "at-risk" ? risk : undefined;
+    risk === "overdue" || risk === "at-risk" || risk === "due-today" ? risk : undefined;
 
   /*
    * The tracker's own filters, handed to the print route verbatim. Built from
