@@ -1,0 +1,16 @@
+-- ---------------------------------------------------------------------------
+-- A Hindi name per stage, for the printed daily floor plan. Decision L3.
+--
+-- Spec 6.6's floor plan toggles English / Hindi (Devanagari). The stage names
+-- on that sheet come from the stage table — never from a map inside a
+-- component (non-negotiable 5) — so the table is where the Hindi has to live.
+--
+-- NULLABLE, AND NOT BACKFILLED. The factory's own word for each stage is not
+-- something the build can vouch for, and a guessed translation on the sheet
+-- the floor works from would be a placeholder presenting as a fact (A2).
+-- Every reader falls back to the English name where this is null; the Hindi
+-- is typed in on Admin › Stages by somebody who knows it.
+--
+-- Additive: migrate first, then deploy.
+-- ---------------------------------------------------------------------------
+ALTER TABLE "stage" ADD COLUMN "name_hi" text;

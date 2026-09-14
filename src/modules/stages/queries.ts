@@ -7,6 +7,8 @@ export type StageRow = {
   id: string;
   code: string;
   name: string;
+  /** Devanagari, for the floor plan's Hindi toggle. Null until somebody types it (L3). */
+  nameHi: string | null;
   sequence: number;
   isOptional: boolean;
   isProcess: boolean;
@@ -23,6 +25,7 @@ export async function listStages(): Promise<StageRow[]> {
       id: stage.id,
       code: stage.code,
       name: stage.name,
+      nameHi: stage.nameHi,
       sequence: stage.sequence,
       isOptional: stage.isOptional,
       isProcess: stage.isProcess,

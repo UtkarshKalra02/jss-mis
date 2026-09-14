@@ -10,6 +10,7 @@ const stored = (over: Partial<StageRow> = {}): StageRow => ({
   id: ID,
   code: "PRINTING",
   name: "Printing",
+  nameHi: null,
   sequence: 70,
   isOptional: false,
   isProcess: true,
@@ -29,6 +30,7 @@ const posted = (over: Partial<StageRowInput> = {}): Map<string, StageRowInput> =
       {
         id: ID,
         name: "Printing",
+        nameHi: "",
         sequence: 70,
         isOptional: false,
         isProcess: true,
@@ -43,6 +45,21 @@ const posted = (over: Partial<StageRowInput> = {}): Map<string, StageRowInput> =
   ]);
 
 describe("stage config diff", () => {
+  it("treats a blank Hindi name as null, so an untranslated row is not a change", () => {
+    // L3: the column is seeded null and the form posts "". Those are the same
+    // answer — "not translated yet" — and must not write an audit row.
+    expect(computeStageChanges([stored()], posted({ nameHi: "" }))).toEqual([]);
+
+    expect(computeStageChanges([stored()], posted({ nameHi: "छपाई" }))).toEqual([
+      { id: ID, name: "Printing", values: { nameHi: "छपाई" } },
+    ]);
+
+    // Clearing a translation is a real change, and lands as null not "".
+    expect(
+      computeStageChanges([stored({ nameHi: "छपाई" })], posted({ nameHi: "" })),
+    ).toEqual([{ id: ID, name: "Printing", values: { nameHi: null } }]);
+  });
+
   it("reports nothing when an untouched form is submitted", () => {
     // The regression that matters: "6.00" from the database and 6 from the
     // form are the same number. Compared as strings they are not, and every

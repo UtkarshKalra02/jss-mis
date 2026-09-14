@@ -10,6 +10,12 @@ import { z } from "zod";
 export const stageRowSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1, "Stage name is required.").max(60),
+  /**
+   * Blank is the normal state (L3): it means "not translated yet", and every
+   * reader falls back to the English name. Stored as null, not "", so the
+   * fallback is one null check rather than a trim.
+   */
+  nameHi: z.string().trim().max(60),
   sequence: z.coerce
     .number()
     .int("Sequence must be a whole number.")

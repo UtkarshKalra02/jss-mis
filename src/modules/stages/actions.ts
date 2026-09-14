@@ -53,6 +53,7 @@ export async function saveStagesAction(
       const parsed = stageRowSchema.safeParse({
         id: row.id,
         name: str(formData, `name__${row.id}`),
+        nameHi: str(formData, `nameHi__${row.id}`),
         sequence: str(formData, `sequence__${row.id}`),
         isOptional: bool(formData, `isOptional__${row.id}`),
         isProcess: bool(formData, `isProcess__${row.id}`),

@@ -103,6 +103,20 @@ export const stage = pgTable(
      */
     code: text().notNull(),
     name: text().notNull(),
+
+    /**
+     * The stage's name in Hindi (Devanagari), for the printed daily floor
+     * plan's Hindi toggle (spec 6.6, decision L3).
+     *
+     * Nullable and seeded BLANK, deliberately. Nobody on the build side can
+     * vouch for the factory's own word for each stage, and a guess printed
+     * on the sheet the floor works from would be a placeholder presenting as
+     * a fact (A2). Every reader falls back to `name` when this is null, so a
+     * blank costs nothing but the translation; Admin › Stages is where a
+     * human fills it in.
+     */
+    nameHi: text(),
+
     sequence: integer().notNull(),
 
     /** True for LAMINATION, UV, FOILING, PASTING. */

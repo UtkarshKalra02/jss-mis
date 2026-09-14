@@ -57,6 +57,20 @@ function StageRowFields({ row }: { row: StageRow }) {
         />
       </td>
 
+      {/* L3: the floor plan's Hindi toggle reads this. Blank falls back to
+          the English name on the sheet, so an untranslated stage is never a
+          gap on paper — just English on a Hindi sheet. */}
+      <td className="px-3 py-2">
+        <input
+          name={`nameHi__${row.id}`}
+          defaultValue={row.nameHi ?? ""}
+          lang="hi"
+          placeholder="—"
+          className={`${inputClass} w-full`}
+          aria-label={`Hindi name for ${row.code}`}
+        />
+      </td>
+
       <td className="px-3 py-2">
         <input
           name={`sequence__${row.id}`}
@@ -176,6 +190,7 @@ export function StageConfigForm({ stages }: { stages: StageRow[] }) {
             <tr>
               <th className="px-3 whitespace-nowrap">Code</th>
               <th className="px-3 whitespace-nowrap">Name</th>
+              <th className="px-3 whitespace-nowrap">Hindi name</th>
               <th className="px-3 whitespace-nowrap">Seq</th>
               <th className="px-3 whitespace-nowrap">Applies to</th>
               <th className="px-3 whitespace-nowrap">Optional</th>

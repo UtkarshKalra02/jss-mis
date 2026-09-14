@@ -253,6 +253,13 @@
       "when": 1788865847107,
       "tag": "0035_over_delivery_allowed",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789375074736,
+      "tag": "0036_stage_hindi_name",
+      "breakpoints": true
     }
   ]
 }

@@ -35,6 +35,11 @@ export function computeStageChanges(
     const values: Record<string, unknown> = {};
 
     if (next.name !== row.name) values.name = next.name;
+
+    // Blank posts as null (L3), so clearing a translation is a real change
+    // and re-saving an untouched blank row is not.
+    const nextNameHi = next.nameHi === "" ? null : next.nameHi;
+    if (nextNameHi !== row.nameHi) values.nameHi = nextNameHi;
     if (next.sequence !== row.sequence) values.sequence = next.sequence;
     if (next.isOptional !== row.isOptional) values.isOptional = next.isOptional;
     if (next.isProcess !== row.isProcess) values.isProcess = next.isProcess;
