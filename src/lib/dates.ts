@@ -39,3 +39,20 @@ export function todayIST(): string {
     day: "2-digit",
   }).format(new Date());
 }
+
+/**
+ * A calendar date plus or minus some days, as 'YYYY-MM-DD'.
+ *
+ * Pure calendar arithmetic in UTC on purpose: the input is already a date
+ * with no timezone, and pushing it through the local clock would shift it by
+ * a day for anybody west of IST at midnight. This is how "tomorrow" is made
+ * for the planning board (L1): `addDaysISO(todayIST(), 1)`.
+ */
+export function addDaysISO(isoDate: string, days: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+    throw new Error(`Expected a 'YYYY-MM-DD' date, got "${isoDate}".`);
+  }
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const shifted = new Date(Date.UTC(y!, m! - 1, d! + days));
+  return shifted.toISOString().slice(0, 10);
+}
