@@ -17,6 +17,7 @@ import {
   type WipStage,
 } from "@/modules/dashboard/queries";
 import { taskCountsFor } from "@/modules/delegation/queries";
+import { dispatchPlanFor, type DispatchPlanLine } from "@/modules/planning/queries";
 import { getAtRiskWindowDays } from "@/modules/stages/queries";
 
 export const metadata: Metadata = { title: "Dashboard · JSS MIS" };
@@ -52,13 +53,14 @@ export default async function DashboardPage() {
   // One round of parallel reads. Each is a single aggregate query; running
   // them in sequence would put five Neon round trips end to end on the first
   // screen everybody opens.
-  const [otd, workload, dispatched, wip, today, atRiskWindowDays, tasks, openEnquiries] =
+  const [otd, workload, dispatched, wip, today, plan, atRiskWindowDays, tasks, openEnquiries] =
     await Promise.all([
     otdSummary(),
     workloadCounts(),
     dispatchedThisMonth(),
     wipByStage(),
     todaysDispatch(),
+    dispatchPlanFor(todayIST()),
     getAtRiskWindowDays(),
     showTasks ? taskCountsFor(user.id) : Promise.resolve({ pending: 0, overdue: 0 }),
     showEnquiries ? openEnquiryCount() : Promise.resolve(0),
@@ -229,7 +231,13 @@ export default async function DashboardPage() {
         {/* Everyday's dispatch (L5): what left today and what was promised
             for today. Every role sees the figures; the challan links need the
             Dispatch grant, and the due-today link the tracker's. */}
-        <TodayPanel today={today} canSeeDispatch={canSeeDispatch} canSeeItems={canSeeItems} />
+        <TodayPanel
+          today={today}
+          plan={plan}
+          canSeeDispatch={canSeeDispatch}
+          canSeeItems={canSeeItems}
+          canPlan={can(user.role, "job_planning")}
+        />
 
         <div className="rounded-lg border px-4 py-3.5">
           <p className="text-muted-foreground text-[12px] font-medium">WIP by stage</p>
@@ -243,22 +251,31 @@ export default async function DashboardPage() {
 /**
  * Today's dispatch — the panel Utkarsh asked for on the dashboard itself.
  *
- * TWO FACTS, KEPT APART. What went out is a list of challans with pieces and
- * items; what was promised is a count of open items committed for today, with
- * how many of them are not yet READY. Neither is folded into the other, and a
- * Draft challan is listed with its status and left out of the totals — see
+ * THE LIST IS THE ONE THE MEETING WROTE (M3), not one derived from committed
+ * dates. Each planned line shows what has actually gone against it — the
+ * challan is the tick — and the challans themselves are listed underneath.
+ * "Committed for today" stays as a small hint, because a job that was
+ * promised for today and is on nobody's list is worth a glance.
+ *
+ * A Draft challan is listed with its status and left out of the totals — see
  * `todaysDispatch`.
  */
 function TodayPanel({
   today,
+  plan,
   canSeeDispatch,
   canSeeItems,
+  canPlan,
 }: {
   today: TodaysDispatch;
+  plan: DispatchPlanLine[];
   canSeeDispatch: boolean;
   canSeeItems: boolean;
+  canPlan: boolean;
 }) {
   const sent = today.challans.filter((c) => c.status === "Dispatched").length;
+  const plannedQty = plan.reduce((n, l) => n + (l.plannedQty ?? 0), 0);
+  const done = plan.filter((l) => l.goneQty >= (l.plannedQty ?? 0) && l.goneQty > 0).length;
 
   return (
     <div className="rounded-lg border px-4 py-3.5">
@@ -270,17 +287,84 @@ function TodayPanel({
       <p className="mt-2 text-[22px] leading-none font-semibold tracking-tight tabular-nums">
         {formatQty(today.qty)}
         <span className="text-muted-foreground ml-1.5 text-[13px] font-normal">
-          pcs
+          pcs gone
+          {plan.length > 0 ? ` of ${formatQty(plannedQty)} planned` : ""}
           {sent > 0
             ? ` · ${formatQty(today.items)} item${today.items === 1 ? "" : "s"} on ${sent} challan${sent === 1 ? "" : "s"}`
             : ""}
         </span>
       </p>
 
-      {/* Due today. A neutral fact with a coloured second half: some of these
-          are READY and going out tonight, and "not yet ready" is the part
-          somebody has to act on. */}
-      <p className="text-muted-foreground mt-1.5 text-[13px]">
+      {/* The plan, line by line. Gone / partly / not yet is read off the
+          challans dated today, so nobody marks anything. */}
+      {plan.length > 0 ? (
+        <ul className="mt-3 divide-y border-t">
+          {plan.map((l) => {
+            const target = l.plannedQty ?? 0;
+            const state =
+              l.goneQty >= target && l.goneQty > 0
+                ? { label: "gone", cls: "text-on-time" }
+                : l.goneQty > 0
+                  ? { label: `${formatQty(l.goneQty)} of ${formatQty(target)}`, cls: "text-at-risk" }
+                  : { label: "not yet", cls: "text-muted-foreground" };
+            return (
+              <li key={l.entryId} className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
+                <p className="min-w-0 truncate">
+                  {canSeeItems ? (
+                    <Link href={`/items/${l.poItemId}`} className="hover:underline">
+                      {l.itemName}
+                    </Link>
+                  ) : (
+                    l.itemName
+                  )}
+                  <span className="text-muted-foreground ml-2" title={l.clientName}>
+                    {l.clientCode}
+                  </span>
+                  {l.currentStageName && state.label === "not yet" ? (
+                    <span className={l.isAtRisk ? "text-at-risk ml-2 text-[11px]" : "text-muted-foreground ml-2 text-[11px]"}>
+                      at {l.currentStageName}
+                    </span>
+                  ) : null}
+                </p>
+                <span className="shrink-0 tabular-nums">
+                  {formatQty(target)} pcs ·{" "}
+                  <span className={state.cls}>{state.label}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-muted-foreground mt-2 text-[13px]">
+          No dispatch list for today.
+          {canPlan ? (
+            <>
+              {" "}
+              <Link href={`/planning?date=${todayIST()}`} className="text-primary hover:underline">
+                Make one on the planning board
+              </Link>
+              .
+            </>
+          ) : null}
+        </p>
+      )}
+      {plan.length > 0 ? (
+        <p className="text-muted-foreground mt-1 text-[12px] tabular-nums">
+          {done} of {plan.length} line{plan.length === 1 ? "" : "s"} gone
+          {canPlan ? (
+            <>
+              {" · "}
+              <Link href={`/planning?date=${todayIST()}`} className="text-primary hover:underline">
+                edit the list
+              </Link>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+
+      {/* Committed for today, as a hint beside the list: a job promised for
+          today that is on nobody's list is worth a glance. */}
+      <p className="text-muted-foreground mt-2 text-[12px]">
         {today.dueToday === 0 ? (
           "Nothing committed for today."
         ) : (
@@ -307,9 +391,7 @@ function TodayPanel({
       </p>
 
       {today.challans.length === 0 ? (
-        <p className="text-muted-foreground/50 mt-4 mb-2 text-center text-[13px]">
-          Nothing has gone out yet today.
-        </p>
+        <p className="text-muted-foreground/50 mt-3 text-[12px]">Nothing has gone out yet today.</p>
       ) : (
         <ul className="mt-3 divide-y border-t">
           {today.challans.map((c) => (
