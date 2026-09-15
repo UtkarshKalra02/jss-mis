@@ -39,10 +39,14 @@ export function DayPlan({
   canWrite: boolean;
   /** Where "push" sends a line. */
   nextDay: string;
-  /** A day already gone is a record, not a plan; nothing on it is editable. */
+  /**
+   * A production plan for a day already gone is a record and is not editable.
+   * THE DISPATCH LIST IS EDITABLE ANY DAY (M3, amended): it is the factory's
+   * own note of what goes out, it never writes a challan, and Utkarsh asked
+   * that it be changeable at any time.
+   */
   isPast: boolean;
 }) {
-  const editable = canWrite && !isPast;
 
   if (stations.length === 0) {
     return (
@@ -74,7 +78,7 @@ export function DayPlan({
                 row={row}
                 position={i + 1}
                 count={station.rows.length}
-                editable={editable}
+                editable={canWrite && (station.kind === "Dispatch" || !isPast)}
                 nextDay={nextDay}
               />
             ))}

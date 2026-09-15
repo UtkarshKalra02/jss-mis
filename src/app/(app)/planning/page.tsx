@@ -144,7 +144,8 @@ export default async function PlanningPage({
 
           {isPast ? (
             <p className="text-muted-foreground mt-3 text-[12px]">
-              A day that has passed is a record of what was planned; it cannot be changed here.
+              A day that has passed is a record of what was planned on the floor; the dispatch
+              list can still be changed.
             </p>
           ) : null}
 

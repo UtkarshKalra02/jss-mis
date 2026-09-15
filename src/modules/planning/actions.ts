@@ -27,6 +27,12 @@ import { getPlanEntry, itemsByIds, siblingsOf, type PlanKind } from "./queries";
  * The writes the planning board makes (M1–M3). All small, all on
  * `plan_entry`, all through the audit wrapper.
  *
+ * NOTHING HERE TOUCHES `dispatch` OR `dispatch_line`. The dispatch list is the
+ * factory's note of what is meant to go out; the challan is still made on the
+ * Dispatch screen, and the dashboard only READS challans to say what has gone
+ * against the list. Utkarsh was explicit: the plan must not change the
+ * dispatch data, and the day's list can be modified at any time.
+ *
  * Gated on `job_planning`, not `job_card`: the two are separate resources so
  * that raising a card does not hand somebody the board (J2).
  */

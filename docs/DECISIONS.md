@@ -3533,6 +3533,14 @@ Draft, not Cancelled — F22) challan lines for that item dated today and says *
 *400 of 600*, or *not yet*. Nobody marks a line done; a list that has to be maintained
 separately from the challans is a list that drifts from them by lunchtime.
 
+**The list never writes a challan, and can be changed at any time.** Utkarsh, later the
+same day: *"It should not change the database of dispatch, that day's dispatch can be
+modified anytime."* Both hold. The planning actions write `plan_entry` and nothing else —
+`dispatch` and `dispatch_line` are only ever *read*, to say what has gone — and the
+challan is still made on the Dispatch screen exactly as before. And the past-day lock
+that applies to a production plan (a record of what the floor was told) does not apply to
+the dispatch list: it is editable on any day, including days already gone.
+
 **"Committed for today" survives as a hint** beside the list, in the neutral tone. A job
 promised for today that is on nobody's list is worth a glance, and the count costs
 nothing. The `risk=due-today` tracker filter from L5 stays for the same reason.
