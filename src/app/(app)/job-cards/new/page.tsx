@@ -11,6 +11,7 @@ import { designSelections, fabricationVocabulary } from "@/modules/fabrication/q
 import { GangPicker } from "@/components/job-cards/gang-picker";
 import { GangReleaseForm } from "@/components/job-cards/gang-release-form";
 import { todayIST } from "@/lib/numbering";
+import { nextPlannedDateFor } from "@/modules/planning/queries";
 import {
   machineOptions,
   releasableItems,
@@ -160,12 +161,15 @@ async function GangForm({ poItemIds }: { poItemIds: string[] }) {
 }
 
 async function CardForm({ poItemId }: { poItemId: string }) {
-  const [items, machines, vocabulary, detail, runs] = await Promise.all([
+  const [items, machines, vocabulary, detail, runs, plannedDate] = await Promise.all([
     releasableItems(""),
     machineOptions(),
     fabricationVocabulary(),
     getItemDetail(poItemId),
     recentRuns(),
+    // The board plans items before their cards exist (M1), so a card raised
+    // for a planned item is born with the day the meeting chose.
+    nextPlannedDateFor(poItemId),
   ]);
 
   const item = items.find((i) => i.poItemId === poItemId);
@@ -219,6 +223,7 @@ async function CardForm({ poItemId }: { poItemId: string }) {
           designSelected={designFab}
           cardSelected={new Map()}
           recentRuns={runs}
+          card={plannedDate ? { plannedDate } : undefined}
           startOpen
         />
       </div>

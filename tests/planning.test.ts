@@ -1,34 +1,40 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { SYSTEM_ACTOR, auditedInsert, auditedUpdate, type Tx } from "@/db/audit";
-import { jobCard, poItem, pressRun, purchaseOrder, stageEvent } from "@/db/schema";
+import { SYSTEM_ACTOR, auditedInsert, type Tx } from "@/db/audit";
+import { dispatch, dispatchLine, planEntry, poItem, pressRun, purchaseOrder } from "@/db/schema";
 import { addDaysISO, todayIST } from "@/lib/dates";
 import { allocateNumber } from "@/lib/numbering";
-import { describePlan, parsePlanForm, runsMovedWith } from "@/modules/planning/plan";
+import { groupByStation } from "@/modules/planning/floor-plan";
 import {
-  cardsToPlan,
+  changedPositions,
+  describeAdd,
+  parseAddForm,
+  reorder,
+} from "@/modules/planning/plan";
+import {
   dayPlan,
+  dispatchPlanFor,
+  itemsToPlan,
+  nextPlannedDateFor,
   plannedCountsBetween,
-  runMembersOf,
-  unreleasedItemCount,
+  siblingsOf,
 } from "@/modules/planning/queries";
 import { groupByPressRun, selectableRows } from "@/modules/stage-update/grouping";
 
-import { inRollback, makeCardFor, uniq } from "./helpers";
+import { expectFailure, inRollback, makeCardFor, uniq } from "./helpers";
 
 /**
- * The job planning board (spec 6.6, decisions L1–L4).
+ * The job planning board (spec 6.6, decisions M1–M3).
  *
  * The queries run against the real database because the board's urgency and
- * pending figures come from `v_po_item_status`, and the point of the tests is
- * that a card's row says what the view says — a mock of the view would only
- * test the mock.
+ * pending figures come from `v_po_item_status`, and the point is that a row
+ * says what the view says. The check constraints on `plan_entry` are also
+ * only real in Postgres.
  */
 
 const TODAY = todayIST();
 const TOMORROW = addDaysISO(TODAY, 1);
-const YESTERDAY = addDaysISO(TODAY, -1);
 
 async function makeClient(tx: Tx, name: string): Promise<string> {
   const [row] = (
@@ -39,11 +45,7 @@ async function makeClient(tx: Tx, name: string): Promise<string> {
   return row!.id;
 }
 
-async function makeItem(
-  tx: Tx,
-  clientName: string,
-  over: { committedDate?: string | null; stageCode?: string } = {},
-) {
+async function makeItem(tx: Tx, clientName: string, committedDate: string | null = addDaysISO(TODAY, 10)) {
   const clientId = await makeClient(tx, clientName);
 
   const order = await auditedInsert(
@@ -66,247 +68,258 @@ async function makeItem(
       purchaseOrderId: order.id,
       itemName: `${clientName} carton`,
       orderedQty: 1000,
-      committedDate: over.committedDate === undefined ? addDaysISO(TODAY, 10) : over.committedDate,
+      committedDate,
     },
     tx,
   );
 
-  if (over.stageCode) {
-    await tx.insert(stageEvent).values({
-      poItemId: item.id,
-      stageCode: over.stageCode,
-      eventAt: new Date(),
-      createdBy: SYSTEM_ACTOR.id,
-    } as never);
-  }
-
   return { clientId, poItemId: item.id, itemCode: item.itemCode };
 }
 
-async function makeRun(tx: Tx, runDate: string) {
+async function plan(
+  tx: Tx,
+  poItemId: string,
+  over: Partial<{
+    planDate: string;
+    kind: "Production" | "Dispatch";
+    stageCode: string | null;
+    sequence: number;
+    plannedQty: number | null;
+  }> = {},
+) {
+  const kind = over.kind ?? "Production";
   return auditedInsert(
     SYSTEM_ACTOR,
-    pressRun,
-    { runNo: await allocateNumber(tx, "PR", runDate), runDate, machine: "Komori" },
+    planEntry,
+    {
+      planDate: over.planDate ?? TOMORROW,
+      poItemId,
+      kind,
+      stageCode: over.stageCode === undefined ? (kind === "Production" ? "PRINTING" : null) : over.stageCode,
+      sequence: over.sequence ?? 1,
+      plannedQty: over.plannedQty ?? null,
+    },
     tx,
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* The form and the messages — pure                                            */
+/* Pure                                                                        */
 /* -------------------------------------------------------------------------- */
 
-describe("the plan form", () => {
+describe("the add form", () => {
   const A = "11111111-1111-1111-1111-111111111111";
-  const B = "22222222-2222-2222-2222-222222222222";
 
-  it("collapses a card ticked twice into one, and accepts a blank date as 'unplan'", () => {
-    const fd = new FormData();
-    fd.append("jobCardId", A);
-    fd.append("jobCardId", A);
-    fd.append("jobCardId", B);
-    fd.append("plannedDate", "");
+  it("needs a station for production and not for dispatch", () => {
+    const prod = new FormData();
+    prod.append("poItemId", A);
+    prod.append("poItemId", A);
+    prod.append("planDate", TOMORROW);
+    prod.append("kind", "Production");
+    prod.append("stageCode", "");
+    expect(parseAddForm(prod).success).toBe(false);
 
-    const parsed = parsePlanForm(fd);
+    prod.set("stageCode", "PRINTING");
+    const parsed = parseAddForm(prod);
     expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect(parsed.data.jobCardIds).toEqual([A, B]);
-      expect(parsed.data.plannedDate).toBe("");
-    }
-  });
+    if (parsed.success) expect(parsed.data.poItemIds).toEqual([A]);
 
-  it("refuses an empty selection and a non-date", () => {
-    const none = new FormData();
-    none.append("plannedDate", TOMORROW);
-    expect(parsePlanForm(none).success).toBe(false);
-
-    const junk = new FormData();
-    junk.append("jobCardId", A);
-    junk.append("plannedDate", "tomorrow");
-    expect(parsePlanForm(junk).success).toBe(false);
+    const disp = new FormData();
+    disp.append("poItemId", A);
+    disp.append("planDate", TOMORROW);
+    disp.append("kind", "Dispatch");
+    expect(parseAddForm(disp).success).toBe(true);
   });
 });
 
-describe("which plates move as a whole (L4)", () => {
-  it("moves a run only when every live card on it is selected", () => {
-    const members = new Map([
-      ["run-1", ["c1", "c2", "c3"]],
-      ["run-2", ["c4", "c5"]],
+describe("re-ordering the queue (M2)", () => {
+  const ids = ["a", "b", "c", "d"];
+
+  it("moves one line and shifts the rest", () => {
+    expect(reorder(ids, "c", "up")).toEqual(["a", "c", "b", "d"]);
+    expect(reorder(ids, "b", "down")).toEqual(["a", "c", "b", "d"]);
+    expect(reorder(ids, "d", "first")).toEqual(["d", "a", "b", "c"]);
+    expect(reorder(ids, "a", "last")).toEqual(["b", "c", "d", "a"]);
+  });
+
+  it("is a no-op at the edges and for an unknown id", () => {
+    expect(reorder(ids, "a", "up")).toEqual(ids);
+    expect(reorder(ids, "d", "down")).toEqual(ids);
+    expect(reorder(ids, "zz", "first")).toEqual(ids);
+  });
+
+  it("writes only the positions that changed, 1-based", () => {
+    const after = reorder(ids, "d", "first");
+    expect([...changedPositions(ids, after)]).toEqual([
+      ["d", 1],
+      ["a", 2],
+      ["b", 3],
+      ["c", 4],
     ]);
-
-    expect(runsMovedWith(new Set(["c1", "c2", "c3", "c4"]), members)).toEqual(["run-1"]);
-    expect(runsMovedWith(new Set(["c1", "c2"]), members)).toEqual([]);
-    expect(runsMovedWith(new Set(["c4", "c5", "c1"]), members)).toEqual(["run-2"]);
+    expect(changedPositions(ids, reorder(ids, "c", "up")).size).toBe(2);
   });
 
-  it("says what was done, plates included", () => {
-    expect(describePlan({ cards: 1, plannedDate: "2026-09-15", runsMoved: 0 })).toBe(
-      "1 job card planned for 15 Sept 2026.",
+  it("says what was added and what was already there", () => {
+    expect(describeAdd({ added: 3, skipped: 0, kind: "Production", planDate: "2026-09-16" })).toBe(
+      "3 items added to the 16 Sept 2026 production plan.",
     );
-    expect(describePlan({ cards: 3, plannedDate: "2026-09-15", runsMoved: 1 })).toBe(
-      "3 job cards planned for 15 Sept 2026 · 1 plate moved with them.",
-    );
-    expect(describePlan({ cards: 2, plannedDate: "", runsMoved: 0 })).toBe(
-      "2 job cards taken off the plan.",
+    expect(describeAdd({ added: 1, skipped: 1, kind: "Dispatch", planDate: "2026-09-16" })).toBe(
+      "1 item added to the 16 Sept 2026 dispatch list · 1 was already on it.",
     );
   });
 });
 
 /* -------------------------------------------------------------------------- */
-/* The two panels — against the database                                      */
+/* Against the database                                                        */
 /* -------------------------------------------------------------------------- */
 
-describe("the left panel: cards that need a day (L1)", () => {
-  it("lists an undated card and a slipped one, and not one planned ahead", async () => {
+describe("the left panel: open items, cards or not (M1)", () => {
+  it("lists an item with no card, and shows the card when there is one", async () => {
     await inRollback(async (tx) => {
-      const a = await makeItem(tx, "Undated");
-      const b = await makeItem(tx, "Slipped");
-      const c = await makeItem(tx, "Planned ahead");
+      const bare = await makeItem(tx, "No card yet");
+      const carded = await makeItem(tx, "Has card");
+      const card = await makeCardFor(tx, carded.poItemId, {}, 500);
 
-      const undated = await makeCardFor(tx, a.poItemId, {}, 500);
-      const slipped = await makeCardFor(tx, b.poItemId, { plannedDate: YESTERDAY }, 500);
-      const ahead = await makeCardFor(tx, c.poItemId, { plannedDate: TOMORROW }, 500);
+      const rows = await itemsToPlan(tx);
+      const a = rows.find((r) => r.poItemId === bare.poItemId)!;
+      const b = rows.find((r) => r.poItemId === carded.poItemId)!;
 
-      const ids = (await cardsToPlan(tx)).map((r) => r.jobCardId);
-      expect(ids).toContain(undated.id);
-      expect(ids).toContain(slipped.id);
-      expect(ids).not.toContain(ahead.id);
+      expect(a.jcNo).toBeNull();
+      expect(b.jcNo).toBe(card.jcNo);
+      expect(a.pendingQty).toBe(1000);
     });
   });
 
-  it("drops a card once it is completed, cancelled, or its item has shipped", async () => {
+  it("says which days an item is already planned on, from today forward", async () => {
     await inRollback(async (tx) => {
-      const a = await makeItem(tx, "Done");
-      const b = await makeItem(tx, "Withdrawn");
+      const item = await makeItem(tx, "Planned twice");
+      await plan(tx, item.poItemId, { planDate: TOMORROW });
+      await plan(tx, item.poItemId, { planDate: addDaysISO(TODAY, 3), stageCode: "LAMINATION" });
+      await plan(tx, item.poItemId, { planDate: addDaysISO(TODAY, -2) }); // history
+      await plan(tx, item.poItemId, { planDate: TOMORROW, kind: "Dispatch", plannedQty: 1000 });
 
-      const done = await makeCardFor(tx, a.poItemId, { status: "Completed" }, 500);
-      const withdrawn = await makeCardFor(tx, b.poItemId, { status: "Cancelled" }, 500);
-
-      const ids = (await cardsToPlan(tx)).map((r) => r.jobCardId);
-      expect(ids).not.toContain(done.id);
-      expect(ids).not.toContain(withdrawn.id);
+      const row = (await itemsToPlan(tx)).find((r) => r.poItemId === item.poItemId)!;
+      expect(row.productionDates).toEqual([TOMORROW, addDaysISO(TODAY, 3)]);
+      expect(row.dispatchDates).toEqual([TOMORROW]);
     });
   });
 
-  it("takes its urgency from the view: an overdue item makes an overdue card", async () => {
+  it("puts the most urgent first, and carries the plate so a run collapses (H8)", async () => {
     await inRollback(async (tx) => {
-      const late = await makeItem(tx, "Late", { committedDate: addDaysISO(TODAY, -3) });
-      const card = await makeCardFor(tx, late.poItemId, {}, 500);
-
-      const rows = await cardsToPlan(tx);
-      const row = rows.find((r) => r.jobCardId === card.id)!;
-
-      expect(row.isOverdue).toBe(true);
-      expect(row.daysToCommitted).toBe(-3);
-      expect(row.pendingQty).toBe(1000);
-      expect(row.itemCount).toBe(1);
-      // Overdue first, whatever else is on the board.
-      expect(rows[0]!.isOverdue).toBe(true);
-    });
-  });
-
-  it("names a card by its first item and counts the rest (J25)", async () => {
-    await inRollback(async (tx) => {
-      const first = await makeItem(tx, "First");
-      const second = await makeItem(tx, "Second", { committedDate: addDaysISO(TODAY, 2) });
-
-      const card = await makeCardFor(tx, first.poItemId, {}, 500);
-      await tx.execute(
-        sql`insert into job_card_item (job_card_id, po_item_id, planned_qty, created_by)
-            values (${card.id}, ${second.poItemId}, 300, ${SYSTEM_ACTOR.id})`,
-      );
-
-      const row = (await cardsToPlan(tx)).find((r) => r.jobCardId === card.id)!;
-      expect(row.itemCode).toBe(first.itemCode);
-      expect(row.itemCount).toBe(2);
-      expect(row.clientCount).toBe(2);
-      expect(row.pendingQty).toBe(2000);
-      // The most urgent covered item sets the card's date, not the first.
-      expect(row.committedDate).toBe(addDaysISO(TODAY, 2));
-    });
-  });
-
-  it("carries the plate, so the board can collapse a ganged run (H8)", async () => {
-    await inRollback(async (tx) => {
+      const late = await makeItem(tx, "Late", addDaysISO(TODAY, -3));
       const a = await makeItem(tx, "Gang A");
       const b = await makeItem(tx, "Gang B");
-      const run = await makeRun(tx, TOMORROW);
+      const run = await auditedInsert(
+        SYSTEM_ACTOR,
+        pressRun,
+        { runNo: await allocateNumber(tx, "PR", TOMORROW), runDate: TOMORROW, machine: "Komori" },
+        tx,
+      );
+      await makeCardFor(tx, a.poItemId, { pressRunId: run.id }, 500);
+      await makeCardFor(tx, b.poItemId, { pressRunId: run.id }, 500);
 
-      const ca = await makeCardFor(tx, a.poItemId, { pressRunId: run.id }, 500);
-      const cb = await makeCardFor(tx, b.poItemId, { pressRunId: run.id }, 500);
+      const rows = await itemsToPlan(tx);
+      expect(rows[0]!.isOverdue).toBe(true);
+      expect(rows.find((r) => r.poItemId === late.poItemId)!.daysToCommitted).toBe(-3);
 
-      const rows = await cardsToPlan(tx);
       const groups = groupByPressRun(rows);
       const plate = groups.find((g) => g.kind === "run" && g.pressRunId === run.id);
-
       expect(plate?.kind).toBe("run");
-      if (plate?.kind === "run") {
-        expect(plate.rows.map((r) => r.jobCardId).sort()).toEqual([ca.id, cb.id].sort());
-        // Collapsed, neither card is tickable; expanded, both are.
-        expect(selectableRows(groups, new Set()).map((r) => r.jobCardId)).not.toContain(ca.id);
-        expect(selectableRows(groups, new Set([run.id])).map((r) => r.jobCardId)).toContain(
-          cb.id,
-        );
-      }
-
-      const members = await runMembersOf([ca.id], tx);
-      expect(members.get(run.id)?.sort()).toEqual([ca.id, cb.id].sort());
+      expect(selectableRows(groups, new Set()).map((r) => r.poItemId)).not.toContain(a.poItemId);
+      expect(selectableRows(groups, new Set([run.id])).map((r) => r.poItemId)).toContain(
+        b.poItemId,
+      );
     });
   });
 });
 
-describe("the right panel: one day's plan", () => {
-  it("lists what is dated that day, in station order, and counts the week", async () => {
+describe("one day's plan", () => {
+  it("comes back by station in stage order, then the meeting's order, dispatch last", async () => {
     await inRollback(async (tx) => {
-      const early = await makeItem(tx, "At press", { stageCode: "PRINTING" });
-      const later = await makeItem(tx, "At die-cut", { stageCode: "DIE_CUT" });
-      const other = await makeItem(tx, "Other day");
+      const x = await makeItem(tx, "X");
+      const y = await makeItem(tx, "Y");
+      const z = await makeItem(tx, "Z");
 
-      const c1 = await makeCardFor(tx, later.poItemId, { plannedDate: TOMORROW }, 500);
-      const c2 = await makeCardFor(tx, early.poItemId, { plannedDate: TOMORROW }, 500);
-      await makeCardFor(tx, other.poItemId, { plannedDate: addDaysISO(TODAY, 2) }, 500);
+      await plan(tx, x.poItemId, { stageCode: "DIE_CUT", sequence: 1 });
+      await plan(tx, y.poItemId, { stageCode: "PRINTING", sequence: 2 });
+      await plan(tx, z.poItemId, { stageCode: "PRINTING", sequence: 1 });
+      await plan(tx, x.poItemId, { kind: "Dispatch", plannedQty: 400 });
 
-      const rows = await dayPlan(TOMORROW, tx);
-      const ids = rows.map((r) => r.jobCardId);
-      expect(ids.indexOf(c2.id)).toBeGreaterThanOrEqual(0);
-      expect(ids.indexOf(c2.id)).toBeLessThan(ids.indexOf(c1.id));
+      const rows = (await dayPlan(TOMORROW, tx)).filter((r) =>
+        [x.poItemId, y.poItemId, z.poItemId].includes(r.poItemId),
+      );
+      expect(rows.map((r) => `${r.kind}:${r.stageCode ?? "-"}:${r.itemName}`)).toEqual([
+        "Production:PRINTING:Z carton",
+        "Production:PRINTING:Y carton",
+        "Production:DIE_CUT:X carton",
+        "Dispatch:-:X carton",
+      ]);
+
+      const stations = groupByStation(rows);
+      expect(stations.map((s) => s.key)).toEqual(["PRINTING", "DIE_CUT", "DISPATCH"]);
+      expect(stations[2]!.pendingQty).toBe(400);
 
       const counts = await plannedCountsBetween(TODAY, addDaysISO(TODAY, 6), tx);
-      expect(counts.get(TOMORROW)).toBeGreaterThanOrEqual(2);
-      expect(counts.get(addDaysISO(TODAY, 2))).toBeGreaterThanOrEqual(1);
+      expect(counts.get(TOMORROW)!.production).toBeGreaterThanOrEqual(3);
+      expect(counts.get(TOMORROW)!.dispatch).toBeGreaterThanOrEqual(1);
+
+      expect(await nextPlannedDateFor(x.poItemId, tx)).toBe(TOMORROW);
+      expect((await siblingsOf(TOMORROW, "Production", tx)).length).toBeGreaterThanOrEqual(3);
     });
   });
 
-  it("keeps a completed card on the day it ran, and drops a cancelled one", async () => {
+  it("refuses a production line with no station, and a dispatch line with one", async () => {
     await inRollback(async (tx) => {
-      const a = await makeItem(tx, "Ran");
-      const b = await makeItem(tx, "Pulled");
-      const ran = await makeCardFor(tx, a.poItemId, { plannedDate: YESTERDAY }, 500);
-      const pulled = await makeCardFor(tx, b.poItemId, { plannedDate: YESTERDAY }, 500);
+      const item = await makeItem(tx, "Constrained");
 
-      await auditedUpdate(SYSTEM_ACTOR, jobCard, ran.id, { status: "Completed" }, tx);
-      await auditedUpdate(SYSTEM_ACTOR, jobCard, pulled.id, { status: "Cancelled" }, tx);
+      const noStation = await expectFailure(tx, (sp) =>
+        plan(sp, item.poItemId, { stageCode: null }),
+      );
+      expect(noStation.threw).toBe(true);
+      expect(noStation.message).toContain("plan_entry_kind_stage");
 
-      const ids = (await dayPlan(YESTERDAY, tx)).map((r) => r.jobCardId);
-      expect(ids).toContain(ran.id);
-      expect(ids).not.toContain(pulled.id);
+      const stagedDispatch = await expectFailure(tx, (sp) =>
+        plan(sp, item.poItemId, { kind: "Dispatch", stageCode: "READY", plannedQty: 10 }),
+      );
+      expect(stagedDispatch.threw).toBe(true);
+
+      // The same item at the same station on the same day is one line.
+      await plan(tx, item.poItemId, {});
+      const twice = await expectFailure(tx, (sp) => plan(sp, item.poItemId, {}));
+      expect(twice.message).toContain("plan_entry_key");
     });
   });
 });
 
-describe("items with no card at all", () => {
-  it("counts an open item nobody has released, and stops once a card exists", async () => {
+describe("the dispatch list on the dashboard (M3)", () => {
+  it("ticks a line off by the challan, not by hand", async () => {
     await inRollback(async (tx) => {
-      const before = await unreleasedItemCount(tx);
-      const item = await makeItem(tx, "Unreleased");
-      expect(await unreleasedItemCount(tx)).toBe(before + 1);
+      const item = await makeItem(tx, "Going out");
+      await plan(tx, item.poItemId, { planDate: TODAY, kind: "Dispatch", plannedQty: 600 });
 
-      // A cancelled card is not cover (J12).
-      await makeCardFor(tx, item.poItemId, { status: "Cancelled" }, 500);
-      expect(await unreleasedItemCount(tx)).toBe(before + 1);
+      const before = (await dispatchPlanFor(TODAY, tx)).find((l) => l.poItemId === item.poItemId)!;
+      expect(before).toMatchObject({ plannedQty: 600, goneQty: 0 });
 
-      await makeCardFor(tx, item.poItemId, {}, 500);
-      expect(await unreleasedItemCount(tx)).toBe(before);
+      const head = await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatch,
+        {
+          challanNo: await allocateNumber(tx, "CH", TODAY),
+          clientId: item.clientId,
+          dispatchDate: TODAY,
+          status: "Dispatched",
+        },
+        tx,
+      );
+      await auditedInsert(
+        SYSTEM_ACTOR,
+        dispatchLine,
+        { dispatchId: head.id, poItemId: item.poItemId, qty: 600 },
+        tx,
+      );
+
+      const after = (await dispatchPlanFor(TODAY, tx)).find((l) => l.poItemId === item.poItemId)!;
+      expect(after.goneQty).toBe(600);
     });
   });
 });

@@ -1,44 +1,44 @@
-import type { PlanningRow } from "./queries";
+import type { PlanEntryRow } from "./queries";
 
 /**
  * One day's plan arranged by station — the right panel of the board and the
- * printed floor plan, from one function so the two cannot disagree (L2).
+ * printed floor plan, from one function so the two cannot disagree (M2).
  *
- * THE STATION IS THE CARD'S CURRENT STAGE. There is no station table; the
- * stage table is the factory's own vocabulary for where work is, ADMIN edits
- * it, and its names, colours and Hindi come from the database and nowhere
- * else (non-negotiable 5). A card whose first item is at Lamination is
- * tomorrow's lamination work. Nothing is stored for this, so nothing can go
- * stale — the cost, accepted knowingly, is that a card planned from a
- * pre-production stage (Approved, Material Ready) is listed under that stage
- * with its machine on the row, rather than under the press it will go to. A
- * chosen "planned station" per card is the upgrade if the meeting finds that
- * wrong; it is a column and a select, not a redesign.
+ * THE STATION IS WHAT THE MEETING CHOSE. Each Production entry carries the
+ * stage the job goes to that day (and the press, when one was picked). The
+ * stage table is the factory's own vocabulary, ADMIN edits it, and its names,
+ * colours and Hindi come from the database and nowhere else (non-negotiable
+ * 5). The Dispatch entries form their own block at the end.
  *
- * Rows arrive sorted by stage sequence, then urgency, so grouping is one pass.
+ * Rows arrive sorted by kind, stage sequence, then the meeting's own order,
+ * so grouping is one pass and the order inside a station is the queue.
  */
 
 export type Station = {
-  /** The stage code, or null for cards whose item has no stage event yet. */
-  key: string | null;
+  /** The stage code, or "DISPATCH" for the day's dispatch list. */
+  key: string;
+  kind: "Production" | "Dispatch";
   name: string | null;
   colour: string | null;
-  rows: PlanningRow[];
+  rows: PlanEntryRow[];
   pendingQty: number;
 };
 
-export function groupByStation(rows: readonly PlanningRow[]): Station[] {
+export const DISPATCH_KEY = "DISPATCH";
+
+export function groupByStation(rows: readonly PlanEntryRow[]): Station[] {
   const stations: Station[] = [];
-  const byKey = new Map<string | null, Station>();
+  const byKey = new Map<string, Station>();
 
   for (const row of rows) {
-    const key = row.currentStage;
+    const key = row.kind === "Dispatch" ? DISPATCH_KEY : (row.stageCode ?? "");
     let station = byKey.get(key);
     if (!station) {
       station = {
         key,
-        name: row.currentStageName,
-        colour: row.currentStageColour,
+        kind: row.kind,
+        name: row.kind === "Dispatch" ? null : row.stageName,
+        colour: row.kind === "Dispatch" ? null : row.stageColour,
         rows: [],
         pendingQty: 0,
       };
@@ -46,12 +46,14 @@ export function groupByStation(rows: readonly PlanningRow[]): Station[] {
       stations.push(station);
     }
     station.rows.push(row);
-    station.pendingQty += row.pendingQty;
+    station.pendingQty += row.kind === "Dispatch" ? (row.plannedQty ?? 0) : row.pendingQty;
   }
 
-  // Cards with no stage yet go last, whatever order they arrived in. "Not
-  // started" is a real state (F19 makes it rare), not the first station.
-  return [...stations.filter((s) => s.key !== null), ...stations.filter((s) => s.key === null)];
+  // Production first in stage order (already sorted), dispatch last.
+  return [
+    ...stations.filter((s) => s.kind === "Production"),
+    ...stations.filter((s) => s.kind === "Dispatch"),
+  ];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -89,6 +91,9 @@ const STRINGS = {
   mixed: { en: "several stages", hi: "कई चरण" },
   more: { en: "more", hi: "और" },
   nothing: { en: "Nothing planned for this day.", hi: "इस दिन के लिए कुछ योजना नहीं है।" },
+  dispatch: { en: "Dispatch", hi: "डिस्पैच" },
+  position: { en: "#", hi: "क्रम" },
+  stage: { en: "Stage now", hi: "अभी चरण" },
   footer: {
     en: "Printed from JSS MIS. Stages and quantities are live at the time of printing.",
     hi: "JSS MIS से छपा। चरण और मात्रा छपाई के समय की हैं।",
