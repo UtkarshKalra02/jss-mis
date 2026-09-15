@@ -255,25 +255,30 @@ designs use it".
 
 ---
 
-## ~~Job planning board (Phase 4)~~ — BUILT
+## ~~Job planning board (Phase 4)~~ — BUILT, then rebuilt
 
-Built 14 Sep 2026; see decisions **L1–L5** in [`DECISIONS.md`](DECISIONS.md).
+Built 14 Sep 2026 around job cards (decisions **L1–L5**); rebuilt 15 Sep 2026 around
+items after Utkarsh's correction (decisions **M1–M4**) in [`DECISIONS.md`](DECISIONS.md).
 
-Spec 6.6, planning **job cards** rather than items, with the printed daily floor plan in
-English or Hindi and today's dispatch on the dashboard.
+Spec 6.6, planning **PO items** onto days at a chosen station, in a re-orderable queue,
+with a hand-picked dispatch list per day, the printed daily floor plan in English or
+Hindi, and today's dispatch on the dashboard read against the challans.
 
 ### Left open, deliberately
 
-- **A chosen station per card.** The board groups tomorrow by the card's *current stage*
-  (L2). If the meeting finds that a job at Material Ready should be listed under the press
-  it is going to, add a nullable `planned_stage_code` (FK to `stage.code`) on `job_card`,
-  a select in the board's toolbar defaulting to the current stage, and read it in
-  `groupByStation` before falling back to the current stage. One column, one select.
 - **Hindi stage names are blank** until typed on Admin › Stages (L3), and the sheet's
   column headings are unverified translations in `src/modules/planning/floor-plan.ts`.
   Both are one edit away once somebody on the floor has read a Hindi sheet.
-- **"Move to another day" in one step.** Today it is take off, then plan again. A per-card
-  date picker on the right panel is straightforward if the two-step turns out to grate.
+- **Drag to reorder.** The queue is moved with buttons (up / down / first). Drag-and-drop
+  is a nicer gesture and a heavier dependency; add it if the buttons grate after a week of
+  real meetings.
+- **Push to a chosen day.** "Next day →" is the one push offered. A date picker per line
+  is straightforward if the meeting often skips a day.
+- **Capacity per machine.** "Komori: 3 jobs · 18,000 sheets tomorrow" would make
+  overbooking visible. The data is on the plan lines already; it is a header, not a
+  feature.
+- **Readiness on the board.** The card's kitting ticks (paper / plates / colour) are not
+  shown on the left panel yet; when the real kitting gate is built it belongs there.
 - **ACCOUNTS does not get the board.** Pradeep raises cards (K11) but `job_planning` was
   left on the matrix as it stood (L1). One line to widen.
 

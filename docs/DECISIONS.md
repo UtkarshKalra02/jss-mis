@@ -3303,6 +3303,11 @@ Hindi stage names blank (L3).
 
 ## L1 — the board plans JOB CARDS, not PO items
 
+> **Superseded by M1 (15 Sep 2026)** the day after it shipped. Utkarsh: *"We can plan the
+> jobs without the job cards, because sometimes job cards are made on the same day."* The
+> reasoning below was sound about the release form and wrong about the factory. Kept as
+> written, because M1 is only legible against it.
+
 Spec 6.6 says *"Assign item → creates `job_card` with `planned_date`"*. That was written
 before J1 made a card a document a person releases with paper, plate and machine detail,
 before J14 moved that act to the planner, and before J25 let one card cover several
@@ -3345,6 +3350,9 @@ controls (B2). ACCOUNTS raises cards (K11) and does not get the board — `job_c
 (J2). Widening is one line if Utkarsh asks.
 
 ## L2 — the station is the card's current stage, and nothing is stored for it
+
+> **Superseded by M2 (15 Sep 2026).** The station is now chosen at planning time and
+> stored on the plan line. The H8 paragraph at the end of this decision still holds.
 
 Spec 6.6 groups tomorrow "by stage/station" and there is no station table. Two readings
 were offered:
@@ -3409,6 +3417,10 @@ is a statement about the cards, not the plate. `runsMovedWith()` is the pure rul
 
 ## L5 — today's dispatch on the dashboard
 
+> **Amended by M3 (15 Sep 2026).** The list is now the hand-picked dispatch plan; the
+> "committed for today" count survives as a hint beside it. The draft-challan and
+> `dispatch_date` reasoning below still holds.
+
 Asked for as "everyday's dispatch to be showed in the dashboard itself". Three readings
 were offered — what went out today, what was due today, or both — and both was chosen.
 
@@ -3430,3 +3442,111 @@ going out today". Cancelled ones are simply gone. The date is the challan's
 is `days_to_committed = 0` from the view — the same mechanism the overdue and at-risk
 tiles already use, in the neutral tone because due today is a fact about the calendar
 and some of those items are READY and going out tonight.
+
+
+---
+
+## M. Job planning, second shape — items, a queue, and a hand-picked dispatch list
+
+Rebuilt 15 Sep 2026, one day after section L, on three facts Utkarsh gave about how the
+factory actually plans:
+
+> "We can plan the jobs without the job cards, because sometimes job cards are made on the
+> same day. We can change our plan anytime, if any other job comes in urgent the next job
+> goes next. We can customize everyday's dispatch manually."
+
+Each sentence killed one assumption in L. Nothing in L had been pushed, so the four board
+commits were replaced rather than patched; the `stage.name_hi` column (L3) and the plate
+gate (H8) carried over unchanged.
+
+## M1 — the board plans PO ITEMS; a job card is shown, never required
+
+L1 planned job cards because the release form has a dozen fields and the meeting is not
+where they get typed. That was right about the form and wrong about the sequence: at JSS
+the card is often raised on the morning the job runs, so a board that could only date an
+existing card left most of the meeting's work unplannable.
+
+**A plan line is `plan_entry`: an item, a day, and what happens to it that day.** New
+table, migration 0037 (additive). Kind is `Production` (with a station) or `Dispatch`
+(without). Rows are soft-deleted (non-negotiable 7), so taking a job off the plan is a
+removal that stays in the audit log.
+
+**Storing the plan does not touch non-negotiables 1 and 2.** The plan is a human decision
+with no other source — there is nothing to derive it from — and everything that
+*describes* the item on a plan line (stage, pending quantity, urgency) is still read from
+`v_po_item_status` at render time. The line stores only what the meeting decided.
+
+**The left panel is every open item with quantity owed**, most urgent first, in the order
+every worklist uses. Each row shows its latest live card when it has one and says "no card
+yet" when it has not, and carries chips for the days it is already planned on (from today
+forward), so "this is on Tuesday's press list" is visible without opening Tuesday.
+
+**A card released for a planned item is born with the day the meeting chose.**
+`/job-cards/new` prefills `planned_date` from the item's next production plan line.
+`job_card.planned_date` itself is unchanged — it is the date printed on the card — and the
+board no longer writes it.
+
+**Items that have been delivered or closed since they were planned stay on the day**,
+dimmed and labelled. A plan is a record of what was decided; a line that vanishes because
+the job shipped early is a plan that lies about what the meeting said.
+
+## M2 — the station is chosen when the job is planned, and the day is a queue
+
+**Chosen, not derived.** L2 derived the station from the card's current stage and accepted
+that a job planned from Material Ready would be listed under Material Ready. That was
+the wrong trade: the meeting's decision *is* "this goes to the Komori tomorrow", and a
+board that cannot record it is recording something else. `plan_entry.stage_code` is that
+decision (a foreign key to the stage's immutable code, like `stage_event`), with an
+optional `machine_id` for the press. The board's station picker defaults to where the
+ticked items currently are when they agree, and is otherwise left for the person — a
+default that is right most of the time and a blank when it would be a guess.
+
+The check constraint `plan_entry_kind_stage` makes a Production line without a station,
+or a Dispatch line with one, impossible at the database rather than only in the form.
+
+**"The next job goes next."** Order within a day and kind is `sequence`, and the right
+panel is the queue: up, down, put first, push to the next day, take off. `reorder()` is
+the pure rule and only the positions that change are written, so putting the second job
+first writes two rows, not twenty. Pushing a line lands it at the end of the target day;
+if the same item is already on that day at that station the pushed line is simply removed,
+because two lines saying the same thing is not a plan.
+
+**One item may be on one day at several stations** — printed in the morning, laminated
+after — and on several days at the same station. The partial unique index
+`plan_entry_key` on (day, kind, item, station) is what stops the *same* line twice; the
+add action skips a duplicate and counts it rather than refusing the batch.
+
+**The printed floor plan is the queue.** A numbered list per station in the meeting's
+order, with the job's *current* stage beside it so the floor knows where to fetch it from,
+and the dispatch list as the last block. `groupByStation` is one function for the screen
+and the sheet (K16's reasoning). The plate gate (H8) applies to the left panel exactly as
+it did in L.
+
+## M3 — the day's dispatch is a list the meeting writes, ticked off by the challan
+
+L5 derived "due today" from committed dates. Utkarsh: *"We can customize everyday's
+dispatch manually."* A Dispatch plan line is an item and a quantity — defaulting to the
+pending quantity when added, edited for a partial — in the meeting's order.
+
+**The challan is the tick.** The dashboard reads each line against the Dispatched (not
+Draft, not Cancelled — F22) challan lines for that item dated today and says *gone*,
+*400 of 600*, or *not yet*. Nobody marks a line done; a list that has to be maintained
+separately from the challans is a list that drifts from them by lunchtime.
+
+**"Committed for today" survives as a hint** beside the list, in the neutral tone. A job
+promised for today that is on nobody's list is worth a glance, and the count costs
+nothing. The `risk=due-today` tracker filter from L5 stays for the same reason.
+
+## M4 — what was kept from L, and what the rebuild cost
+
+Kept: the Hindi stage names (L3), the sheet's EN/HI dictionary, the whole-plate gate
+(H8) on the left panel, the day-in-the-URL rule (F22), the seven-day strip, the dashboard
+panel's challan list and draft handling. Dropped: `planCardsAction`, the "slipped" state
+(a plan line for a past day is now simply history, visible by paging back), and L4's
+run-date coupling — a plan line is about an item, not a plate, and the run's own date is
+the run sheet's business.
+
+The cost was one day's work replaced. It was cheap because the four L commits were local
+and the migration for the part that survived (0036) was separate from the part that did
+not. The lesson is recorded in the working memory rather than here: plan features around
+a light, re-orderable decision on items, and attach cards and dates when they exist.
