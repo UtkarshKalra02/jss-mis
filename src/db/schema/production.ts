@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { baseColumns } from "./_shared";
-import { jobCardStatusEnum, paperBundleEnum, supplyByEnum } from "./enums";
+import { jobCardStatusEnum, paperBundleEnum, planKindEnum, supplyByEnum } from "./enums";
 import { poItem } from "./order";
 import { stage } from "./reference";
 import { appUser } from "./users";
@@ -508,3 +508,81 @@ export const jobCardItem = pgTable(
   ],
 );
 
+
+/* -------------------------------------------------------------------------- */
+/* plan_entry                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ONE LINE OF THE DAY'S PLAN — decision M1.
+ *
+ * The 6pm meeting plans PO ITEMS, not job cards: a card is often raised on
+ * the morning the job runs, so a board that could only date an existing card
+ * left most of the meeting's work unplannable. An entry is an item, a day, and
+ * what happens to it that day — a station (Production) or the gate
+ * (Dispatch) — in a sequence the meeting can reshuffle at will.
+ *
+ * WHAT IS STORED IS A DECISION, NOT A DERIVATION. The plan is a human input
+ * with no other source, so writing it down does not touch non-negotiables 1
+ * and 2: the item's stage and its pending quantity are still read from the
+ * view. `stage_code` here is where the meeting SAID the job goes tomorrow,
+ * which may differ from where it is sitting tonight.
+ *
+ * `sequence` is the order within (day, kind). An urgent job is inserted and
+ * the rest shift; there is no "priority" column because a position is one.
+ *
+ * Rows are soft-deleted (non-negotiable 7); taking a job off the plan is a
+ * removal that stays in the audit log.
+ */
+export const planEntry = pgTable(
+  "plan_entry",
+  {
+    ...baseColumns(),
+
+    planDate: date().notNull(),
+    poItemId: uuid()
+      .notNull()
+      .references(() => poItem.id),
+    kind: planKindEnum().notNull(),
+
+    /**
+     * Where the job goes that day. Required for Production, null for Dispatch.
+     * A foreign key to the stage's CODE, like stage_event, because codes are
+     * immutable (C2) and the floor plan is grouped by them.
+     */
+    stageCode: text().references(() => stage.code),
+
+    /** Which press, when the station is one. Optional even then. */
+    machineId: uuid().references(() => machine.id),
+
+    /** Order within the day and kind; lower runs first. */
+    sequence: integer().notNull().default(0),
+
+    /**
+     * How many pieces. For Dispatch it defaults to the pending quantity when
+     * added and is edited for a partial. Null on Production, where the
+     * quantity is the card's business.
+     */
+    plannedQty: integer(),
+
+    notes: text(),
+  },
+  (t) => [
+    // An item is on a day's plan once per station (or once for dispatch).
+    // PARTIAL, like the rest of the schema (C5).
+    uniqueIndex("plan_entry_key")
+      .on(t.planDate, t.kind, t.poItemId, sql`coalesce(${t.stageCode}, '')`)
+      .where(sql`${t.deletedAt} is null`),
+    index("plan_entry_day_idx").on(t.planDate, t.kind, t.sequence),
+    index("plan_entry_po_item_idx").on(t.poItemId),
+    check(
+      "plan_entry_kind_stage",
+      sql`(${t.kind} = 'Production' and ${t.stageCode} is not null)
+          or (${t.kind} = 'Dispatch' and ${t.stageCode} is null and ${t.machineId} is null)`,
+    ),
+    check(
+      "plan_entry_planned_qty_positive",
+      sql`${t.plannedQty} is null or ${t.plannedQty} > 0`,
+    ),
+  ],
+);

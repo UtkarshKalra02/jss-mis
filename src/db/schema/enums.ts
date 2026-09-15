@@ -143,6 +143,13 @@ export const approvalStatusEnum = pgEnum("approval_status", [
   "Rejected",
 ]);
 
+/**
+ * What a plan entry schedules (M1). Production is a job at a station on a day;
+ * Dispatch is a job going out that day. Two kinds in one table because the
+ * day's plan is read and printed as one thing.
+ */
+export const planKindEnum = pgEnum("plan_kind", ["Production", "Dispatch"]);
+
 export const jobCardStatusEnum = pgEnum("job_card_status", [
   "Planned",
   "In Process",
