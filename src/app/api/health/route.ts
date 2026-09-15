@@ -103,8 +103,13 @@ const SCHEMA_EXPECTATIONS: {
              where table_name = 'stage' and column_name = 'is_process'`,
   },
   {
-    what: "dispatch_consumption_guard()",
-    since: "0008_draft_does_not_consume",
+    // 0008 added this; 0035 dropped it again (K12). Checking for its absence
+    // is what proves 0035 ran — checking for its presence, which this did
+    // until 15 Sep 2026, reported a correct database as behind, and said
+    // nothing about the two migrations that actually were missing.
+    what: "dispatch_consumption_guard() gone",
+    since: "0035_over_delivery_allowed",
+    expect: "absent",
     sql: sql`select 1 from pg_proc where proname = 'dispatch_consumption_guard'`,
   },
   {
@@ -224,6 +229,17 @@ const SCHEMA_EXPECTATIONS: {
     since: "0028_drop_design_process",
     expect: "absent",
     sql: sql`select 1 from information_schema.tables where table_name = 'design_process'`,
+  },
+  {
+    what: "plan_entry",
+    since: "0037_plan_entry",
+    sql: sql`select 1 from information_schema.tables where table_name = 'plan_entry'`,
+  },
+  {
+    what: "stage.name_hi",
+    since: "0036_stage_hindi_name",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'stage' and column_name = 'name_hi'`,
   },
   {
     what: "delegation refuses an owner assignee",

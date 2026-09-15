@@ -223,7 +223,7 @@ async function CardForm({ poItemId }: { poItemId: string }) {
           designSelected={designFab}
           cardSelected={new Map()}
           recentRuns={runs}
-          card={plannedDate ? { plannedDate } : undefined}
+          defaultPlannedDate={plannedDate}
           startOpen
         />
       </div>

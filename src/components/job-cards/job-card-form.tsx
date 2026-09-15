@@ -133,6 +133,7 @@ export function JobCardForm({
   itemCode,
   pendingQty,
   card,
+  defaultPlannedDate,
   machines,
   fabricationOptions,
   designSelected,
@@ -147,6 +148,13 @@ export function JobCardForm({
   itemCode: string;
   pendingQty?: number;
   card?: JobCardPlanValues;
+  /**
+   * On release: the day the planning board already put this item on (M1),
+   * so the card is born with it. Passed on its own rather than as a partial
+   * `card`, because `card` also means "this is an existing card" to the
+   * fabrication labels below.
+   */
+  defaultPlannedDate?: string | null;
   machines: MachineOption[];
   /** Run-scope fabrication options this design has — new die or old, etc. */
   /** The whole vocabulary. The card answers all of it now (J24). */
@@ -328,7 +336,7 @@ export function JobCardForm({
             name="plannedDate"
             label="Planned date"
             type="date"
-            defaultValue={card?.plannedDate}
+            defaultValue={card?.plannedDate ?? defaultPlannedDate ?? undefined}
           />
 
           {!sheetOnRun ? (
