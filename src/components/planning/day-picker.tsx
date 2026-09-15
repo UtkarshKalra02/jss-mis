@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  * board somebody has open at 6pm can be refreshed, sent, or printed without
  * losing its place — the print link carries the same `?date=`.
  *
- * The seven-day strip is the week at a glance: how many cards each day
+ * The seven-day strip is the week at a glance: how many jobs each day
  * already holds, so "tomorrow is full, push it to Thursday" is a decision made
  * from the screen rather than from paging through it.
  */
@@ -24,8 +24,8 @@ export function DayPicker({
 }: {
   date: string;
   today: string;
-  /** Seven days from today, each with the cards already planned on it. */
-  strip: { date: string; label: string; cards: number }[];
+  /** Seven days from today, each with what is already planned on it. */
+  strip: { date: string; label: string; production: number; dispatch: number }[];
   prev: string;
   next: string;
 }) {
@@ -73,7 +73,12 @@ export function DayPicker({
               )}
             >
               <span>{d.date === today ? "Today" : d.label}</span>
-              <span className="tabular-nums">{d.cards === 0 ? "·" : d.cards}</span>
+              {/* Jobs on the floor, and jobs going out. */}
+              <span className="tabular-nums">
+                {d.production === 0 && d.dispatch === 0
+                  ? "·"
+                  : `${d.production}${d.dispatch > 0 ? ` ↗${d.dispatch}` : ""}`}
+              </span>
             </Link>
           </li>
         ))}

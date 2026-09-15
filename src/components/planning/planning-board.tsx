@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatDaysToCommitted, formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { planCardsAction, type FormState } from "@/modules/planning/actions";
-import type { PlanningRow } from "@/modules/planning/queries";
+import { addToPlanAction, type FormState } from "@/modules/planning/actions";
+import type { PlanItemRow } from "@/modules/planning/queries";
 import {
   clientsOn,
   filterGroupsBy,
@@ -21,88 +21,113 @@ import {
   stageSummary,
   type RunGroup,
 } from "@/modules/stage-update/grouping";
+import type { StageOption } from "@/modules/stage-update/precedence";
 
 const initialState: FormState = { ok: false, error: null };
 
 const inputClass =
   "border-input bg-background h-9 rounded-md border px-2 text-[13px] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none";
 
-function Submit({ label, disabled }: { label: string; disabled: boolean }) {
+export type MachineChoice = { id: string; name: string };
+
+function Submit({
+  label,
+  kind,
+  disabled,
+  variant,
+}: {
+  label: string;
+  kind: "Production" | "Dispatch";
+  disabled: boolean;
+  variant?: "outline";
+}) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={disabled || pending}>
+    <Button type="submit" name="kind" value={kind} variant={variant} disabled={disabled || pending}>
       {pending ? "Saving…" : label}
     </Button>
   );
 }
 
 /** What the search box looks in: the Stage Update set plus the card number. */
-function searchable(row: PlanningRow): (string | null)[] {
+function searchable(row: PlanItemRow): (string | null)[] {
   return [
-    row.jcNo,
     row.itemCode,
     row.itemName,
     row.clientCode,
     row.clientName,
     row.poInternalNo,
     row.currentStageName,
+    row.jcNo,
     row.machineName,
     row.runNo,
   ];
 }
 
+/** "Tue 16 Sep" for the planned-on chips. */
+function shortDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-IN", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y!, m! - 1, d!)));
+}
+
 /**
- * The left panel of spec 6.6 — cards that need a day — with the tick list
- * that plans them (L1).
+ * The left panel of spec 6.6 — every open item, most urgent first — with the
+ * tick list that puts items on a day (M1).
  *
- * THE PLATE GATE IS THE SAME ONE STAGE UPDATE HAS (H8). A ganged run is one
- * row; it carries no checkbox until it is opened, and opening it reveals whose
- * jobs are on it and a "select all N in this run" tick. Assigning a day to
- * several clients' jobs in one unexamined click has the same shape as
- * advancing their stages, and the run's own date moves with them only when
- * every one of them is ticked (L4).
+ * Two buttons, one form: "Add to production" needs a station (M2) and takes
+ * the optional press; "Add to dispatch" needs nothing and defaults each line
+ * to the pending quantity (M3). The kind rides on the button that was
+ * pressed, so no state flag arrives a render late (F20).
+ *
+ * THE PLATE GATE IS THE SAME ONE STAGE UPDATE HAS (H8). Items whose cards
+ * share a press run are one row until opened.
  */
 export function PlanningBoard({
   rows,
+  stages,
+  machines,
   runCardTotals,
   boardDate,
   canWrite,
 }: {
-  rows: PlanningRow[];
+  rows: PlanItemRow[];
+  stages: StageOption[];
+  machines: MachineChoice[];
   /** Live cards per run, including ones not on this panel (H8). */
   runCardTotals: Record<string, number>;
-  /** The day the right panel is showing — the default target for "Plan for". */
+  /** The day the right panel is showing — the default target. */
   boardDate: string;
   canWrite: boolean;
 }) {
   const totals = useMemo(() => new Map(Object.entries(runCardTotals)), [runCardTotals]);
   const groups = useMemo(() => groupByPressRun(rows, totals), [rows, totals]);
 
-  // Filtering in the browser, on Stage Update's reasoning: the whole dataset
-  // is already here, and a re-query would remount the grid and lose the ticks.
   const [query, setQuery] = useState("");
   const visible = useMemo(() => filterGroupsBy(groups, query, searchable), [groups, query]);
   const shown = useMemo(() => rowsIn(visible), [visible]);
 
-  const [state, formAction] = useActionState(planCardsAction, initialState);
+  const [state, formAction] = useActionState(addToPlanAction, initialState);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [target, setTarget] = useState(boardDate);
+  const [stageCode, setStageCode] = useState("");
+  const [stageTouched, setStageTouched] = useState(false);
+  const [machineId, setMachineId] = useState("");
 
-  // The right panel's day is the natural answer to "plan for when?", so a
-  // change of day up top changes the default here too.
   useEffect(() => setTarget(boardDate), [boardDate]);
 
-  // A successful save clears the ticks; the rows themselves leave the panel
-  // when the page revalidates.
   useEffect(() => {
     if (state.ok) setSelected(new Set());
   }, [state]);
 
-  // A row the search has hidden is dropped from the selection — a hidden tick
-  // is a card nobody can see being planned.
+  // A row the search has hidden is dropped from the selection.
   useEffect(() => {
-    const onScreen = new Set(shown.map((r) => r.jobCardId));
+    const onScreen = new Set(shown.map((r) => r.poItemId));
     setSelected((current) => {
       const kept = new Set([...current].filter((id) => onScreen.has(id)));
       return kept.size === current.size ? current : kept;
@@ -114,12 +139,10 @@ export function PlanningBoard({
       const next = new Set(current);
       if (next.has(runId)) {
         next.delete(runId);
-        // Collapsing clears any ticks inside, or the next submit would carry
-        // rows nobody can see (H8).
         setSelected((sel) => {
           const kept = new Set(sel);
           const group = groups.find((g) => g.kind === "run" && g.pressRunId === runId);
-          if (group?.kind === "run") for (const r of group.rows) kept.delete(r.jobCardId);
+          if (group?.kind === "run") for (const r of group.rows) kept.delete(r.poItemId);
           return kept;
         });
       } else next.add(runId);
@@ -137,82 +160,148 @@ export function PlanningBoard({
     });
 
   const selectable = useMemo(
-    () => selectableRows(visible, expanded).map((r) => r.jobCardId),
+    () => selectableRows(visible, expanded).map((r) => r.poItemId),
     [visible, expanded],
   );
   const allSelected = selectable.length > 0 && selectable.every((id) => selected.has(id));
 
-  const chosen = shown.filter((r) => selected.has(r.jobCardId));
+  const chosen = shown.filter((r) => selected.has(r.poItemId));
   const clientsChosen = new Set(chosen.map((r) => r.clientCode)).size;
+
+  /*
+   * The station defaults to where the ticked items are, when they agree, and
+   * is otherwise left for the person to choose. Once they have chosen, their
+   * choice stands whatever else they tick.
+   */
+  const commonStage = useMemo(() => {
+    const codes = new Set(chosen.map((r) => r.currentStage).filter(Boolean));
+    return codes.size === 1 ? ([...codes][0] as string) : "";
+  }, [chosen]);
+  const effectiveStage = stageTouched ? stageCode : commonStage;
 
   return (
     <form action={formAction}>
       {chosen.map((r) => (
-        <input key={r.jobCardId} type="hidden" name="jobCardId" value={r.jobCardId} />
+        <input key={r.poItemId} type="hidden" name="poItemId" value={r.poItemId} />
       ))}
 
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="relative w-full max-w-md">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Card, item, client, PO, stage, machine, run…"
-            className="pl-9"
-            aria-label="Search the cards that need a day"
-          />
-        </div>
-
-        {canWrite ? (
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="space-y-1">
-              <label htmlFor="plan-for" className="text-muted-foreground text-xs">
-                Plan {selected.size > 0 ? `${selected.size} selected` : "selected"} for
-              </label>
-              <input
-                id="plan-for"
-                type="date"
-                name="plannedDate"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                className={cn(inputClass, "w-44")}
-                required
-              />
-            </div>
-            <Submit
-              label={`Plan ${selected.size || ""}`.trim()}
-              disabled={selected.size === 0 || target === ""}
-            />
-          </div>
-        ) : null}
+      <div className="relative max-w-md">
+        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Item, client, PO, stage, card, machine, run…"
+          className="pl-9"
+          aria-label="Search the open items"
+        />
       </div>
-
       {query.trim() ? (
         <p className="text-muted-foreground mt-1.5 text-xs" role="status">
-          Showing {shown.length} of {rows.length} card{rows.length === 1 ? "" : "s"}.{" "}
+          Showing {shown.length} of {rows.length} item{rows.length === 1 ? "" : "s"}.{" "}
           <button type="button" onClick={() => setQuery("")} className="text-primary hover:underline">
             Clear search
           </button>
         </p>
       ) : null}
 
-      {/* Several clients in one plan is ordinary, and is stated so the
-          person can see it — not coloured, because it is not a problem. */}
-      {chosen.length > 1 && clientsChosen > 1 ? (
-        <p className="text-muted-foreground mt-1.5 text-xs" role="status">
-          {chosen.length} cards across {clientsChosen} clients.
-        </p>
-      ) : null}
+      {canWrite ? (
+        <div className="bg-muted/40 mt-3 flex flex-wrap items-end gap-3 rounded-lg border p-3">
+          <div className="space-y-1">
+            <label htmlFor="plan-date" className="text-muted-foreground text-xs">
+              Day
+            </label>
+            <input
+              id="plan-date"
+              type="date"
+              name="planDate"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              className={cn(inputClass, "w-40")}
+              required
+            />
+          </div>
 
-      {state.error ? (
-        <p role="alert" className="text-overdue mt-2 text-sm">
-          {state.error}
-        </p>
-      ) : null}
-      {state.ok && state.message ? (
-        <p role="status" className="text-on-time mt-2 text-sm">
-          {state.message}
-        </p>
+          <div className="space-y-1">
+            <label htmlFor="plan-stage" className="text-muted-foreground text-xs">
+              Station
+            </label>
+            <select
+              id="plan-stage"
+              name="stageCode"
+              value={effectiveStage}
+              onChange={(e) => {
+                setStageTouched(true);
+                setStageCode(e.target.value);
+              }}
+              className={cn(inputClass, "w-48")}
+            >
+              <option value="">Choose a station…</option>
+              {stages.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="plan-machine" className="text-muted-foreground text-xs">
+              Machine
+            </label>
+            <select
+              id="plan-machine"
+              name="machineId"
+              value={machineId}
+              onChange={(e) => setMachineId(e.target.value)}
+              className={cn(inputClass, "w-44")}
+            >
+              <option value="">—</option>
+              {machines.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex gap-2">
+            <Submit
+              label={`Add ${selected.size || ""} to production`.replace("  ", " ")}
+              kind="Production"
+              disabled={selected.size === 0 || target === "" || effectiveStage === ""}
+            />
+            <Submit
+              label={`Add ${selected.size || ""} to dispatch`.replace("  ", " ")}
+              kind="Dispatch"
+              variant="outline"
+              disabled={selected.size === 0 || target === ""}
+            />
+          </div>
+
+          <div className="basis-full">
+            {chosen.length > 0 && effectiveStage === "" ? (
+              <p className="text-muted-foreground text-xs" role="status">
+                Choose the station these {chosen.length === 1 ? "goes" : "go"} to, or add
+                {chosen.length === 1 ? " it" : " them"} to the dispatch list.
+              </p>
+            ) : null}
+            {chosen.length > 1 && clientsChosen > 1 ? (
+              <p className="text-muted-foreground text-xs" role="status">
+                {chosen.length} items across {clientsChosen} clients.
+              </p>
+            ) : null}
+            {state.error ? (
+              <p role="alert" className="text-overdue text-sm">
+                {state.error}
+              </p>
+            ) : null}
+            {state.ok && state.message ? (
+              <p role="status" className="text-on-time text-sm">
+                {state.message}
+              </p>
+            ) : null}
+          </div>
+        </div>
       ) : null}
 
       <div className="mt-3 overflow-x-auto rounded-lg border">
@@ -226,38 +315,36 @@ export function PlanningBoard({
                     checked={allSelected}
                     onChange={(e) => setTicked(selectable, e.target.checked)}
                     className="accent-primary size-4"
-                    aria-label="Select every card that is currently shown"
+                    aria-label="Select every item that is currently shown"
                   />
                 </th>
               ) : null}
-              <th className="px-3">Card</th>
-              <th className="px-3">Job</th>
+              <th className="px-3">Item</th>
               <th className="px-3">Client</th>
-              <th className="px-3">Stage</th>
-              <th className="px-3">Machine</th>
+              <th className="px-3">Stage now</th>
               <th className="px-3 text-right">Pending</th>
               <th className="px-3">Due</th>
-              <th className="px-3">Was planned</th>
+              <th className="px-3">Planned on</th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={canWrite ? 9 : 8} className="text-muted-foreground px-3 py-8 text-center">
+                <td colSpan={canWrite ? 7 : 6} className="text-muted-foreground px-3 py-8 text-center">
                   {query.trim()
                     ? `Nothing here matches “${query.trim()}”.`
-                    : "Every open job card has a day. Release a card to plan more."}
+                    : "Nothing open. Every item has been delivered or closed."}
                 </td>
               </tr>
             ) : (
               visible.map((group) =>
                 group.kind === "item" ? (
-                  <CardRow
-                    key={group.row.jobCardId}
+                  <ItemRow
+                    key={group.row.poItemId}
                     row={group.row}
                     canWrite={canWrite}
-                    ticked={selected.has(group.row.jobCardId)}
-                    onTick={(on) => setTicked([group.row.jobCardId], on)}
+                    ticked={selected.has(group.row.poItemId)}
+                    onTick={(on) => setTicked([group.row.poItemId], on)}
                   />
                 ) : (
                   <RunRows
@@ -285,17 +372,17 @@ export function PlanningBoard({
 
 /**
  * Section 6.6's colour code, as a left rule on the row and a tone on the due
- * cell. Semantic colour only: red is overdue, amber is inside the at-risk
- * window, green is a commitment with room, grey is no commitment at all (F8).
+ * cell. Semantic colour only: red overdue, amber inside the at-risk window,
+ * green a commitment with room, grey no commitment at all (F8).
  */
-function tone(row: Pick<PlanningRow, "isOverdue" | "isAtRisk" | "committedDate">) {
+function tone(row: Pick<PlanItemRow, "isOverdue" | "isAtRisk" | "committedDate">) {
   if (row.isOverdue) return { rule: "border-l-overdue", text: "text-overdue font-medium" };
   if (row.isAtRisk) return { rule: "border-l-at-risk", text: "text-at-risk font-medium" };
   if (row.committedDate) return { rule: "border-l-on-time", text: "" };
   return { rule: "border-l-neutral-status", text: "text-muted-foreground" };
 }
 
-function DueCell({ row }: { row: PlanningRow }) {
+function DueCell({ row }: { row: PlanItemRow }) {
   const { text } = tone(row);
   if (!row.committedDate) {
     return <span className="text-muted-foreground text-[12px]">No commitment</span>;
@@ -310,39 +397,43 @@ function DueCell({ row }: { row: PlanningRow }) {
   );
 }
 
-function JobCell({ row }: { row: PlanningRow }) {
+function PlannedOn({ row }: { row: PlanItemRow }) {
+  if (row.productionDates.length === 0 && row.dispatchDates.length === 0) {
+    return <span className="text-muted-foreground text-[12px]">—</span>;
+  }
   return (
-    <div className="min-w-0">
-      <p className="truncate font-medium">{row.itemName}</p>
-      <p className="text-muted-foreground text-[12px] tabular-nums">
-        {row.itemCode} · {row.poInternalNo}
-        {row.itemCount > 1
-          ? ` · +${row.itemCount - 1} more item${row.itemCount === 2 ? "" : "s"}`
-          : ""}
-      </p>
-    </div>
+    <span className="flex flex-wrap gap-1">
+      {row.productionDates.map((d) => (
+        <Link
+          key={`p${d}`}
+          href={`/planning?date=${d}`}
+          className="bg-muted rounded px-1.5 py-0.5 text-[11px] whitespace-nowrap hover:underline"
+        >
+          {shortDay(d)}
+        </Link>
+      ))}
+      {row.dispatchDates.map((d) => (
+        <Link
+          key={`d${d}`}
+          href={`/planning?date=${d}`}
+          className="bg-muted rounded px-1.5 py-0.5 text-[11px] whitespace-nowrap hover:underline"
+          title="On the dispatch list"
+        >
+          ↗ {shortDay(d)}
+        </Link>
+      ))}
+    </span>
   );
 }
 
-function StageCell({ row }: { row: PlanningRow }) {
-  if (row.stageCount > 1) {
-    return (
-      <span className="text-muted-foreground text-[13px]" title="The card's items are at different stages">
-        Mixed — {row.stageCount} stages
-      </span>
-    );
-  }
-  return <StagePill name={row.currentStageName} colour={row.currentStageColour} />;
-}
-
-function CardRow({
+function ItemRow({
   row,
   canWrite,
   ticked,
   onTick,
   inRun = false,
 }: {
-  row: PlanningRow;
+  row: PlanItemRow;
   canWrite: boolean;
   ticked: boolean;
   onTick: (on: boolean) => void;
@@ -358,51 +449,49 @@ function CardRow({
             checked={ticked}
             onChange={(e) => onTick(e.target.checked)}
             className="accent-primary size-4"
-            aria-label={`Select ${row.jcNo}`}
+            aria-label={`Select ${row.itemCode}`}
           />
         </td>
       ) : null}
-      <td className={cn("px-3 whitespace-nowrap tabular-nums", !canWrite && inRun && "pl-8")}>
-        <Link href={`/job-cards/${row.jobCardId}`} className="text-primary hover:underline">
-          {row.jcNo}
-        </Link>
-        {row.status !== "Planned" ? (
-          <span className="text-muted-foreground ml-1.5 text-[11px]">{row.status}</span>
-        ) : null}
-      </td>
-      <td className="max-w-72 px-3">
-        <JobCell row={row} />
+      <td className={cn("max-w-80 px-3", !canWrite && inRun && "pl-8")}>
+        <p className="truncate font-medium">
+          <Link href={`/items/${row.poItemId}`} className="hover:underline">
+            {row.itemName}
+          </Link>
+        </p>
+        <p className="text-muted-foreground text-[12px] tabular-nums">
+          {row.itemCode} · {row.poInternalNo}
+          {row.jcNo ? (
+            <>
+              {" · "}
+              <Link href={`/job-cards/${row.jobCardId}`} className="text-primary hover:underline">
+                {row.jcNo}
+              </Link>
+              {row.machineName ? ` · ${row.machineName}` : ""}
+            </>
+          ) : (
+            <span className="text-muted-foreground/70"> · no card yet</span>
+          )}
+        </p>
       </td>
       <td className="px-3">
         <span title={row.clientName}>{row.clientCode}</span>
-        {row.clientCount > 1 ? (
-          <span className="text-muted-foreground text-[12px]"> +{row.clientCount - 1}</span>
-        ) : null}
       </td>
       <td className="px-3">
-        <StageCell row={row} />
+        <StagePill name={row.currentStageName} colour={row.currentStageColour} />
       </td>
-      <td className="text-muted-foreground px-3">{row.machineName ?? "—"}</td>
       <td className="px-3 text-right tabular-nums">{formatQty(row.pendingQty)}</td>
       <td className="px-3">
         <DueCell row={row} />
       </td>
       <td className="px-3">
-        {/* A slipped card says when it was meant to run. Amber, because a plan
-            that did not happen is the thing the meeting is for. */}
-        {row.plannedDate ? (
-          <span className="text-at-risk text-[12px] whitespace-nowrap tabular-nums">
-            {formatDate(row.plannedDate)} · slipped
-          </span>
-        ) : (
-          <span className="text-muted-foreground text-[12px]">—</span>
-        )}
+        <PlannedOn row={row} />
       </td>
     </tr>
   );
 }
 
-function runSummaryLine(group: RunGroup<PlanningRow>): string {
+function runSummaryLine(group: RunGroup<PlanItemRow>): string {
   const shown = group.rows.length;
   const clients = clientsOn(group.rows).length;
   const jobs =
@@ -420,14 +509,14 @@ function RunRows({
   selected,
   setTicked,
 }: {
-  group: RunGroup<PlanningRow>;
+  group: RunGroup<PlanItemRow>;
   canWrite: boolean;
   open: boolean;
   onToggle: () => void;
   selected: ReadonlySet<string>;
   setTicked: (ids: readonly string[], on: boolean) => void;
 }) {
-  const memberIds = group.rows.map((r) => r.jobCardId);
+  const memberIds = group.rows.map((r) => r.poItemId);
   const allInRun = memberIds.every((id) => selected.has(id));
   const summary = stageSummary(group.rows);
   const pending = group.rows.reduce((n, r) => n + r.pendingQty, 0);
@@ -449,7 +538,7 @@ function RunRows({
             ) : null}
           </td>
         ) : null}
-        <td colSpan={3} className="px-3 py-2">
+        <td colSpan={2} className="px-3 py-2">
           <button
             type="button"
             onClick={onToggle}
@@ -475,7 +564,6 @@ function RunRows({
             <span className="text-muted-foreground text-[13px]">—</span>
           )}
         </td>
-        <td className="px-3" />
         <td className="px-3 text-right tabular-nums">{formatQty(pending)}</td>
         <td colSpan={2} className="px-3">
           {canWrite && !open ? (
@@ -488,12 +576,12 @@ function RunRows({
 
       {open
         ? group.rows.map((row) => (
-            <CardRow
-              key={row.jobCardId}
+            <ItemRow
+              key={row.poItemId}
               row={row}
               canWrite={canWrite}
-              ticked={selected.has(row.jobCardId)}
-              onTick={(on) => setTicked([row.jobCardId], on)}
+              ticked={selected.has(row.poItemId)}
+              onTick={(on) => setTicked([row.poItemId], on)}
               inRun
             />
           ))

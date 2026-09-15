@@ -14,7 +14,7 @@ import {
   type Station,
 } from "@/modules/planning/floor-plan";
 import { dayPlan } from "@/modules/planning/queries";
-import { listStages } from "@/modules/stages/queries";
+import { listStages, type StageRow } from "@/modules/stages/queries";
 
 export const metadata: Metadata = { title: "Floor plan · print" };
 
@@ -24,10 +24,11 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
  * THE DAILY FLOOR PLAN — spec 6.6's print action, the fourth print surface
  * after the job card (J7), the challan (K14) and the pending work sheet (K16).
  *
- * "Jobs grouped by station, bold job names, minimal." One day's planned cards
- * from `dayPlan`, arranged by `groupByStation` — the same query and the same
+ * "Jobs grouped by station, bold job names, minimal." One day's plan from
+ * `dayPlan`, arranged by `groupByStation` — the same query and the same
  * function as the board's right panel, so the paper cannot disagree with the
- * screen it was printed from.
+ * screen it was printed from. Production by station in the meeting's order,
+ * then the dispatch list (M2, M3).
  *
  * ENGLISH OR HINDI, from `?lang=`. Stage names come from the stage table's
  * own `name_hi` where somebody has typed it and fall back to English where
@@ -50,7 +51,10 @@ export default async function FloorPlanPrintPage({
   const [rows, stages] = await Promise.all([dayPlan(date), listStages()]);
   const byCode = new Map(stages.map((s) => [s.code, s]));
   const stations = groupByStation(rows);
-  const totalPending = rows.reduce((n, r) => n + r.pendingQty, 0);
+
+  const production = rows.filter((r) => r.kind === "Production");
+  const dispatch = rows.filter((r) => r.kind === "Dispatch");
+  const dispatchQty = dispatch.reduce((n, r) => n + (r.plannedQty ?? 0), 0);
 
   return (
     <>
@@ -77,8 +81,11 @@ export default async function FloorPlanPrintPage({
 
         <section className="print-avoid-break mt-2 border-b border-neutral-400 pb-2">
           <p className="print-hint">
-            {rows.length} {t(rows.length === 1 ? "job" : "jobs", lang)} ·{" "}
-            <span className="tabular-nums">{formatQty(totalPending)}</span> {t("pieces", lang)} ·{" "}
+            {production.length} {t(production.length === 1 ? "job" : "jobs", lang)}
+            {dispatch.length > 0
+              ? ` · ${t("dispatch", lang)} ${dispatch.length} · ${formatQty(dispatchQty)} ${t("pieces", lang)}`
+              : ""}
+            {" · "}
             {t("printed", lang)} {formatDate(todayIST())}
           </p>
         </section>
@@ -89,14 +96,15 @@ export default async function FloorPlanPrintPage({
           <div className="mt-3 space-y-4">
             {stations.map((station) => (
               <StationBlock
-                key={station.key ?? "__none"}
+                key={station.key}
                 station={station}
                 label={
-                  station.key === null
-                    ? t("notStarted", lang)
+                  station.kind === "Dispatch"
+                    ? t("dispatch", lang)
                     : stageLabel(byCode.get(station.key), station.name, lang)
                 }
                 lang={lang}
+                byCode={byCode}
               />
             ))}
           </div>
@@ -109,8 +117,9 @@ export default async function FloorPlanPrintPage({
 }
 
 /**
- * One station. The heading is the stage; the rows are the jobs, names in
- * bold because the operator reads the name first and everything else second.
+ * One station. The heading is where the jobs go; the rows are the queue in
+ * the meeting's order, names in bold because the operator reads the name
+ * first and everything else second.
  *
  * NO COLOUR. print.css is black on white and a laser printer drops red to
  * save ink, so "overdue" is carried by the words in the Due column, set bold.
@@ -119,11 +128,15 @@ function StationBlock({
   station,
   label,
   lang,
+  byCode,
 }: {
   station: Station;
   label: string;
   lang: Lang;
+  byCode: Map<string, StageRow>;
 }) {
+  const isDispatch = station.kind === "Dispatch";
+
   return (
     <section className="print-avoid-break">
       <div className="flex items-baseline justify-between border-b border-black pb-0.5">
@@ -137,34 +150,36 @@ function StationBlock({
       <table className="w-full border-collapse text-[10pt]">
         <thead>
           <tr>
-            <Th>{t("card", lang)}</Th>
+            <Th>{t("position", lang)}</Th>
             <Th>{t("jobName", lang)}</Th>
             <Th>{t("client", lang)}</Th>
-            <Th>{t("machine", lang)}</Th>
+            {isDispatch ? null : <Th>{t("card", lang)}</Th>}
+            {isDispatch ? null : <Th>{t("machine", lang)}</Th>}
+            <Th>{t("stage", lang)}</Th>
             <Th align="right">{t("qty", lang)}</Th>
             <Th>{t("due", lang)}</Th>
           </tr>
         </thead>
         <tbody>
-          {station.rows.map((row) => (
-            <tr key={row.jobCardId}>
-              <Td className="whitespace-nowrap tabular-nums">{row.jcNo}</Td>
+          {station.rows.map((row, i) => (
+            <tr key={row.entryId}>
+              <Td className="tabular-nums">{i + 1}</Td>
               <Td>
                 <span className="text-[11pt] font-bold">{row.itemName}</span>
-                <span className="print-hint">
-                  {" "}
-                  {row.itemCode}
-                  {row.itemCount > 1 ? ` · +${row.itemCount - 1} ${t("more", lang)}` : ""}
-                  {row.stageCount > 1 ? ` · ${t("mixed", lang)}` : ""}
-                  {row.runNo ? ` · ${row.runNo}` : ""}
-                </span>
+                <span className="print-hint"> {row.itemCode}</span>
               </Td>
+              <Td>{row.clientCode}</Td>
+              {isDispatch ? null : <Td className="whitespace-nowrap tabular-nums">{row.jcNo ?? ""}</Td>}
+              {isDispatch ? null : <Td>{row.machineName ?? ""}</Td>}
+              {/* Where the job is tonight — so the floor knows where to fetch it from. */}
               <Td>
-                {row.clientCode}
-                {row.clientCount > 1 ? ` +${row.clientCount - 1}` : ""}
+                {row.currentStage
+                  ? stageLabel(byCode.get(row.currentStage), row.currentStageName, lang)
+                  : t("notStarted", lang)}
               </Td>
-              <Td>{row.machineName ?? ""}</Td>
-              <Td className="text-right tabular-nums">{formatQty(row.pendingQty)}</Td>
+              <Td className="text-right tabular-nums">
+                {formatQty(isDispatch ? row.plannedQty : row.pendingQty)}
+              </Td>
               <Td className="whitespace-nowrap">
                 {row.committedDate ? (
                   <>

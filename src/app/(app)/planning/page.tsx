@@ -10,14 +10,10 @@ import { PlanningBoard } from "@/components/planning/planning-board";
 import { Button } from "@/components/ui/button";
 import { addDaysISO, todayIST } from "@/lib/dates";
 import { formatDate } from "@/lib/format";
+import { machineOptions } from "@/modules/job-cards/queries";
 import { groupByStation } from "@/modules/planning/floor-plan";
-import {
-  cardsToPlan,
-  dayPlan,
-  plannedCountsBetween,
-  runCardTotals,
-  unreleasedItemCount,
-} from "@/modules/planning/queries";
+import { dayPlan, itemsToPlan, plannedCountsBetween } from "@/modules/planning/queries";
+import { listAllStages, runCardCounts } from "@/modules/stage-update/queries";
 
 export const metadata: Metadata = { title: "Job planning · JSS MIS" };
 
@@ -35,17 +31,14 @@ function shortDay(iso: string): string {
 }
 
 /**
- * Spec 6.6 — the 6pm meeting screen (L1).
+ * Spec 6.6 — the 6pm meeting screen (M1–M3).
  *
- * Two panels. Left: job cards that need a day — undated, or planned for a day
- * that has passed and still open — most urgent first, colour-coded by the
- * committed date of the most urgent item each covers. Right: the chosen day,
- * grouped by station, which defaults to TOMORROW because that is the question
- * the meeting is answering.
+ * Left: every open item, most urgent first, colour-coded by committed date,
+ * with its card when it has one. Right: the chosen day — production by
+ * station in the meeting's order, then the dispatch list — defaulting to
+ * TOMORROW because that is the question the meeting is answering.
  *
  * PLANNER and ADMIN plan; OWNER sees the same board with no controls (B2).
- * Items nobody has raised a card for yet cannot be planned from here — there
- * is nothing to date — so they are counted and the release screen is linked.
  */
 export default async function PlanningPage({
   searchParams,
@@ -58,29 +51,32 @@ export default async function PlanningPage({
   const today = todayIST();
   const tomorrow = addDaysISO(today, 1);
   const { date: requested } = await searchParams;
-  // A mistyped date shows tomorrow rather than an empty day headed with junk.
   const date = requested && ISO_DATE.test(requested) ? requested : tomorrow;
 
-  const [toPlan, planned, weekCounts, unreleased] = await Promise.all([
-    cardsToPlan(),
+  const [items, planned, weekCounts, stages, machines] = await Promise.all([
+    itemsToPlan(),
     dayPlan(date),
     plannedCountsBetween(today, addDaysISO(today, 6)),
-    unreleasedItemCount(),
+    listAllStages(),
+    machineOptions(),
   ]);
 
   // "2 of 3 jobs shown" on a collapsed plate needs the plate's full count
   // (H8); skipped when nothing on the board is ganged, which is most days.
-  const runIds = [...new Set(toPlan.map((r) => r.pressRunId).filter((id): id is string => !!id))];
-  const totals = Object.fromEntries(await runCardTotals(runIds));
+  const runIds = [...new Set(items.map((r) => r.pressRunId).filter((id): id is string => !!id))];
+  const totals = Object.fromEntries(await runCardCounts(runIds));
 
   const stations = groupByStation(planned);
-  const slipped = toPlan.filter((r) => r.plannedDate !== null).length;
   const isPast = date < today;
 
   const strip = Array.from({ length: 7 }, (_, i) => {
     const d = addDaysISO(today, i);
-    return { date: d, label: shortDay(d), cards: weekCounts.get(d) ?? 0 };
+    const c = weekCounts.get(d);
+    return { date: d, label: shortDay(d), production: c?.production ?? 0, dispatch: c?.dispatch ?? 0 };
   });
+
+  const production = planned.filter((r) => r.kind === "Production").length;
+  const dispatch = planned.length - production;
 
   return (
     <div>
@@ -94,49 +90,30 @@ export default async function PlanningPage({
         </Button>
       </div>
       <p className="text-muted-foreground mt-1 text-[13px]">
-        Tick the job cards that run on a day and plan them. Cards printed together on one
-        plate are grouped — open the run to plan any of them, and the run moves with them
-        when all are planned together.
+        Tick items, choose the station they go to, and add them to a day — or add them to
+        that day&apos;s dispatch list. Reorder the day on the right; an urgent job goes first
+        and the rest follow. A job card is not needed to plan a job.
       </p>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section>
           <div className="flex items-baseline justify-between">
-            <h2 className="text-[15px] font-semibold">Needs a day</h2>
+            <h2 className="text-[15px] font-semibold">Open items</h2>
             <span className="text-muted-foreground text-[13px] tabular-nums">
-              {toPlan.length} card{toPlan.length === 1 ? "" : "s"}
-              {slipped > 0 ? ` · ${slipped} slipped` : ""}
+              {items.length} item{items.length === 1 ? "" : "s"}
             </span>
           </div>
 
           <div className="mt-3">
             <PlanningBoard
-              rows={toPlan}
+              rows={items}
+              stages={stages}
+              machines={machines.map((m) => ({ id: m.id, name: m.name }))}
               runCardTotals={totals}
               boardDate={date}
               canWrite={canWrite}
             />
           </div>
-
-          {/* Work the board cannot see: items with no card. Counted rather
-              than listed, and pointed at the screen that can do something
-              about it. */}
-          {unreleased > 0 ? (
-            <p className="text-muted-foreground mt-3 text-[13px]">
-              {unreleased} open item{unreleased === 1 ? " has" : "s have"} no job card yet and
-              cannot be planned from here.{" "}
-              {can(user.role, "job_card", "write") ? (
-                <Link href="/job-cards/new" className="text-primary hover:underline">
-                  Release a card
-                </Link>
-              ) : (
-                <Link href="/items" className="text-primary hover:underline">
-                  See them in the tracker
-                </Link>
-              )}
-              .
-            </p>
-          ) : null}
         </section>
 
         <section>
@@ -150,7 +127,8 @@ export default async function PlanningPage({
               ) : null}
             </h2>
             <span className="text-muted-foreground text-[13px] tabular-nums">
-              {planned.length} card{planned.length === 1 ? "" : "s"}
+              {production} job{production === 1 ? "" : "s"}
+              {dispatch > 0 ? ` · ${dispatch} to dispatch` : ""}
             </span>
           </div>
 
@@ -171,7 +149,12 @@ export default async function PlanningPage({
           ) : null}
 
           <div className="mt-3">
-            <DayPlan stations={stations} canWrite={canWrite} isPast={isPast} />
+            <DayPlan
+              stations={stations}
+              canWrite={canWrite}
+              nextDay={addDaysISO(date, 1)}
+              isPast={isPast}
+            />
           </div>
         </section>
       </div>
