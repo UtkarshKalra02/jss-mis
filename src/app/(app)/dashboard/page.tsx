@@ -17,10 +17,7 @@ import {
   type WipStage,
 } from "@/modules/dashboard/queries";
 import { taskCountsFor } from "@/modules/delegation/queries";
-import {
-  dispatchPlanFor,
-  type DispatchPlanLine,
-} from "@/modules/planning/queries";
+import { dispatchPlanFor, type DispatchPlanLine } from "@/modules/planning/queries";
 import { getAtRiskWindowDays } from "@/modules/stages/queries";
 
 export const metadata: Metadata = { title: "Dashboard · JSS MIS" };
@@ -64,34 +61,18 @@ export default async function DashboardPage() {
   // One round of parallel reads. Each is a single aggregate query; running
   // them in sequence would put five Neon round trips end to end on the first
   // screen everybody opens.
-  const [
-    otd,
-    workload,
-    dispatched,
-    wip,
-    today,
-    plan,
-    atRiskWindowDays,
-    tasks,
-    openEnquiries,
-  ] = await Promise.all([
+  const [otd, workload, dispatched, wip, today, plan, atRiskWindowDays, tasks, openEnquiries] =
+    await Promise.all([
     otdSummary(),
     workloadCounts(),
     showDispatchedMonth
       ? dispatchedThisMonth()
-      : Promise.resolve({
-          items: 0,
-          challans: 0,
-          value: null,
-          linesWithoutRate: 0,
-        }),
+      : Promise.resolve({ items: 0, challans: 0, value: null, linesWithoutRate: 0 }),
     wipByStage(),
     todaysDispatch(),
     dispatchPlanFor(todayIST()),
     getAtRiskWindowDays(),
-    showTasks
-      ? taskCountsFor(user.id)
-      : Promise.resolve({ pending: 0, overdue: 0 }),
+    showTasks ? taskCountsFor(user.id) : Promise.resolve({ pending: 0, overdue: 0 }),
     showEnquiries ? openEnquiryCount() : Promise.resolve(0),
   ]);
 
@@ -139,11 +120,7 @@ export default async function DashboardPage() {
           label="On-time delivery (30 days)"
           size="large"
           className="sm:col-span-2"
-          value={
-            otd.current.percent === null
-              ? "—"
-              : formatPercent(otd.current.percent)
-          }
+          value={otd.current.percent === null ? "—" : formatPercent(otd.current.percent)}
           trend={trend}
           sub={
             otd.current.total === 0
@@ -198,9 +175,7 @@ export default async function DashboardPage() {
             href="/delegation"
             sub={
               tasks.overdue > 0 ? (
-                <span className="text-overdue font-medium">
-                  {tasks.overdue} overdue
-                </span>
+                <span className="text-overdue font-medium">{tasks.overdue} overdue</span>
               ) : tasks.pending > 0 ? (
                 "None overdue"
               ) : (
@@ -213,9 +188,7 @@ export default async function DashboardPage() {
         {showDispatchedMonth ? (
           <MetricCard
             label="Dispatched this month"
-            value={
-              dispatched.value === null ? "—" : formatINR(dispatched.value)
-            }
+            value={dispatched.value === null ? "—" : formatINR(dispatched.value)}
             sub={
               dispatched.items === 0
                 ? "Nothing has gone out this month."
@@ -242,11 +215,7 @@ export default async function DashboardPage() {
         {showAr ? (
           <>
             <MetricCard label="AR outstanding" pendingPhase={5} />
-            <MetricCard
-              label="Overdue receivables"
-              tone="overdue"
-              pendingPhase={5}
-            />
+            <MetricCard label="Overdue receivables" tone="overdue" pendingPhase={5} />
           </>
         ) : null}
 
@@ -283,9 +252,7 @@ export default async function DashboardPage() {
         />
 
         <div className="rounded-lg border px-4 py-3.5">
-          <p className="text-muted-foreground text-[12px] font-medium">
-            WIP by stage
-          </p>
+          <p className="text-muted-foreground text-[12px] font-medium">WIP by stage</p>
           <WipBars stages={wip} />
         </div>
       </div>
@@ -320,19 +287,13 @@ function TodayPanel({
 }) {
   const sent = today.challans.filter((c) => c.status === "Dispatched").length;
   const plannedQty = plan.reduce((n, l) => n + (l.plannedQty ?? 0), 0);
-  const done = plan.filter(
-    (l) => l.goneQty >= (l.plannedQty ?? 0) && l.goneQty > 0,
-  ).length;
+  const done = plan.filter((l) => l.goneQty >= (l.plannedQty ?? 0) && l.goneQty > 0).length;
 
   return (
     <div className="rounded-lg border px-4 py-3.5">
       <div className="flex items-baseline justify-between">
-        <p className="text-muted-foreground text-[12px] font-medium">
-          Today&apos;s dispatch
-        </p>
-        <p className="text-muted-foreground text-[12px] tabular-nums">
-          {formatDate(todayIST())}
-        </p>
+        <p className="text-muted-foreground text-[12px] font-medium">Today&apos;s dispatch</p>
+        <p className="text-muted-foreground text-[12px] tabular-nums">{formatDate(todayIST())}</p>
       </div>
 
       <p className="mt-2 text-[22px] leading-none font-semibold tracking-tight tabular-nums">
@@ -356,41 +317,23 @@ function TodayPanel({
               l.goneQty >= target && l.goneQty > 0
                 ? { label: "gone", cls: "text-on-time" }
                 : l.goneQty > 0
-                  ? {
-                      label: `${formatQty(l.goneQty)} of ${formatQty(target)}`,
-                      cls: "text-at-risk",
-                    }
+                  ? { label: `${formatQty(l.goneQty)} of ${formatQty(target)}`, cls: "text-at-risk" }
                   : { label: "not yet", cls: "text-muted-foreground" };
             return (
-              <li
-                key={l.entryId}
-                className="flex items-center justify-between gap-3 py-1.5 text-[13px]"
-              >
+              <li key={l.entryId} className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
                 <p className="min-w-0 truncate">
                   {canSeeItems ? (
-                    <Link
-                      href={`/items/${l.poItemId}`}
-                      className="hover:underline"
-                    >
+                    <Link href={`/items/${l.poItemId}`} className="hover:underline">
                       {l.itemName}
                     </Link>
                   ) : (
                     l.itemName
                   )}
-                  <span
-                    className="text-muted-foreground ml-2"
-                    title={l.clientName}
-                  >
+                  <span className="text-muted-foreground ml-2" title={l.clientName}>
                     {l.clientCode}
                   </span>
                   {l.currentStageName && state.label === "not yet" ? (
-                    <span
-                      className={
-                        l.isAtRisk
-                          ? "text-at-risk ml-2 text-[11px]"
-                          : "text-muted-foreground ml-2 text-[11px]"
-                      }
-                    >
+                    <span className={l.isAtRisk ? "text-at-risk ml-2 text-[11px]" : "text-muted-foreground ml-2 text-[11px]"}>
                       at {l.currentStageName}
                     </span>
                   ) : null}
@@ -409,10 +352,7 @@ function TodayPanel({
           {canPlan ? (
             <>
               {" "}
-              <Link
-                href={`/planning?date=${todayIST()}`}
-                className="text-primary hover:underline"
-              >
+              <Link href={`/planning?date=${todayIST()}`} className="text-primary hover:underline">
                 Make one on the planning board
               </Link>
               .
@@ -426,10 +366,7 @@ function TodayPanel({
           {canPlan ? (
             <>
               {" · "}
-              <Link
-                href={`/planning?date=${todayIST()}`}
-                className="text-primary hover:underline"
-              >
+              <Link href={`/planning?date=${todayIST()}`} className="text-primary hover:underline">
                 edit the list
               </Link>
             </>
@@ -445,17 +382,12 @@ function TodayPanel({
         ) : (
           <>
             {canSeeItems ? (
-              <Link
-                href="/items?risk=due-today"
-                className="text-foreground hover:underline"
-              >
-                {today.dueToday} item{today.dueToday === 1 ? "" : "s"} committed
-                for today
+              <Link href="/items?risk=due-today" className="text-foreground hover:underline">
+                {today.dueToday} item{today.dueToday === 1 ? "" : "s"} committed for today
               </Link>
             ) : (
               <span className="text-foreground">
-                {today.dueToday} item{today.dueToday === 1 ? "" : "s"} committed
-                for today
+                {today.dueToday} item{today.dueToday === 1 ? "" : "s"} committed for today
               </span>
             )}
             {today.dueTodayNotReady > 0 ? (
@@ -471,23 +403,15 @@ function TodayPanel({
       </p>
 
       {today.challans.length === 0 ? (
-        <p className="text-muted-foreground/50 mt-3 text-[12px]">
-          Nothing has gone out yet today.
-        </p>
+        <p className="text-muted-foreground/50 mt-3 text-[12px]">Nothing has gone out yet today.</p>
       ) : (
         <ul className="mt-3 divide-y border-t">
           {today.challans.map((c) => (
-            <li
-              key={c.dispatchId}
-              className="flex items-center justify-between gap-3 py-1.5 text-[13px]"
-            >
+            <li key={c.dispatchId} className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
               <div className="min-w-0">
                 <p className="truncate">
                   {canSeeDispatch ? (
-                    <Link
-                      href={`/dispatch/${c.dispatchId}`}
-                      className="text-primary tabular-nums hover:underline"
-                    >
+                    <Link href={`/dispatch/${c.dispatchId}`} className="text-primary tabular-nums hover:underline">
                       {c.challanNo}
                     </Link>
                   ) : (
@@ -504,15 +428,11 @@ function TodayPanel({
                     </span>
                   ) : null}
                   {c.status === "Draft" ? (
-                    <span className="text-muted-foreground ml-2 text-[11px] uppercase">
-                      draft
-                    </span>
+                    <span className="text-muted-foreground ml-2 text-[11px] uppercase">draft</span>
                   ) : null}
                 </p>
               </div>
-              <span className="shrink-0 tabular-nums">
-                {formatQty(c.qty)} pcs
-              </span>
+              <span className="shrink-0 tabular-nums">{formatQty(c.qty)} pcs</span>
             </li>
           ))}
         </ul>
@@ -538,8 +458,8 @@ function WipBars({ stages }: { stages: WipStage[] }) {
   if (stages.length === 0) {
     return (
       <p className="text-muted-foreground/50 mt-6 mb-6 text-center text-[13px]">
-        Nothing in production. Items appear here once they have a stage and
-        quantity still owed.
+        Nothing in production. Items appear here once they have a stage and quantity still
+        owed.
       </p>
     );
   }
@@ -550,9 +470,7 @@ function WipBars({ stages }: { stages: WipStage[] }) {
     <ul className="mt-3 space-y-1.5">
       {stages.map((s) => (
         <li key={s.code} className="flex items-center gap-3">
-          <span className="w-32 shrink-0 truncate text-[13px]">
-            {s.name ?? s.code}
-          </span>
+          <span className="w-32 shrink-0 truncate text-[13px]">{s.name ?? s.code}</span>
 
           <span className="bg-muted h-4 min-w-px grow overflow-hidden rounded-sm">
             <span
