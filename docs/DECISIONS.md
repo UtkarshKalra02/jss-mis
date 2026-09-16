@@ -3558,3 +3558,15 @@ The cost was one day's work replaced. It was cheap because the four L commits we
 and the migration for the part that survived (0036) was separate from the part that did
 not. The lesson is recorded in the working memory rather than here: plan features around
 a light, re-orderable decision on items, and attach cards and dates when they exist.
+
+## M5 — "Dispatched this month" is for ADMIN and OWNER only
+
+Asked 16 Sep 2026: *"Who all can see dispatched this month?"* — everyone with a dashboard,
+because spec 6.1 listed no role for it. Utkarsh: *"No, only admin and owner could see it."*
+
+The tile is a rupee figure, and the value of a month's output is the business's number,
+not the desk's. It is now rendered — and its query run — only for ADMIN and OWNER. This
+is a role check in the page rather than a resource in the matrix, because no resource
+fits: ACCOUNTS holds `ar_ledger` and `reports` and is deliberately excluded. The other
+tiles are unchanged; the "Today's dispatch" panel (M3) carries pieces and items, not
+money, and stays visible to every dashboard role.
