@@ -31,6 +31,7 @@ function row(over: Partial<ItemSearchRow> = {}): ItemSearchRow {
     clientId: "client-a",
     poInternalNo: "PO-2026-0001",
     clientPoNo: null,
+    poAwaited: false,
     poDate: "2026-08-01",
     orderedQty: 1000,
     dispatchedQty: 0,

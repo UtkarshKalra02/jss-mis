@@ -14,6 +14,7 @@ import {
 } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
 import { matchesEveryTerm } from "@/lib/search";
+import { poAwaitedSql } from "@/modules/purchase-orders/queries";
 import type { PaperBundle } from "./paper";
 
 /**
@@ -84,6 +85,8 @@ export type JobCardDetail = {
   purchaseOrderId: string;
   poInternalNo: string;
   clientPoNo: string | null;
+  /** N1: the order has no client PO number yet. Printed as such. */
+  poAwaited: boolean;
   poDate: string;
 
   clientId: string;
@@ -167,6 +170,7 @@ export async function getJobCard(
       purchaseOrderId: purchaseOrder.id,
       poInternalNo: purchaseOrder.internalNo,
       clientPoNo: purchaseOrder.poNo,
+      poAwaited: poAwaitedSql,
       poDate: purchaseOrder.poDate,
 
       clientId: client.id,

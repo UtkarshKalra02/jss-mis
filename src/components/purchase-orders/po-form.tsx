@@ -11,9 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { jobTypeEnum, priorityEnum } from "@/db/schema/enums";
 import { todayIST } from "@/lib/dates";
+import { formatCommittedDate, formatQty } from "@/lib/format";
 import { createPurchaseOrderAction, type FormState } from "@/modules/purchase-orders/actions";
 import type { ClientOption } from "@/modules/designs/queries";
-import type { DesignOption } from "@/modules/purchase-orders/queries";
+import type { DesignOption, OpenItemOption } from "@/modules/purchase-orders/queries";
+
+import { PoAwaited } from "./po-awaited";
 
 const initialState: FormState = { ok: false, error: null };
 
@@ -56,7 +59,35 @@ function Submit({ label }: { label: string }) {
 }
 
 /**
- * PO capture — spec 6.3.
+ * A row pre-filled from an open item the client wants more of (N2).
+ *
+ * A NEW ROW, never a change to the old one. The new lot has its own committed
+ * date and, when it arrives, its own PO; raising the old item's quantity would
+ * measure the new promise against the old date and leave the late PO nothing
+ * to attach to. What carries over is what does not change between lots — the
+ * design, the name, the rate — and the job type is Repeat because that is
+ * what it is. Quantity and date are left for the person to type, on purpose.
+ */
+function repeatOf(source: OpenItemOption): ItemDraft {
+  return {
+    ...blankItem(),
+    itemName: source.itemName,
+    designId: source.designId ?? "",
+    rate: source.rate ?? "",
+    jobType: "Repeat",
+    remarks: `Repeat of ${source.itemCode}`,
+  };
+}
+
+/**
+ * PO capture — spec 6.3 — and, since N1, adding items whose PO has not come.
+ *
+ * `mode="item"` is the same form with the client PO number and the scan left
+ * out: the order is saved with po_no blank, which is all "PO awaited" is, and
+ * the number is recorded on the order's page when the document arrives. Same
+ * rows, same validation, same required committed date. It is a mode rather
+ * than a second component because the moment there are two capture forms one
+ * of them stops requiring the committed date.
  *
  * Everything here is CONTROLLED React state rather than uncontrolled inputs.
  * That is not a style preference: the duplicate-PO-number question (F7) sends
@@ -70,12 +101,18 @@ function Submit({ label }: { label: string }) {
  * had one; this form is a human entry point and has no such excuse.
  */
 export function PoForm({
+  mode = "po",
   clients,
   designs,
+  openItems,
 }: {
+  mode?: "po" | "item";
   clients: ClientOption[];
   designs: DesignOption[];
+  /** Open items still owed quantity, every client — the repeat list (N2). */
+  openItems: OpenItemOption[];
 }) {
+  const withoutPo = mode === "item";
   const router = useRouter();
   const [state, formAction] = useActionState(createPurchaseOrderAction, initialState);
   const formId = useId();
@@ -108,11 +145,26 @@ export function PoForm({
   );
 
   const selectedClient = clients.find((c) => c.id === clientId);
+  const repeatsForClient = openItems.filter((i) => i.clientId === clientId);
+
+  /*
+   * The first row is created blank so the table is never empty. If it is
+   * still untouched when a repeat is picked, it is replaced rather than left
+   * as an empty row above the real one that the server would then refuse.
+   */
+  const addRepeat = (source: OpenItemOption) =>
+    setItems((rows) => {
+      const untouched =
+        rows.length === 1 && rows[0]!.itemName === "" && rows[0]!.orderedQty === "";
+      return untouched ? [repeatOf(source)] : [...rows, repeatOf(source)];
+    });
 
   return (
     <form action={formAction} className="space-y-8">
+      {withoutPo ? <input type="hidden" name="withoutPo" value="true" /> : null}
+
       <section className="space-y-4">
-        <h2 className="text-sm font-medium">Purchase order</h2>
+        <h2 className="text-sm font-medium">{withoutPo ? "Order" : "Purchase order"}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor={`${formId}-client`}>Client</Label>
@@ -136,22 +188,41 @@ export function PoForm({
             </select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor={`${formId}-poNo`}>Client&rsquo;s PO number</Label>
-            <Input
-              id={`${formId}-poNo`}
-              name="poNo"
-              value={poNo}
-              onChange={(e) => setPoNo(e.target.value)}
-              placeholder="4500123456"
-            />
-            <p className="text-muted-foreground text-xs">
-              As printed on their document. Leave blank if there isn&rsquo;t one.
-            </p>
-          </div>
+          {/* Both fields are POSTED in item mode too, empty and hidden, so
+              the action parses one shape. Only what the person sees changes. */}
+          {withoutPo ? (
+            <>
+              <input type="hidden" name="poNo" value="" />
+              <input type="hidden" name="fileUrl" value="" />
+              <div className="space-y-2">
+                <Label>Client&rsquo;s PO</Label>
+                <div className="flex h-9 items-center">
+                  <PoAwaited />
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  Record the number on the order&rsquo;s page when it arrives — or move the
+                  item onto the PO if it was captured separately.
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor={`${formId}-poNo`}>Client&rsquo;s PO number</Label>
+              <Input
+                id={`${formId}-poNo`}
+                name="poNo"
+                value={poNo}
+                onChange={(e) => setPoNo(e.target.value)}
+                placeholder="4500123456"
+              />
+              <p className="text-muted-foreground text-xs">
+                As printed on their document. Leave blank if there isn&rsquo;t one.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2">
-            <Label htmlFor={`${formId}-poDate`}>PO date</Label>
+            <Label htmlFor={`${formId}-poDate`}>{withoutPo ? "Order date" : "PO date"}</Label>
             <Input
               id={`${formId}-poDate`}
               name="poDate"
@@ -161,21 +232,25 @@ export function PoForm({
               onChange={(e) => setPoDate(e.target.value)}
             />
             <p className="text-muted-foreground text-xs">
-              Decides the number series year, and dates the opening stage event.
+              {withoutPo
+                ? "The day the order was placed. Dates the opening stage event; replaced by the PO date when the PO is recorded."
+                : "Decides the number series year, and dates the opening stage event."}
             </p>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor={`${formId}-fileUrl`}>Scanned PO</Label>
-            <Input
-              id={`${formId}-fileUrl`}
-              name="fileUrl"
-              type="url"
-              value={fileUrl}
-              onChange={(e) => setFileUrl(e.target.value)}
-              placeholder="https://drive.google.com/…"
-            />
-          </div>
+          {withoutPo ? null : (
+            <div className="space-y-2">
+              <Label htmlFor={`${formId}-fileUrl`}>Scanned PO</Label>
+              <Input
+                id={`${formId}-fileUrl`}
+                name="fileUrl"
+                type="url"
+                value={fileUrl}
+                onChange={(e) => setFileUrl(e.target.value)}
+                placeholder="https://drive.google.com/…"
+              />
+            </div>
+          )}
 
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor={`${formId}-notes`}>Notes</Label>
@@ -188,6 +263,72 @@ export function PoForm({
           </div>
         </div>
       </section>
+
+      {/* N2: what this client is currently owed, each one a click from being
+          a new row. Shown only once a client is chosen — before that there is
+          nothing to repeat — and never when they have nothing open, because an
+          empty table under a heading is a question rather than an answer. */}
+      {clientId && repeatsForClient.length > 0 ? (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-sm font-medium">Repeat an open item</h2>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Open items this client still has quantity owed on. Repeat one to add a new row
+              with its design, name and rate filled in — the new quantity and committed date
+              are yours to type. The existing item is not changed.
+            </p>
+          </div>
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="data-grid w-full">
+              <thead>
+                <tr>
+                  <th className="px-2">Item</th>
+                  <th className="min-w-48 px-2">Name</th>
+                  <th className="px-2">PO</th>
+                  <th className="px-2 text-right">Ordered</th>
+                  <th className="px-2 text-right">Pending</th>
+                  <th className="px-2">Committed</th>
+                  <th className="w-24 px-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {repeatsForClient.map((item) => (
+                  <tr key={item.poItemId}>
+                    <td className="px-2 tabular-nums">{item.itemCode}</td>
+                    <td className="px-2">
+                      {item.itemName}
+                      {item.designCode ? (
+                        <span className="text-muted-foreground ml-2 text-[11px] tabular-nums">
+                          {item.designCode}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="text-muted-foreground px-2 tabular-nums">
+                      {item.poInternalNo}
+                      {item.poAwaited ? <PoAwaited className="ml-2" /> : null}
+                    </td>
+                    <td className="px-2 text-right tabular-nums">{formatQty(item.orderedQty)}</td>
+                    <td className="px-2 text-right tabular-nums">{formatQty(item.pendingQty)}</td>
+                    <td className="text-muted-foreground px-2 text-[12px]">
+                      {formatCommittedDate(item.committedDate)}
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => addRepeat(item)}
+                      >
+                        Repeat
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-4">
         <div className="flex items-baseline justify-between">
@@ -375,7 +516,7 @@ export function PoForm({
           size="sm"
           onClick={() => setItems((rows) => [...rows, blankItem()])}
         >
-          <Plus className="size-4" /> Add item
+          <Plus className="size-4" /> Add row
         </Button>
       </section>
 
@@ -425,7 +566,7 @@ export function PoForm({
         </p>
       ) : null}
 
-      <Submit label="Capture purchase order" />
+      <Submit label={withoutPo ? "Add items" : "Capture purchase order"} />
     </form>
   );
 }

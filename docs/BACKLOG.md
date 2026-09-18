@@ -284,6 +284,20 @@ Hindi, and today's dispatch on the dashboard read against the challans.
 
 ---
 
+## Items before their PO — two edges left open
+
+Captured 18 Sep 2026 with section N of DECISIONS.md.
+
+- **A "repeat of" link that survives.** The new row carries "Repeat of ITM-…" in its
+  remarks and shares the source item's design, and that is the whole of the connection.
+  Editing the remark loses it; an item with no design has only the remark. A
+  `repeat_of_po_item_id` column would make it a fact, and would earn itself the day
+  somebody asks "how many lots of this have we run for them" — nobody has asked yet.
+- **Moving several items onto one PO in one go.** The move is per item, from the item's
+  page. A client whose late PO covers five items added on five days does it five times.
+  A picker on the PO page — "add existing items of this client" — is the obvious next
+  shape if that becomes the common case rather than the rare one.
+
 ## The kitting gate — NOT BUILT, and not what "Job Kitting" is
 
 Captured 2 Sep 2026, alongside the rename recorded as **I10** in

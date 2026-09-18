@@ -1,13 +1,26 @@
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 
 import { db } from "@/db";
+import type { Tx } from "@/db/audit";
 import { client, design, poItem, purchaseOrder } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
+
+/**
+ * "PO awaited" (N1), for queries that read purchase_order directly.
+ *
+ * The SAME expression migration 0038 put on v_po_item_status as `po_awaited`.
+ * Item queries read the view's column; only reads that go to purchase_order
+ * directly need it spelled out. Exported so they import it rather than write
+ * a third copy. If the rule changes, it changes in the migration and here,
+ * together.
+ */
+export const poAwaitedSql = sql<boolean>`(${purchaseOrder.poNo} is null and ${purchaseOrder.importBatchId} is null)`;
 
 export type PurchaseOrderRow = {
   id: string;
   internalNo: string;
   poNo: string | null;
+  poAwaited: boolean;
   clientCode: string;
   clientName: string;
   poDate: string;
@@ -49,6 +62,7 @@ export async function listPurchaseOrders(): Promise<PurchaseOrderRow[]> {
       id: purchaseOrder.id,
       internalNo: purchaseOrder.internalNo,
       poNo: purchaseOrder.poNo,
+      poAwaited: poAwaitedSql,
       clientCode: client.code,
       clientName: client.name,
       poDate: purchaseOrder.poDate,
@@ -70,6 +84,7 @@ export async function getPurchaseOrder(id: string) {
       id: purchaseOrder.id,
       internalNo: purchaseOrder.internalNo,
       poNo: purchaseOrder.poNo,
+      poAwaited: poAwaitedSql,
       clientId: purchaseOrder.clientId,
       clientCode: client.code,
       clientName: client.name,
@@ -211,4 +226,116 @@ export async function findDuplicatePoNo(
 
   const hit = rows.find((r) => r.id !== excludeId);
   return hit ? { internalNo: hit.internalNo, poDate: hit.poDate } : null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Repeats, and orders an item can move to (N1, N2)                            */
+/* -------------------------------------------------------------------------- */
+
+export type OpenItemOption = {
+  poItemId: string;
+  clientId: string;
+  itemCode: string;
+  itemName: string;
+  designId: string | null;
+  designCode: string | null;
+  rate: string | null;
+  orderedQty: number;
+  pendingQty: number;
+  committedDate: string | null;
+  poInternalNo: string;
+  poAwaited: boolean;
+};
+
+/**
+ * Every open item still owed quantity, across every client, for the "repeat
+ * of…" list on the capture form (N2).
+ *
+ * All clients at once and filtered in the browser, for the reason
+ * listDesignOptions gives: the client can be changed after rows are typed.
+ * OPEN AND OWED ONLY — Utkarsh's call. What a client ordered last year is
+ * reachable through the design picker; this list answers "what are we running
+ * for them right now that they want more of".
+ */
+export async function listOpenItemOptions(): Promise<OpenItemOption[]> {
+  return db
+    .select({
+      poItemId: vPoItemStatus.poItemId,
+      clientId: vPoItemStatus.clientId,
+      itemCode: vPoItemStatus.itemCode,
+      itemName: vPoItemStatus.itemName,
+      designId: poItem.designId,
+      designCode: design.designCode,
+      rate: poItem.rate,
+      orderedQty: vPoItemStatus.orderedQty,
+      pendingQty: vPoItemStatus.pendingQty,
+      committedDate: vPoItemStatus.committedDate,
+      poInternalNo: vPoItemStatus.poInternalNo,
+      poAwaited: vPoItemStatus.poAwaited,
+    })
+    .from(vPoItemStatus)
+    .innerJoin(poItem, eq(poItem.id, vPoItemStatus.poItemId))
+    .leftJoin(design, eq(design.id, poItem.designId))
+    .where(and(eq(vPoItemStatus.status, "Open"), gt(vPoItemStatus.pendingQty, 0)))
+    .orderBy(
+      asc(vPoItemStatus.clientCode),
+      sql`${vPoItemStatus.committedDate} asc nulls last`,
+      asc(vPoItemStatus.itemCode),
+    );
+}
+
+export type LinkablePurchaseOrder = {
+  id: string;
+  internalNo: string;
+  poNo: string | null;
+  poDate: string;
+  status: string;
+  poAwaited: boolean;
+};
+
+/**
+ * The orders an item may be moved onto (N1): the same client's, not
+ * cancelled, not the one it is already on.
+ *
+ * Closed orders are INCLUDED. The case this exists for is a PO that arrives
+ * after delivery, and the PO it belongs on may well have closed on its other
+ * items by then. The recompute trigger settles the status after the move.
+ */
+export async function listLinkablePurchaseOrders(
+  clientId: string,
+  excludeId: string,
+): Promise<LinkablePurchaseOrder[]> {
+  return db
+    .select({
+      id: purchaseOrder.id,
+      internalNo: purchaseOrder.internalNo,
+      poNo: purchaseOrder.poNo,
+      poDate: purchaseOrder.poDate,
+      status: purchaseOrder.status,
+      poAwaited: poAwaitedSql,
+    })
+    .from(purchaseOrder)
+    .where(
+      and(
+        eq(purchaseOrder.clientId, clientId),
+        ne(purchaseOrder.id, excludeId),
+        ne(purchaseOrder.status, "Cancelled"),
+        isNull(purchaseOrder.deletedAt),
+      ),
+    )
+    .orderBy(desc(purchaseOrder.poDate), desc(purchaseOrder.internalNo));
+}
+
+/**
+ * Live items left on an order — what decides whether an emptied one goes.
+ * Takes the transaction, because the move that empties it has not committed
+ * when the question is asked.
+ */
+export async function countLiveItems(purchaseOrderId: string, tx?: Tx): Promise<number> {
+  const [row] = await (tx ?? db)
+    .select({ n: sql<number>`count(*)::int` })
+    .from(poItem)
+    .where(and(eq(poItem.purchaseOrderId, purchaseOrderId), isNull(poItem.deletedAt)));
+
+  return row?.n ?? 0;
 }

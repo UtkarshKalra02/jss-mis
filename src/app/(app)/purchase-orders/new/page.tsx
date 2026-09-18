@@ -5,14 +5,18 @@ import { requireAccess } from "@/auth/guard";
 import { PoForm } from "@/components/purchase-orders/po-form";
 import { Button } from "@/components/ui/button";
 import { listClientOptions } from "@/modules/designs/queries";
-import { listDesignOptions } from "@/modules/purchase-orders/queries";
+import { listDesignOptions, listOpenItemOptions } from "@/modules/purchase-orders/queries";
 
 export const metadata: Metadata = { title: "Capture PO · JSS MIS" };
 
 export default async function NewPurchaseOrderPage() {
   await requireAccess("purchase_order", "write");
 
-  const [clients, designs] = await Promise.all([listClientOptions(), listDesignOptions()]);
+  const [clients, designs, openItems] = await Promise.all([
+    listClientOptions(),
+    listDesignOptions(),
+    listOpenItemOptions(),
+  ]);
 
   return (
     <div>
@@ -24,9 +28,15 @@ export default async function NewPurchaseOrderPage() {
       </Link>
       <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="page-title">Capture purchase order</h1>
-        <Button asChild size="sm" variant="outline">
-          <Link href="/purchase-orders/import">Have a spreadsheet? Import instead</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* N1: the PO is often the last thing to arrive. */}
+          <Button asChild size="sm" variant="outline">
+            <Link href="/items/new">No PO yet? Add the items anyway</Link>
+          </Button>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/purchase-orders/import">Have a spreadsheet? Import instead</Link>
+          </Button>
+        </div>
       </div>
       <p className="text-muted-foreground mt-1 text-[13px]">
         Numbers are allocated on save. Every item gets a PO_RECEIVED stage event dated by the
@@ -45,7 +55,7 @@ export default async function NewPurchaseOrderPage() {
             </Button>
           </div>
         ) : (
-          <PoForm clients={clients} designs={designs} />
+          <PoForm clients={clients} designs={designs} openItems={openItems} />
         )}
       </div>
     </div>

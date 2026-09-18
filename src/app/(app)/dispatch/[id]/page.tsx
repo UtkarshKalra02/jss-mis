@@ -10,6 +10,7 @@ import {
   DispatchHeaderForm,
   RemoveDispatchLine,
 } from "@/components/dispatches/dispatch-controls";
+import { PoAwaited } from "@/components/purchase-orders/po-awaited";
 import { StagePill } from "@/components/stages/stage-pill";
 import { formatDate, formatINRPrecise, formatPending, formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -121,6 +122,7 @@ export default async function DispatchDetailPage({
                   <td className="px-3">{line.itemName}</td>
                   <td className="text-muted-foreground px-3 tabular-nums">
                     {line.poInternalNo}
+                    {line.poAwaited ? <PoAwaited className="ml-1.5" /> : null}
                   </td>
                   <td className="px-3">
                     <StagePill name={line.currentStageName} colour={line.currentStageColour} />

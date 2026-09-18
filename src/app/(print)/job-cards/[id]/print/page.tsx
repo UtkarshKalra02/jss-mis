@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { PrintBar } from "@/components/job-cards/print-button";
+import { PO_AWAITED_TEXT } from "@/components/purchase-orders/po-awaited";
 import { formatCommittedDate, formatDate, formatQty } from "@/lib/format";
 import {
   designSelections,
@@ -153,7 +154,9 @@ export default async function JobCardPrintPage({
               value={
                 card.clientPoNo
                   ? `${card.poInternalNo}  (client PO ${card.clientPoNo})`
-                  : card.poInternalNo
+                  : card.poAwaited
+                    ? `${card.poInternalNo}  (${PO_AWAITED_TEXT})`
+                    : card.poInternalNo
               }
               grow
             />

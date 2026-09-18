@@ -3,9 +3,11 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { requireAccess } from "@/auth/guard";
+import { can } from "@/auth/roles";
 import { DataTable } from "@/components/data-table/data-table";
 import { ItemSearch } from "@/components/items/item-search";
 import { OpenOnlyToggle } from "@/components/items/open-only-toggle";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBanner } from "@/components/items/risk-filter";
 import { itemColumns } from "@/modules/items/columns";
@@ -24,7 +26,9 @@ export default async function ItemsPage({
 }: {
   searchParams: Promise<{ q?: string; all?: string; risk?: string }>;
 }) {
-  await requireAccess("item_tracker");
+  const user = await requireAccess("item_tracker");
+  // N1: adding an item is order-desk work, whichever screen it starts from.
+  const canAddItem = can(user.role, "purchase_order", "write");
 
   const { q = "", all, risk } = await searchParams;
   const openOnly = all !== "1";
@@ -49,7 +53,14 @@ export default async function ItemsPage({
 
   return (
     <div>
-      <h1 className="page-title">Item tracker</h1>
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h1 className="page-title">Item tracker</h1>
+        {canAddItem ? (
+          <Button asChild size="sm">
+            <Link href="/items/new">Add item</Link>
+          </Button>
+        ) : null}
+      </div>
       <p className="text-muted-foreground mt-1 text-[13px]">
         Search by item code, item name, client, PO number or job card number.
       </p>

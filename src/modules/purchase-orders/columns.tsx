@@ -3,6 +3,7 @@
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import Link from "next/link";
 
+import { PoAwaited } from "@/components/purchase-orders/po-awaited";
 import { formatDate, formatINR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -48,9 +49,15 @@ export const purchaseOrderColumns: LegacyColumnDef<PurchaseOrderRow>[] = [
     accessorKey: "poNo",
     header: "Their PO no",
     meta: { filterable: true, width: "10rem" },
-    cell: ({ row }) => (
-      <span className="tabular-nums">{row.original.poNo ?? "—"}</span>
-    ),
+    // N1: blank because it has not come is a different fact from blank
+    // because there never was one (an imported historical order), and the
+    // grid says which.
+    cell: ({ row }) =>
+      row.original.poAwaited ? (
+        <PoAwaited />
+      ) : (
+        <span className="tabular-nums">{row.original.poNo ?? "—"}</span>
+      ),
   },
   {
     accessorKey: "poDate",

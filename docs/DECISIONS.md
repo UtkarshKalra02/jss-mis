@@ -3570,3 +3570,106 @@ is a role check in the page rather than a resource in the matrix, because no res
 fits: ACCOUNTS holds `ar_ledger` and `reports` and is deliberately excluded. The other
 tiles are unchanged; the "Today's dispatch" panel (M3) carries pieces and items, not
 money, and stays visible to every dashboard role.
+
+## N. Items before their purchase order, and repeats
+
+Asked 18 Sep 2026:
+
+> "I can add an item and make Job Cards without PO because sometimes PO comes late so I can
+> add the PO number later on if needed. And it can show as an Item and I can link the item
+> to PO afterwards. Sometimes Dispatch also happens without PO so take care of that as
+> well."
+
+and, in the same conversation:
+
+> "If there are any repeat orders, I should get a list of current orders so I can add the
+> new Qty to them."
+
+## N1 — an item without a PO is an item under an order whose number is blank
+
+**The schema already held this.** `purchase_order.po_no` has been nullable since 0000 and
+the capture form has always accepted it empty, so an order with no client number, items
+under it, job cards released and challans dispatched was possible from day one. What did
+not exist was the vocabulary — nothing said which orders were still owed a document — and
+the way back: when the PO arrived under its own record, the item could not join it.
+
+**`po_item.purchase_order_id` stays NOT NULL. Considered and rejected:** an item with no
+parent order. Twenty files join through that column; the dispatch trigger reads the
+client off the order; `v_po_item_status`, `v_otd` and the status recompute all go through
+it; and the client would have to be copied onto `po_item` — a second home for a fact the
+schema was built to hold once. Too much surface for a solo maintainer, for a case the
+existing shape already covers.
+
+**"PO awaited" is derived, not stored.** Migration 0038 adds `po_awaited` to
+`v_po_item_status`: no client PO number, and not imported. The import exclusion matters —
+a paper-book job with no number recorded is not waiting for one, and labelling it as such
+would send somebody to look for a document that never existed. A flag column was the
+alternative and was rejected on the usual grounds: it would be right until the day somebody
+typed the number and forgot the flag. The two reads that do not go through the view
+(`listPurchaseOrders`, `getPurchaseOrder`) use one exported SQL fragment with the same
+expression, and the migration's comment points at it.
+
+**Grey, deliberately.** Red and amber are late and at risk (section 7). An item whose PO
+has not come is neither; the work is on schedule and the paperwork is following, which at
+JSS is the ordinary order of things. The marker exists so nobody looks up a client PO
+number that does not exist yet, not to make anybody chase one. Utkarsh chose the wording
+"PO awaited" over "No PO".
+
+**Two ways the PO catches up, and the item's page offers both.** The common case is that
+the document covers exactly what was added: the number is typed on the order's page, and
+that is the whole of linking. The other case is that the PO was captured separately or
+covers items added on different days under different placeholders: the item is MOVED onto
+it. `moveItemToPurchaseOrderAction` updates `purchase_order_id` through the audit wrapper
+and nothing else — stage events, job cards, dispatch lines and plan entries all reference
+the item's id and follow it. A move is therefore permitted after dispatch, which is exactly
+the case this exists for. If the order it left is empty and was itself PO awaited, it is
+removed (K21's soft delete); an emptied REAL order is left standing and named in the
+message, because a PO with a number on it is a document and somebody should decide.
+
+**The database guards the move (non-negotiable 4), on two counts.** A BEFORE trigger
+refuses a move to another client's order: `dispatch_line_guard` checked client agreement
+when each LINE was written, not when the item under it later changes parent, so without
+this a cross-client move would undo C8 with no trigger ever objecting. An AFTER trigger
+recomputes the status of BOTH orders — `recompute_for_po_item` follows the item's foreign
+key to its new parent and would leave the old one computed over items it no longer has.
+Both are triggers rather than calls for the 0006 reason: a recompute the application has
+to remember is one it will forget.
+
+**Dispatch needed nothing structural.** Lines reference the item, the client-match trigger
+reads the client off whatever order the item is on, and the picker reads
+`v_po_item_status`. The dispatch form, the challan page and the printed challan carry the
+marker; the sheet prints "PO-2026-0042 (PO awaited)" against the order because the sheet
+is what the client's gate reads, and a bare internal number they have never seen is a
+phone call.
+
+**Order date.** An item added without a PO carries the day it was added as `po_date`; it
+dates the PO_RECEIVED stage event and is replaced by the real PO date when the number is
+recorded. Confirmed with Utkarsh.
+
+**Entry point.** "Add item" on the Item Tracker, gated on `purchase_order` write rather
+than `item_tracker`: whoever adds an item is doing the order desk's job, and the tracker's
+readers are not given a way to create work from the screen that reports it. It is the
+capture form in a second mode, not a second form — the moment there are two, one of them
+stops requiring the committed date (F8).
+
+## N2 — a repeat is a new item pre-filled from an open one, never a bigger old one
+
+The request was to "add the new Qty" to a current order. Raising `ordered_qty` on the
+existing item was pushed back on and Utkarsh agreed:
+
+- the new lot has its own committed date, and one row cannot hold two (non-negotiable 6) —
+  measured against the old date, OTD would be quietly wrong about the new promise;
+- the old item's `ordered_qty` is what its PO said, and changing it would make the record
+  disagree with the paper;
+- when the late PO for the new lot arrives, there would be nothing to move onto it.
+
+**So the capture form shows the chosen client's OPEN items** — still owed quantity, from
+`v_po_item_status`, the same definition every other screen uses — and "Repeat" adds a new
+row with the design, name and rate carried over, job type set to `Repeat`, and the remark
+"Repeat of ITM-…". Quantity and committed date are left empty on purpose. Open items only,
+at Utkarsh's direction: what a client ordered last year is reachable through the design
+picker; this list answers what they are running now and want more of.
+
+**Where the quantities do add up is the floor, not the order.** Two lots of one printing
+share a design, and since J25 a job card covers several items, so both can run on one card
+and one plate without either order record lying about what the client asked for.

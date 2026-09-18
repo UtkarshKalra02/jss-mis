@@ -34,6 +34,8 @@ export type ItemSearchRow = {
   clientName: string;
   poInternalNo: string;
   clientPoNo: string | null;
+  /** N1: the order has no client PO number yet, and was not imported. */
+  poAwaited: boolean;
   /** Grouping keys off the id, not the code — two clients can share a name. */
   clientId: string;
   /** When the order came in. What the report's date range filters on (K17). */
@@ -205,6 +207,7 @@ export async function searchItems(
       clientName: vPoItemStatus.clientName,
       poInternalNo: vPoItemStatus.poInternalNo,
       clientPoNo: vPoItemStatus.clientPoNo,
+      poAwaited: vPoItemStatus.poAwaited,
       clientId: vPoItemStatus.clientId,
       poDate: vPoItemStatus.poDate,
       orderedQty: vPoItemStatus.orderedQty,

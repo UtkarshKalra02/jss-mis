@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useId, useState } from "react";
 import { useFormStatus } from "react-dom";
 
+import { PoAwaited } from "@/components/purchase-orders/po-awaited";
 import { StagePill } from "@/components/stages/stage-pill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -232,8 +233,11 @@ export function DispatchForm({
                         {item.itemCode}
                       </td>
                       <td className="px-2">{item.itemName}</td>
+                      {/* N1: dispatching before the PO arrives is ordinary
+                          here. The marker says so; nothing is warned about. */}
                       <td className="text-muted-foreground px-2 tabular-nums">
                         {item.poInternalNo}
+                        {item.poAwaited ? <PoAwaited className="ml-1.5" /> : null}
                       </td>
 
                       <td className="px-2">

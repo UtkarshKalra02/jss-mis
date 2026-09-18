@@ -104,6 +104,14 @@ export const vPoItemStatus = pgView("v_po_item_status", {
   /** Never null — see the note above about three-valued logic. */
   isOverdue: boolean("is_overdue").notNull(),
   isAtRisk: boolean("is_at_risk").notNull(),
+
+  /**
+   * N1: the order above this item has no client PO number yet, and was typed
+   * by a person rather than imported. Screens say "PO awaited"; nothing else
+   * changes about the item. Derived here (migration 0038) so every screen
+   * agrees on which items are still owed a document.
+   */
+  poAwaited: boolean("po_awaited").notNull(),
 }).existing();
 
 /* -------------------------------------------------------------------------- */

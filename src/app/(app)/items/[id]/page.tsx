@@ -5,6 +5,8 @@ import { notFound } from "next/navigation";
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
 import { StageTimeline } from "@/components/items/stage-timeline";
+import { PoAwaited } from "@/components/purchase-orders/po-awaited";
+import { ItemPoControls } from "@/components/purchase-orders/po-controls";
 import { StagePill } from "@/components/stages/stage-pill";
 import {
   formatCommittedDate,
@@ -21,6 +23,7 @@ import {
   getItemTimeline,
 } from "@/modules/items/queries";
 import { jobCardsForItem, machineOptions } from "@/modules/job-cards/queries";
+import { listLinkablePurchaseOrders } from "@/modules/purchase-orders/queries";
 import { designSelections, fabricationVocabulary } from "@/modules/fabrication/queries";
 import { JobCardForm } from "@/components/job-cards/job-card-form";
 import { AddToRunControl } from "@/components/press-runs/run-controls";
@@ -87,8 +90,15 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
   const designFab = detail?.designId ? await designSelections(detail.designId) : new Map();
 
   const canSeePo = can(user.role, "purchase_order");
+  const canWritePo = can(user.role, "purchase_order", "write");
   const canGang = can(user.role, "press_run", "write");
   const canReleaseCard = can(user.role, "job_card", "write");
+
+  // N1: the orders this item could move onto. Read only for someone who can
+  // move it; everyone else sees the marker and nothing to click.
+  const linkableOrders = canWritePo
+    ? await listLinkablePurchaseOrders(item.clientId, item.purchaseOrderId)
+    : [];
 
   /**
    * Ganging (H4). Two extra reads, and both are skipped entirely when this item
@@ -133,6 +143,7 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
         )}
         {item.clientPoNo ? ` · their PO ${item.clientPoNo}` : ""} · dated{" "}
         {formatDate(item.poDate)}
+        {item.poAwaited ? <PoAwaited className="ml-2" /> : null}
       </p>
 
       <dl className="mt-6 grid gap-4 rounded-lg border p-4 sm:grid-cols-3 lg:grid-cols-5">
@@ -189,6 +200,17 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
               <p className="text-muted-foreground mt-3 text-[13px]">{detail.remarks}</p>
             ) : null}
           </Panel>
+
+          {canWritePo ? (
+            <ItemPoControls
+              itemId={item.poItemId}
+              itemCode={item.itemCode}
+              purchaseOrderId={item.purchaseOrderId}
+              poInternalNo={item.poInternalNo}
+              poAwaited={item.poAwaited}
+              orders={linkableOrders}
+            />
+          ) : null}
 
           <Panel title="Design">
             {detail?.designCode ? (

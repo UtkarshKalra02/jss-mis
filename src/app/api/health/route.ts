@@ -231,6 +231,11 @@ const SCHEMA_EXPECTATIONS: {
     sql: sql`select 1 from information_schema.tables where table_name = 'design_process'`,
   },
   {
+    what: "v_po_item_status.po_awaited, and the item-move guard",
+    since: "0038_po_item_moves_between_orders",
+    sql: sql`select 1 from pg_trigger where tgname = 'po_item_move_guard_trg'`,
+  },
+  {
     what: "plan_entry",
     since: "0037_plan_entry",
     sql: sql`select 1 from information_schema.tables where table_name = 'plan_entry'`,

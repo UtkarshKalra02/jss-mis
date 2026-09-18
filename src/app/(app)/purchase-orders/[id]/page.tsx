@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
+import { PoAwaited } from "@/components/purchase-orders/po-awaited";
 import {
   PoHeaderForm,
   PoItemForm,
@@ -62,6 +63,7 @@ export default async function PurchaseOrderPage({
           {po.clientCode} — {po.clientName}
           {po.poNo ? ` · their PO ${po.poNo}` : ""}
         </span>
+        {po.poAwaited ? <PoAwaited /> : null}
         <span
           className={cn(
             "text-[13px]",

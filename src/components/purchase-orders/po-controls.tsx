@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useId } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -10,6 +11,7 @@ import { jobTypeEnum, priorityEnum } from "@/db/schema/enums";
 import type { ClientOption } from "@/modules/designs/queries";
 import {
   addPoItemAction,
+  moveItemToPurchaseOrderAction,
   removePoItemAction,
   removePurchaseOrderAction,
   setPoItemCancelledAction,
@@ -18,7 +20,9 @@ import {
   updatePoItemAction,
   type FormState,
 } from "@/modules/purchase-orders/actions";
-import type { DesignOption } from "@/modules/purchase-orders/queries";
+import type { DesignOption, LinkablePurchaseOrder } from "@/modules/purchase-orders/queries";
+
+import { PoAwaited } from "./po-awaited";
 
 const initialState: FormState = { ok: false, error: null };
 
@@ -87,6 +91,7 @@ export function PoHeaderForm({
     id: string;
     clientId: string;
     poNo: string | null;
+    poAwaited: boolean;
     poDate: string;
     fileUrl: string | null;
     notes: string | null;
@@ -99,7 +104,17 @@ export function PoHeaderForm({
   return (
     <form action={formAction} className="rounded-lg border p-4">
       <input type="hidden" name="id" value={po.id} />
-      <h2 className="text-sm font-medium">Header</h2>
+      <h2 className="text-sm font-medium">{po.poAwaited ? "Record the PO" : "Header"}</h2>
+      {/* N1: this form is where "PO awaited" ends. Typing the number is the
+          whole of linking, for the common case where the document that
+          arrives covers exactly what was added. */}
+      {po.poAwaited ? (
+        <p className="text-muted-foreground mt-1 text-[13px]">
+          The client&rsquo;s PO has not been recorded. When it arrives, enter its number and
+          date here and this order stops being PO awaited. If the items were captured on
+          a PO entered separately, move them onto it from each item&rsquo;s page instead.
+        </p>
+      ) : null}
 
       <div className="mt-3 grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -126,7 +141,7 @@ export function PoHeaderForm({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor={`${formId}-poDate`}>PO date</Label>
+          <Label htmlFor={`${formId}-poDate`}>{po.poAwaited ? "Order date" : "PO date"}</Label>
           <Input
             id={`${formId}-poDate`}
             name="poDate"
@@ -441,5 +456,106 @@ export function PurchaseOrderControls({
         <Feedback state={removeState} />
       </section>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Link an item to its PO (N1)                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The two ways an item's PO catches up with it, side by side on the item's
+ * page so the person holding the document does not have to know which applies.
+ *
+ * RECORD: the PO covers what was added — type its number on the order. A link,
+ * because the header form already exists and a second copy of it here would
+ * be a second place the duplicate-number question (F7) has to be asked.
+ *
+ * MOVE: the PO was captured separately, or covers items added on different
+ * days. The item moves onto it; its history goes with it (see the action).
+ * Offered whether or not this order is PO awaited — an item on the wrong
+ * numbered PO is the same operation — and only among the same client's
+ * orders, which is all the list contains.
+ */
+export function ItemPoControls({
+  itemId,
+  itemCode,
+  purchaseOrderId,
+  poInternalNo,
+  poAwaited,
+  orders,
+}: {
+  itemId: string;
+  itemCode: string;
+  purchaseOrderId: string;
+  poInternalNo: string;
+  poAwaited: boolean;
+  orders: LinkablePurchaseOrder[];
+}) {
+  const [state, formAction] = useActionState(moveItemToPurchaseOrderAction, initialState);
+  const formId = useId();
+
+  return (
+    <section className="rounded-lg border p-4">
+      <h2 className="flex items-center gap-2 text-sm font-medium">
+        Purchase order
+        {poAwaited ? <PoAwaited /> : null}
+      </h2>
+
+      <p className="text-muted-foreground mt-1 text-[13px]">
+        {poAwaited ? (
+          <>
+            {itemCode} is on {poInternalNo}, which has no client PO number yet. When the PO
+            arrives,{" "}
+            <Link
+              href={`/purchase-orders/${purchaseOrderId}`}
+              className="text-primary hover:underline"
+            >
+              record its number on {poInternalNo}
+            </Link>{" "}
+            — or, if it was captured as its own order, move the item onto it below.
+          </>
+        ) : (
+          <>
+            {itemCode} is on {poInternalNo}. Move it if it was captured against the wrong
+            order.
+          </>
+        )}
+      </p>
+
+      {orders.length === 0 ? (
+        <p className="text-muted-foreground mt-3 text-[13px]">
+          This client has no other order to move it onto.
+        </p>
+      ) : (
+        <form action={formAction} className="mt-3 flex flex-wrap items-end gap-3">
+          <input type="hidden" name="id" value={itemId} />
+          <div className="min-w-64 space-y-2">
+            <Label htmlFor={`${formId}-target`}>Move onto</Label>
+            <select
+              id={`${formId}-target`}
+              name="targetPurchaseOrderId"
+              required
+              defaultValue=""
+              className={inputClass}
+            >
+              <option value="" disabled>
+                Choose an order…
+              </option>
+              {orders.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.internalNo}
+                  {o.poNo ? ` — their PO ${o.poNo}` : o.poAwaited ? " — PO awaited" : ""}
+                  {` · ${o.poDate}`}
+                  {o.status !== "Open" ? ` · ${o.status}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Submit label="Move item" variant="outline" />
+        </form>
+      )}
+      <Feedback state={state} />
+    </section>
   );
 }

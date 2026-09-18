@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { PrintBar } from "@/components/job-cards/print-button";
+import { PO_AWAITED_TEXT } from "@/components/purchase-orders/po-awaited";
 import { formatDate, formatQty } from "@/lib/format";
 import { getDispatch, listDispatchLines } from "@/modules/dispatches/queries";
 
@@ -47,7 +48,15 @@ export default async function DispatchPrintPage({
   // Every distinct order these goods are against. Usually one; several when a
   // client's delivery pulls items from more than one open PO, which is normal
   // once a PO is delivered across several days.
-  const poNumbers = [...new Set(lines.map((l) => l.poInternalNo))];
+  // N1: an order with no client PO number yet is named as such on the
+  // sheet, because the sheet is what the client's gate reads. "Against order
+  // PO-2026-0042 (PO awaited)" is a sentence; a bare internal number they have
+  // never seen is a phone call.
+  const poNumbers = [
+    ...new Set(
+      lines.map((l) => (l.poAwaited ? `${l.poInternalNo} (${PO_AWAITED_TEXT})` : l.poInternalNo)),
+    ),
+  ];
 
   const address = [
     challan.clientAddressLine1,
@@ -190,6 +199,9 @@ export default async function DispatchPrintPage({
                   <td className="border border-black px-1.5 py-1">{line.itemName}</td>
                   <td className="border border-black px-1.5 py-1 tabular-nums">
                     {line.poInternalNo}
+                    {line.poAwaited ? (
+                      <span className="print-hint ml-1">({PO_AWAITED_TEXT})</span>
+                    ) : null}
                   </td>
                   <td className="border border-black px-1.5 py-1 text-right tabular-nums">
                     {formatQty(line.qty)}

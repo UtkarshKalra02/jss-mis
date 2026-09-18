@@ -21,6 +21,7 @@ import { startOfDayIST } from "@/lib/dates";
 import { allocateNumber } from "@/lib/numbering";
 
 import {
+  countLiveItems,
   dispatchedQtyFor,
   findDuplicatePoNo,
   getPoItem,
@@ -179,6 +180,14 @@ export async function createPurchaseOrderAction(
 
     const v = parsed.data;
 
+    /*
+     * N1: items added before their PO exists. The form posts no client PO
+     * number and no scan, and the order goes in with po_no blank — which is
+     * all "PO awaited" is. Same rows, same validation, same stage event; the
+     * only thing the flag changes is what the confirmation says.
+     */
+    const withoutPo = formData.get("withoutPo") === "true";
+
     if (v.poNo && formData.get("confirmDuplicate") !== "true") {
       const duplicate = await findDuplicatePoNo(v.clientId, v.poNo);
       if (duplicate) {
@@ -217,13 +226,98 @@ export async function createPurchaseOrderAction(
     });
 
     revalidatePath("/purchase-orders");
+    revalidatePath("/items");
+    const count = `${v.items.length} item${v.items.length === 1 ? "" : "s"}`;
     return ok({
-      message: `${created.internalNo} captured with ${v.items.length} item${v.items.length === 1 ? "" : "s"}.`,
+      message: withoutPo
+        ? `${count} added under ${created.internalNo}, PO awaited. Record the client's PO number here when it arrives.`
+        : `${created.internalNo} captured with ${count}.`,
       redirectTo: `/purchase-orders/${created.id}`,
     });
   } catch (error) {
     unstable_rethrow(error);
     return fail(actionError(error, "Could not save the purchase order."));
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Move an item onto another order (N1)                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The client's PO arrived, and it covers an item that was added before it
+ * existed — or several, added on different days under different "PO awaited"
+ * orders. The item moves onto the PO; nothing else does.
+ *
+ * Nothing else NEEDS to. Stage events, job cards, dispatch lines and plan
+ * entries all reference the item's id, so its history follows it. That is
+ * also why a move is permitted after dispatch: the case this exists for is
+ * precisely a PO that turns up after the goods have gone.
+ *
+ * Same client only, and the database says so too (migration 0038): the
+ * dispatch trigger checked client agreement when each line was written, and
+ * a cross-client move would silently undo that. The check here is so the
+ * refusal is a sentence rather than an exception.
+ *
+ * If the order it left is now empty and was itself PO awaited, it is removed
+ * (K21's soft delete) — an empty placeholder is a row nobody will ever look
+ * at again. An emptied REAL order is left alone and named in the message: a
+ * PO with a number on it is a document, and somebody should decide.
+ */
+export async function moveItemToPurchaseOrderAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requirePoWriter();
+    const id = String(formData.get("id") ?? "");
+    const targetId = String(formData.get("targetPurchaseOrderId") ?? "");
+
+    const existing = await getPoItem(id);
+    if (!existing) return fail("That item no longer exists.");
+    if (!targetId) return fail("Choose the purchase order to move this item onto.");
+    if (targetId === existing.purchaseOrderId) return fail("The item is already on that order.");
+
+    const [source, target] = await Promise.all([
+      getPurchaseOrder(existing.purchaseOrderId),
+      getPurchaseOrder(targetId),
+    ]);
+    if (!source) return fail("The order this item is on no longer exists.");
+    if (!target) return fail("That purchase order no longer exists.");
+    if (target.clientId !== source.clientId) {
+      return fail(
+        `${target.internalNo} belongs to ${target.clientCode}, not ${source.clientCode}. An item cannot change client.`,
+      );
+    }
+    if (target.status === "Cancelled") {
+      return fail(`${target.internalNo} is cancelled. Reinstate it before moving items onto it.`);
+    }
+
+    const sourceRemoved = await db.transaction(async (tx) => {
+      await auditedUpdate(actor, poItem, id, { purchaseOrderId: targetId }, tx);
+
+      const left = await countLiveItems(source.id, tx);
+      if (left === 0 && source.poAwaited) {
+        await auditedSoftDelete(actor, purchaseOrder, source.id, tx);
+        return true;
+      }
+      return false;
+    });
+
+    revalidatePath("/purchase-orders");
+    revalidatePath(`/purchase-orders/${source.id}`);
+    revalidatePath(`/purchase-orders/${targetId}`);
+    revalidatePath(`/items/${id}`);
+    revalidatePath("/items");
+
+    return ok({
+      message: sourceRemoved
+        ? `${existing.itemCode} moved to ${target.internalNo}. ${source.internalNo} had nothing left on it and was removed.`
+        : `${existing.itemCode} moved to ${target.internalNo}.`,
+    });
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(actionError(error, "Could not move the item."));
   }
 }
 

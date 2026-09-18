@@ -108,6 +108,7 @@ export async function listDispatchLines(dispatchId: string) {
          several challans, so a challan that cannot say which PO its lines came
          from is a document you have to look something else up to read. */
       poInternalNo: vPoItemStatus.poInternalNo,
+      poAwaited: vPoItemStatus.poAwaited,
       orderedQty: vPoItemStatus.orderedQty,
       dispatchedQty: vPoItemStatus.dispatchedQty,
       pendingQty: vPoItemStatus.pendingQty,
@@ -129,6 +130,8 @@ export type DispatchableItem = {
   itemCode: string;
   itemName: string;
   poInternalNo: string;
+  /** N1. A challan for an item whose PO has not come is ordinary; say so. */
+  poAwaited: boolean;
   orderedQty: number;
   dispatchedQty: number;
   pendingQty: number;
@@ -162,6 +165,7 @@ export async function listDispatchableItems(): Promise<DispatchableItem[]> {
       itemCode: vPoItemStatus.itemCode,
       itemName: vPoItemStatus.itemName,
       poInternalNo: vPoItemStatus.poInternalNo,
+      poAwaited: vPoItemStatus.poAwaited,
       orderedQty: vPoItemStatus.orderedQty,
       dispatchedQty: vPoItemStatus.dispatchedQty,
       pendingQty: vPoItemStatus.pendingQty,

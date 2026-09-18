@@ -3,6 +3,7 @@
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import Link from "next/link";
 
+import { PoAwaited } from "@/components/purchase-orders/po-awaited";
 import { StagePill } from "@/components/stages/stage-pill";
 import { formatCommittedDate, formatDaysToCommitted, formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -51,10 +52,11 @@ export const itemColumns: LegacyColumnDef<ItemSearchRow>[] = [
   {
     accessorKey: "poInternalNo",
     header: "PO",
-    meta: { filterable: true, width: "9rem" },
+    meta: { filterable: true, width: "12rem" },
     cell: ({ row }) => (
       <span className="tabular-nums" title={row.original.clientPoNo ?? undefined}>
         {row.original.poInternalNo}
+        {row.original.poAwaited ? <PoAwaited className="ml-1.5" /> : null}
       </span>
     ),
   },
