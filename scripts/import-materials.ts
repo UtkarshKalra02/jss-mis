@@ -36,6 +36,16 @@ import ExcelJS from "exceljs";
 
 config({ path: process.env.DOTENV_CONFIG_PATH ?? ".env.local" });
 
+/*
+ * This script talks to the database and nothing else. src/lib/env.ts insists
+ * on AUTH_SECRET before src/db will load, and .env.production.local
+ * deliberately holds only the two connection strings (DEPLOYMENT.md §2: the
+ * production signing secret never lives on a laptop). A placeholder here is
+ * honest — no session is ever signed by this process — and beats copying a
+ * real secret into a file to run a data load.
+ */
+process.env.AUTH_SECRET ??= "unused-by-import-script";
+
 type DbModule = typeof import("../src/db");
 type AuditModule = typeof import("../src/db/audit");
 type SchemaModule = typeof import("../src/db/schema");
