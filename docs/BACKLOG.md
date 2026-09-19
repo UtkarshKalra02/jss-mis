@@ -327,7 +327,28 @@ should be:
 
 ---
 
-## IMS — inventory management, board / ink / foil stock
+## ~~IMS — inventory management, board / ink / foil stock~~ — BUILT
+
+Built 19 Sep 2026 as the store (section O of DECISIONS.md), from the factory's own IMS
+sheet, with the job-linked issue the entry below said was the precondition: paper is chosen
+on the job card from stock and issued against the card. The argument below still holds and
+is why the card's page offers the issue pre-filled rather than leaving the count to drift.
+
+### Left open, deliberately
+
+- **A press run has no material.** The run owns the sheet for ganged cards (J15) and its
+  paper band is free text; `material_id` is on `job_card` only. Adding it to `press_run`
+  is small when ganged jobs start being issued from the store.
+- **`design.gsm` and `design.paper_type`** stay beside `design.material_id` (O6). Dropping
+  them is a deploy-first migration once every live design that needs one is linked.
+- **Exhausted batches and movement history before 19 Sep 2026** live in the sheet, not
+  the database (O7). If anyone needs them queryable, the importer's shape extends to the
+  Paper Batch Issues and Stock Adjustments tabs.
+- **One unloaded batch**: `GRN-260814-135007-L3`, 720 sheets of Duplex 31.5x41.5 250Gsm
+  Gray Back under `P-DUP-995`, which has no master row. Add the material, re-run the
+  importer.
+- **Vendor ordering.** The list flags what needs ordering; there is no purchase order to a
+  vendor, so in-transit stays a typed figure.
 
 Captured 2 Sep 2026, verbatim:
 

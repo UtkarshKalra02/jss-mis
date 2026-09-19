@@ -23,6 +23,7 @@ import {
   getItemTimeline,
 } from "@/modules/items/queries";
 import { jobCardsForItem, machineOptions } from "@/modules/job-cards/queries";
+import { getGsmTolerancePct, listPaperOptions } from "@/modules/materials/queries";
 import { listLinkablePurchaseOrders } from "@/modules/purchase-orders/queries";
 import { designSelections, fabricationVocabulary } from "@/modules/fabrication/queries";
 import { JobCardForm } from "@/components/job-cards/job-card-form";
@@ -73,14 +74,17 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
   const item = await getItemStatus(id);
   if (!item) notFound();
 
-  const [detail, timeline, dispatches, jobCards, machines, fabricationOptions] = await Promise.all([
-    getItemDetail(id),
-    getItemTimeline(id),
-    getItemDispatches(id),
-    jobCardsForItem(id),
-    machineOptions(),
-    fabricationVocabulary(),
-  ]);
+  const [detail, timeline, dispatches, jobCards, machines, fabricationOptions, papers, gsmTolerance] =
+    await Promise.all([
+      getItemDetail(id),
+      getItemTimeline(id),
+      getItemDispatches(id),
+      jobCardsForItem(id),
+      machineOptions(),
+      fabricationVocabulary(),
+      listPaperOptions(),
+      getGsmTolerancePct(),
+    ]);
 
   /*
    * The run-scope questions this item's design opens: new die or old, and so
@@ -387,6 +391,9 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
                 designSelected={designFab}
                 cardSelected={new Map()}
                 hasExistingCard={jobCards.length > 0}
+                papers={papers}
+                gsmTolerancePct={gsmTolerance}
+                preferredMaterialId={detail?.designMaterialId}
               />
             ) : null}
           </Panel>

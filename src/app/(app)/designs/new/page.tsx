@@ -7,6 +7,7 @@ import { DesignForm } from "@/components/designs/design-form";
 import { Button } from "@/components/ui/button";
 import { listClientOptions } from "@/modules/designs/queries";
 import { fabricationVocabulary } from "@/modules/fabrication/queries";
+import { listPaperOptions } from "@/modules/materials/queries";
 
 export const metadata: Metadata = { title: "New design · JSS MIS" };
 
@@ -14,9 +15,10 @@ export default async function NewDesignPage() {
   const user = await requireAccess("design", "write");
   const canCreateClient = can(user.role, "client", "create");
 
-  const [clients, fabricationOptions] = await Promise.all([
+  const [clients, fabricationOptions, papers] = await Promise.all([
     listClientOptions(),
     fabricationVocabulary(),
+    listPaperOptions(),
   ]);
 
   return (
@@ -53,6 +55,7 @@ export default async function NewDesignPage() {
             canCreateClient={canCreateClient}
             fabricationOptions={fabricationOptions}
             fabricationSelected={new Map()}
+            papers={papers}
           />
         )}
       </div>

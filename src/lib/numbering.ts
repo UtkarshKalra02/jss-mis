@@ -70,6 +70,11 @@ export const SERIES = {
    * roughly when the die was cut, which is the first thing anybody asks about a
    * worn tool. Changing it is one flag each if that turns out to read wrong.
    */
+  /** Materials (section O): receipts, issues and adjustments. Year-scoped. */
+  GRN: { padding: 4, yearScoped: true, label: "Goods receipt" },
+  MI: { padding: 4, yearScoped: true, label: "Material issue" },
+  MA: { padding: 4, yearScoped: true, label: "Material adjustment" },
+
   PLT: { padding: 4, yearScoped: true, label: "Plate" },
   FBL: { padding: 4, yearScoped: true, label: "Foil block" },
   DIE: { padding: 4, yearScoped: true, label: "Die" },

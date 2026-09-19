@@ -6,6 +6,7 @@ import {
   delegationStatusEnum,
   invoiceStatusEnum,
   jobTypeEnum,
+  materialUnitEnum,
   poItemStatusEnum,
   priorityEnum,
 } from "./schema/enums";
@@ -361,3 +362,55 @@ export type ClientSummaryRow = typeof vClientSummary.$inferSelect;
 export type EnquiryFunnelRow = typeof vEnquiryFunnel.$inferSelect;
 export type DelegationStatusRow = typeof vDelegationStatus.$inferSelect;
 export type DelegationScorecardRow = typeof vDelegationScorecard.$inferSelect;
+
+/* -------------------------------------------------------------------------- */
+/* v_material_batch_stock, v_material_stock — the store (section O)            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What each batch has left. Received, less issued, plus signed adjustments —
+ * computed in migration 0039 and stored nowhere, on non-negotiable 2's rule.
+ */
+export const vMaterialBatchStock = pgView("v_material_batch_stock", {
+  batchId: uuid("batch_id").notNull(),
+  batchNo: text("batch_no").notNull(),
+  materialId: uuid("material_id").notNull(),
+  grnId: uuid("grn_id"),
+  receivedDate: date("received_date").notNull(),
+  qtyReceived: numeric("qty_received").notNull(),
+  qtyIssued: numeric("qty_issued").notNull(),
+  qtyAdjusted: numeric("qty_adjusted").notNull(),
+  qtyRemaining: numeric("qty_remaining").notNull(),
+}).existing();
+
+/**
+ * One row per live material with its closing stock and the reorder arithmetic
+ * the sheet did: 80% of max as the reorder level, days remaining at the typed
+ * consumption rate. `needsReorder` is never null, for the reason is_overdue is.
+ */
+export const vMaterialStock = pgView("v_material_stock", {
+  materialId: uuid("material_id").notNull(),
+  sku: text("sku").notNull(),
+  name: text("name").notNull(),
+  categoryId: uuid("category_id").notNull(),
+  categoryName: text("category_name").notNull(),
+  typeId: uuid("type_id").notNull(),
+  typeName: text("type_name").notNull(),
+  size: text("size"),
+  gsm: integer("gsm"),
+  colour: text("colour"),
+  finish: text("finish"),
+  unit: materialUnitEnum("unit").notNull(),
+  isActive: boolean("is_active").notNull(),
+  averageDailyConsumption: numeric("average_daily_consumption"),
+  leadTimeDays: integer("lead_time_days"),
+  minOrderQty: numeric("min_order_qty"),
+  maxLevel: numeric("max_level"),
+  inTransitQty: numeric("in_transit_qty").notNull(),
+  closingStock: numeric("closing_stock").notNull(),
+  openBatches: integer("open_batches").notNull(),
+  oldestOpenBatch: date("oldest_open_batch"),
+  reorderLevel: numeric("reorder_level"),
+  daysRemaining: numeric("days_remaining"),
+  needsReorder: boolean("needs_reorder").notNull(),
+}).existing();

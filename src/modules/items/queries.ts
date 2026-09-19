@@ -254,6 +254,8 @@ export async function getItemDetail(poItemId: string) {
       designCode: design.designCode,
       designJobName: design.jobName,
       designApprovalStatus: design.approvalStatus,
+      /** The design's usual paper (O6) — the release form's default. */
+      designMaterialId: design.materialId,
       poNotes: purchaseOrder.notes,
       poFileUrl: purchaseOrder.fileUrl,
     })

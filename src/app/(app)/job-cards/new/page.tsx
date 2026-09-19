@@ -17,6 +17,7 @@ import {
   releasableItems,
   releasableItemsByIds,
 } from "@/modules/job-cards/queries";
+import { getGsmTolerancePct, listPaperOptions } from "@/modules/materials/queries";
 import { recentRuns } from "@/modules/press-runs/queries";
 import { getItemDetail } from "@/modules/items/queries";
 
@@ -161,16 +162,19 @@ async function GangForm({ poItemIds }: { poItemIds: string[] }) {
 }
 
 async function CardForm({ poItemId }: { poItemId: string }) {
-  const [items, machines, vocabulary, detail, runs, plannedDate] = await Promise.all([
-    releasableItems(""),
-    machineOptions(),
-    fabricationVocabulary(),
-    getItemDetail(poItemId),
-    recentRuns(),
-    // The board plans items before their cards exist (M1), so a card raised
-    // for a planned item is born with the day the meeting chose.
-    nextPlannedDateFor(poItemId),
-  ]);
+  const [items, machines, vocabulary, detail, runs, plannedDate, papers, gsmTolerance] =
+    await Promise.all([
+      releasableItems(""),
+      machineOptions(),
+      fabricationVocabulary(),
+      getItemDetail(poItemId),
+      recentRuns(),
+      // The board plans items before their cards exist (M1), so a card raised
+      // for a planned item is born with the day the meeting chose.
+      nextPlannedDateFor(poItemId),
+      listPaperOptions(),
+      getGsmTolerancePct(),
+    ]);
 
   const item = items.find((i) => i.poItemId === poItemId);
 
@@ -225,6 +229,9 @@ async function CardForm({ poItemId }: { poItemId: string }) {
           recentRuns={runs}
           defaultPlannedDate={plannedDate}
           startOpen
+          papers={papers}
+          gsmTolerancePct={gsmTolerance}
+          preferredMaterialId={detail?.designMaterialId}
         />
       </div>
     </>

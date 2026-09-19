@@ -13,6 +13,7 @@ import { DesignForm } from "@/components/designs/design-form";
 import { DesignTooling } from "@/components/tooling/design-tooling";
 import { getApproverName, getDesign, listClientOptions } from "@/modules/designs/queries";
 import { designSelections, fabricationVocabulary } from "@/modules/fabrication/queries";
+import { listPaperOptions } from "@/modules/materials/queries";
 import { toolingForDesign } from "@/modules/tooling/queries";
 
 export const metadata: Metadata = { title: "Design · JSS MIS" };
@@ -25,13 +26,14 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
   const design = await getDesign(id);
   if (!design) notFound();
 
-  const [clients, approverName, tools, fabricationOptions, fabricationSelected] =
+  const [clients, approverName, tools, fabricationOptions, fabricationSelected, papers] =
     await Promise.all([
       listClientOptions(),
       getApproverName(design.approvedBy),
       toolingForDesign(id),
       fabricationVocabulary(),
       designSelections(id),
+      listPaperOptions(),
     ]);
 
   const canAddTooling = can(user.role, "tooling", "write");
@@ -71,6 +73,7 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
             canCreateClient={can(user.role, "client", "create")}
               fabricationOptions={fabricationOptions}
               fabricationSelected={fabricationSelected}
+              papers={papers}
             />
           </div>
 

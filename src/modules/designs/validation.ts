@@ -59,6 +59,8 @@ export const designSchema = z.object({
   jobSize: trimmed,
   gsm: trimmed,
   paperType: trimmed,
+  /** The design's usual paper in the store (O6). Optional. */
+  materialId: z.union([z.uuid(), z.literal("")]).optional(),
   printType: trimmed,
   noOfColours: trimmed,
 

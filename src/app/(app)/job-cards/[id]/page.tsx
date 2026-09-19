@@ -26,6 +26,7 @@ import {
   machineOptions,
   releasableItems,
 } from "@/modules/job-cards/queries";
+import { getGsmTolerancePct, issuesForJobCard, listPaperOptions } from "@/modules/materials/queries";
 import { getPressRun } from "@/modules/press-runs/queries";
 import { PaperSheetFigures } from "@/components/job-cards/paper-sheet-figures";
 import { resolvedSheet } from "@/modules/press-runs/sheet";
@@ -59,12 +60,17 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
 
   const [items, addable] = await Promise.all([jobCardItems(id), releasableItems("")]);
 
-  const [vocabulary, cardFab, tooling, machines] = await Promise.all([
-    fabricationVocabulary(),
-    jobCardSelections(id),
-    card.designId ? toolingForDesign(card.designId) : Promise.resolve([]),
-    machineOptions(),
-  ]);
+  const [vocabulary, cardFab, tooling, machines, papers, gsmTolerance, paperIssues] =
+    await Promise.all([
+      fabricationVocabulary(),
+      jobCardSelections(id),
+      card.designId ? toolingForDesign(card.designId) : Promise.resolve([]),
+      machineOptions(),
+      listPaperOptions(),
+      getGsmTolerancePct(),
+      issuesForJobCard(id),
+    ]);
+  const canIssue = can(user.role, "material", "write");
 
   const designFab = card.designId ? await designSelections(card.designId) : new Map();
   const checklist = printedChecklist(vocabulary, designFab, cardFab, {
@@ -251,6 +257,22 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
             <Fact label="Size" value={sheet.paperSize} />
             <Fact label="GSM" value={sheet.paperGsm} />
             <Fact label="Matt / gloss" value={sheet.paperFinish} />
+            {/* Which paper in the store, when the picker chose one (O2). */}
+            <div>
+              <dt className="text-muted-foreground text-xs">Stock item</dt>
+              <dd className="mt-0.5">
+                {card.materialSku && !sheet.fromRun ? (
+                  <Link
+                    href={`/materials/${card.materialId}`}
+                    className="text-primary tabular-nums hover:underline"
+                  >
+                    {card.materialSku}
+                  </Link>
+                ) : (
+                  "—"
+                )}
+              </dd>
+            </div>
             <Fact
               label="Quantity"
               value={
@@ -277,6 +299,33 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
               {card.designJobSize ? ` · finished ${card.designJobSize}` : ""}
             </p>
           ) : null}
+
+          {/* Paper issued against this card (O3). Entered by a person, offered
+              pre-filled from here; never written by releasing the card. */}
+          <div className="mt-4 border-t pt-3">
+            <h3 className="text-[12px] font-medium">Issued from the store</h3>
+            {paperIssues.length === 0 ? (
+              <p className="text-muted-foreground mt-1 text-[12px]">
+                Nothing issued against this card yet.
+              </p>
+            ) : (
+              <ul className="mt-1 space-y-0.5 text-[12px]">
+                {paperIssues.map((i) => (
+                  <li key={i.id} className="tabular-nums">
+                    {formatDate(i.issuedOn)} · {i.issueNo} · {formatQty(i.qty)} {i.unit} of{" "}
+                    {i.sku} from {i.batchNo}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {canIssue && !sheet.fromRun ? (
+              <Button asChild size="sm" variant="outline" className="mt-2">
+                <Link href={`/materials/issue?jobCard=${card.id}`}>
+                  {paperIssues.length === 0 ? "Issue paper for this card" : "Issue more"}
+                </Link>
+              </Button>
+            ) : null}
+          </div>
         </section>
 
         <section className="rounded-lg border p-4">
@@ -395,6 +444,9 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
             designSelected={designFab}
             cardSelected={cardFab}
             gangedOn={run ? { id: run.id, runNo: run.runNo } : null}
+            papers={papers}
+            gsmTolerancePct={gsmTolerance}
+            preferredMaterialId={card.designMaterialId}
           />
         </section>
       ) : null}

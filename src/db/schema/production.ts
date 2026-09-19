@@ -14,6 +14,7 @@ import {
 
 import { baseColumns } from "./_shared";
 import { jobCardStatusEnum, paperBundleEnum, planKindEnum, supplyByEnum } from "./enums";
+import { material } from "./materials";
 import { poItem } from "./order";
 import { stage } from "./reference";
 import { appUser } from "./users";
@@ -282,6 +283,20 @@ export const jobCard = pgTable(
     paperFinish: text(),
 
     /**
+     * WHICH paper, from the stock master (O2) — chosen on the release form
+     * from what is in the store, nearest GSM first.
+     *
+     * Nullable: cards released before the master existed, and a paper the
+     * store does not hold (party-supplied, say), keep the three text fields
+     * above and nothing else. When this is set the three are filled from it,
+     * so the printed card reads the same either way.
+     *
+     * Setting this DOES NOT MOVE STOCK (O3). The issue is a separate row a
+     * person enters, offered pre-filled from the card's page.
+     */
+    materialId: uuid().references(() => material.id),
+
+    /**
      * How much paper, in the bundles the godown deals in (J18).
      *
      * `paper_qty` counts BUNDLES, not sheets — 5 means five packets or five
@@ -359,6 +374,7 @@ export const jobCard = pgTable(
       .on(t.jcNo)
       .where(sql`${t.deletedAt} is null`),
     index("job_card_press_run_idx").on(t.pressRunId),
+    index("job_card_material_idx").on(t.materialId),
     index("job_card_planned_date_idx").on(t.plannedDate),
     index("job_card_status_idx").on(t.status),
 

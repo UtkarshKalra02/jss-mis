@@ -39,6 +39,7 @@ export const ROLES = [
   "ACCOUNTS",
   "FLOOR",
   "OWNER",
+  "DATA_ENTRY",
 ] as const;
 
 export type Role = (typeof ROLES)[number];
@@ -70,6 +71,8 @@ export const RESOURCES = [
   "delegation",
   "delegation_scorecard",
   "admin",
+  /** The store: material master, receipts, issues, adjustments (section O). */
+  "material",
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -114,6 +117,7 @@ export const ACCESS: Matrix = {
     delegation: "write",
     delegation_scorecard: "read",
     admin: "write",
+    material: "write",
   },
 
   ORDER_DESK: {
@@ -206,6 +210,9 @@ export const ACCESS: Matrix = {
     tooling: "read",
     client: "read",
     delegation: "write",
+
+    /** O5: the planner picks paper for a card and can record its issue. */
+    material: "write",
   },
 
   ACCOUNTS: {
@@ -337,6 +344,20 @@ export const ACCESS: Matrix = {
     /** J26 widened this from G2's narrow self-write. See the audit wrapper. */
     delegation: "write",
     delegation_scorecard: "read",
+
+    material: "read",
+  },
+
+  /**
+   * The store's typist (O5). GRNs, issues and adjustments, and the material
+   * master they need — and NOTHING else. A person whose job is entering
+   * receipts has no reason to see enquiries or the AR ledger, and a role
+   * that can only reach the store is a role that can only damage the store.
+   * Dashboard is read so the shell has somewhere to land that is not a 403.
+   */
+  DATA_ENTRY: {
+    dashboard: "read",
+    material: "write",
   },
 };
 
@@ -348,6 +369,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   ACCOUNTS: "Accounts",
   FLOOR: "Floor",
   OWNER: "Owner",
+  DATA_ENTRY: "Data Entry",
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
@@ -357,6 +379,7 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   ACCOUNTS: "Invoices, receipts, AR ledger and dispatch.",
   FLOOR: "Stage updates only, on a phone.",
   OWNER: "Sees everything, edits nothing — delegates, records enquiries, adds clients.",
+  DATA_ENTRY: "The store only: receipts, issues and adjustments of material.",
 };
 
 /** Where each role lands after logging in. */
@@ -367,6 +390,7 @@ export const LANDING_ROUTE: Record<Role, string> = {
   ACCOUNTS: "/dashboard",
   FLOOR: "/stage-update",
   OWNER: "/dashboard",
+  DATA_ENTRY: "/materials",
 };
 
 export function can(role: Role, resource: Resource, access: Access = "read"): boolean {

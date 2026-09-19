@@ -184,6 +184,9 @@ export async function releaseJobCardAction(
       paperSize: v.paperSize ?? null,
       paperGsm: v.paperGsm ?? null,
       paperFinish: v.paperFinish ?? null,
+      // O2. Dropped with the rest of the sheet when a run owns it: the run
+      // has no material column, and a card on a plate reads the run's sheet.
+      materialId: v.materialId ?? null,
       paperQty: v.paperQty ?? null,
       paperBundle: v.paperBundle ?? null,
       paperParts: v.paperParts ?? null,
@@ -499,6 +502,7 @@ export async function updateJobCardPlanAction(
           paperSize: v.paperSize ?? null,
           paperGsm: v.paperGsm ?? null,
           paperFinish: v.paperFinish ?? null,
+          materialId: v.materialId ?? null,
           paperQty: v.paperQty ?? null,
           paperBundle: v.paperBundle ?? null,
           paperParts: v.paperParts ?? null,

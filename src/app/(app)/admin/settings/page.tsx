@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { requireAccess } from "@/auth/guard";
+import { GsmToleranceForm } from "@/components/materials/gsm-tolerance-form";
 import { AtRiskWindowForm } from "@/components/stages/settings-form";
+import { getGsmTolerancePct } from "@/modules/materials/queries";
 import { getAtRiskWindowDays } from "@/modules/stages/queries";
 
 export const metadata: Metadata = { title: "Settings · JSS MIS" };
@@ -10,7 +12,10 @@ export const metadata: Metadata = { title: "Settings · JSS MIS" };
 export default async function AdminSettingsPage() {
   await requireAccess("admin", "write");
 
-  const atRiskWindowDays = await getAtRiskWindowDays();
+  const [atRiskWindowDays, gsmTolerancePct] = await Promise.all([
+    getAtRiskWindowDays(),
+    getGsmTolerancePct(),
+  ]);
 
   return (
     <div>
@@ -25,6 +30,10 @@ export default async function AdminSettingsPage() {
 
       <section className="mt-6 rounded-lg border p-4">
         <AtRiskWindowForm current={atRiskWindowDays} />
+      </section>
+
+      <section className="mt-4 rounded-lg border p-4">
+        <GsmToleranceForm current={gsmTolerancePct} />
       </section>
 
       <p className="text-muted-foreground mt-6 max-w-prose text-[13px]">

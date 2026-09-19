@@ -3673,3 +3673,148 @@ picker; this list answers what they are running now and want more of.
 **Where the quantities do add up is the floor, not the order.** Two lots of one printing
 share a design, and since J25 a job card covers several items, so both can run on one card
 and one plate without either order record lying about what the client asked for.
+
+## O. Material stock — the IMS, and paper on the job card
+
+Asked 19 Sep 2026, after the "IMS Jss the print zone" Google Sheet was read:
+
+> "I need you to make the IMS from this sheet and there are papers as well, so I need you to
+> do something that while making the job card you can select from the paper and GSM and
+> there could be like if a job needs 300GSM, 290GSM can also work so we can add that as
+> well."
+
+**Why this is not the exclusion the backlog recorded.** BACKLOG.md and spec section 1 kept
+inventory out of scope until "job-linked material issue" existed, on the argument that a
+stock count nothing decrements is right on the day it is typed and wrong every day after.
+The request itself supplies the link: paper chosen on the job card, and issued against it.
+The objection was to a bare count, not to a store; this build is the store with the link,
+and the backlog entry is superseded rather than overruled. Phases 5 and 6 remain unbuilt
+and untouched.
+
+Answers Utkarsh gave, and what each one decided (O1–O7 below): tolerance as a setting, not a
+substitutes list; stock moves manually, never on release; batches kept, oldest first;
+ADMIN and PLANNER write, plus a new DATA_ENTRY role; paper only on the job card; the design
+links to its usual paper; the sheet's opening figures are correct as they stand.
+
+## O1 — the sheet's shape is kept: SKU scheme, categories, types, batches
+
+**SKU codes are the sheet's own** — `P-SBS-001`, `CH-SOL-116` — category code, type code,
+running number. Every existing code imports unchanged, because the codes are on labels and
+in people's heads. New SKUs are allocated `max + 1` under the prefix, under an advisory
+lock, counting removed rows too: a removed code must not be reissued for a different item
+while a challan somewhere still names it. Category and type are fixed after creation for
+the same reason — they *are* the code.
+
+**Category codes come from the SKUs, not the config tab.** The sheet's CFG_CODES said
+Coating = `C`; the labels say `CO`. The labels are the record. The importer takes, for each
+category, the segment its items' SKUs actually start with, and consults the config only for
+a category no item uses yet. Ceta and Powder, which the config never coded, are `CET` and
+`POW` because that is what their SKUs say.
+
+**Categories and types are tables, not enums** (C3), and a type is deliberately not tied to
+a category: the sheet lists them as two independent vocabularies and "Coating" appears in
+both. `material_category` and `material_type` are seeded by the importer, not the
+migration, because they are the store's vocabulary rather than the system's.
+
+**Batches, as the sheet had them since 31 July.** A GRN brings lines in; each line is a
+batch; issues and adjustments point at a batch, not a material. An opening balance is a
+batch with no GRN — which is exactly what the sheet called it. `qty_received` is the only
+quantity stored.
+
+## O2 — the paper picker: a tolerance, nearest first, the planner chooses
+
+"If a job needs 300 GSM, 290 can also work." Two ways to say that were offered: a
+substitutes list per paper, or a tolerance. Utkarsh chose the tolerance.
+
+**A percentage, in `app_setting`, default 5%.** A percentage rather than a fixed number of
+GSM because ±10 is generous on 100 GSM art paper and nothing on 400 GSM board. It sits on
+the settings screen beside the at-risk window and is read by `getGsmTolerancePct()`.
+
+**The picker on the release form narrows by type, size and GSM and lists what the store
+has within the window, NEAREST FIRST.** Exact match pinned to the top; on a tie the heavier
+sheet first, being the safer substitute on a press; each row shows sheets on hand. "Use"
+fills the card's size, GSM and finish from the master and records `job_card.material_id`.
+The three text columns keep their names and stay editable, so a card for a paper the store
+does not hold — party-supplied, say — is still just typed, exactly as before. The ordering
+is a pure function (`nearestGsm`) with tests; the screen only applies it.
+
+**GSM is a number in the master.** The sheet had "330Gsm" as text; a distance needs
+arithmetic. The importer parses the digits out.
+
+**A card on a press run does not carry a material.** The run owns the sheet (J15) and has
+no material column. Recorded in BACKLOG rather than built, because ganging is a few jobs a
+month and the run's own paper band is free text today.
+
+## O3 — stock moves when a person says so, never when a card is released
+
+Asked whether stock should move at release or after the run; Utkarsh: "manually for now."
+
+So choosing a paper on the card DOES NOT ISSUE IT. What the card's page offers is the issue
+**pre-filled**: the paper the card names, the parent-sheet count from `paperCount()` — J18's
+"what left the godown" figure, reserved for exactly this — and the card itself as
+`job_card_id`. Somebody presses the button. That keeps the link the backlog insisted on
+(every issue against a card is listed on the card's page) without the system deciding on
+its own that paper has left a shelf it cannot see.
+
+**Oldest batch first is the default, not the rule.** The issue form preselects the oldest
+batch with stock and shows the others; picking another is a decision, not a fight.
+
+**An issue cannot take a batch below zero**, and the database says so (0039). Unlike a
+challan (K12) there is no honest over-run in a store: paper that is not there cannot leave
+it. The refusal names the batch and what is left and says to record an adjustment first,
+which is the only way a drifted count is corrected — a signed row with a reason, never an
+edit of a number. Removing a mistaken issue is a soft delete; the view stops counting it
+and the material is back.
+
+## O4 — remaining and closing stock are views; the reorder figures are typed
+
+`v_material_batch_stock` (received − issued + adjustments, per batch) and
+`v_material_stock` (per material: closing stock, open batches, reorder level = 80% of max,
+days remaining at the typed consumption rate, and a never-null `needs_reorder`) are the
+only definitions. Nothing stores a stock figure. Non-negotiable 2, applied to the store.
+
+**Average daily consumption, lead time, MOQ, max level and in-transit are typed**, from the
+sheet, on the material's edit form. In-transit in particular is a hand figure because there
+is no purchase-order-to-vendor workflow for it to derive from; the GRN form reminds the
+person to clear it. Days remaining is null, not infinite, when consumption is unknown.
+There is no vendor ordering workflow; the list flags what needs ordering and stops there.
+
+## O5 — who touches the store, and the DATA_ENTRY role
+
+ADMIN and PLANNER write (the planner picks paper for a card and records its issue). OWNER
+reads. **DATA_ENTRY is new**: `material` write and `dashboard` read, nothing else, landing
+on `/materials`. A person whose job is typing receipts has no reason to see enquiries or the
+AR ledger, and a role that can only reach the store is a role that can only damage the
+store. The enum value is added by 0039; the first such user is created from the admin
+screen after the deploy (Postgres will not use a new enum value in the transaction that
+adds it, and nothing in the migration does).
+
+**Paper only on the job card.** The picker offers the Paper category. Ink, chemicals and
+the rest are issued from the store's own screen to a department, as the sheet did.
+
+## O6 — the design names its usual paper
+
+`design.material_id`, nullable, chosen on the design form from the store. The job card's
+picker starts with it selected on a card that has no paper yet. The older free-text `gsm`
+and `paper_type` columns stay for designs that predate the master; dropping them is a
+deploy-first migration for later, in BACKLOG. Nothing is reserved by the link.
+
+## O7 — the import: what is on the shelf, not what happened to it
+
+`scripts/import-materials.ts` reads an `.xlsx` of the sheet (pulled from Drive by the
+connector, kept in `data/` so the exact file loaded is on record) and writes, through the
+audit wrapper as SYSTEM: categories and types, the 424 materials, the 57 GRNs, and the
+batches that still hold stock. Where the sheet had already issued from a batch, ONE
+reconciling adjustment brings the batch to the sheet's remaining, and its remark says so.
+After writing, the script compares the view's closing stock with the sheet's, SKU by SKU,
+and rolls back on any difference.
+
+**Exhausted batches and the issue/adjustment history are not imported.** They stay in the
+sheet. The store starts from what is on the shelf on 19 Sep 2026, which Utkarsh confirmed
+as correct — so, unlike the stage targets (A2) and the tooling seed, these figures are NOT
+marked unverified: they were verified by the one person who could.
+
+**Idempotent** on SKU, GRN number and batch number, so a fresh download a week later is the
+same command. One batch was skipped and reported: `GRN-260814-135007-L3`, 720 sheets of
+"Duplex 31.5x41.5 250Gsm Gray Back" under SKU `P-DUP-995`, which has no row in the item
+master. It is loaded by adding the material and re-running.

@@ -98,6 +98,8 @@ export const releaseSchema = z.object({
   paperSize: absentOrBlank(z.string().trim().max(120)),
   paperGsm: absentOrBlank(z.string().trim().max(60)),
   paperFinish: absentOrBlank(z.string().trim().max(60)),
+  /** Which paper in the store, when the picker chose one (O2). Optional. */
+  materialId: absentOrBlank(z.uuid()),
   /**
    * How many BUNDLES, and of what. Sheets are derived, never typed (J18).
    */
@@ -206,6 +208,7 @@ export function parsePlanForm(formData: FormData) {
         "paperSize",
         "paperGsm",
         "paperFinish",
+        "materialId",
         "paperQty",
         "paperBundle",
         "paperParts",
@@ -237,6 +240,7 @@ export function parseReleaseForm(formData: FormData) {
     paperSize: formData.get("paperSize"),
     paperGsm: formData.get("paperGsm"),
     paperFinish: formData.get("paperFinish"),
+    materialId: formData.get("materialId"),
     paperQty: formData.get("paperQty"),
     paperBundle: formData.get("paperBundle"),
     paperParts: formData.get("paperParts"),

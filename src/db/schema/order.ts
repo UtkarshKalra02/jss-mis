@@ -23,6 +23,7 @@ import {
   purchaseOrderStatusEnum,
 } from "./enums";
 import { importBatch } from "./imports";
+import { material } from "./materials";
 import { enquiry } from "./pre-order";
 import { client } from "./reference";
 import { appUser } from "./users";
@@ -51,6 +52,17 @@ export const design = pgTable(
     printType: text(),
     noOfColours: text(),
 
+    /**
+     * The paper this design usually prints on, from the stock master (O6).
+     *
+     * `gsm` and `paper_type` above are the older free text. When a material is
+     * linked the screens show the master's values instead; the columns stay
+     * for designs that predate the master, and dropping them is a deploy-first
+     * migration for later (BACKLOG). The job card's paper picker defaults to
+     * this.
+     */
+    materialId: uuid().references(() => material.id),
+
     /*
      * die_id, plate_id, die_status and plate_status USED TO LIVE HERE, as free
      * text, and were dropped in migration 0016 (decision I7).
@@ -75,6 +87,7 @@ export const design = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index("design_client_idx").on(t.clientId),
     index("design_job_name_idx").on(t.jobName),
+    index("design_material_idx").on(t.materialId),
 
     // An approval without a timestamp and an approver is not an approval.
     check(

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 
+import { PaperPicker } from "@/components/materials/paper-picker";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -13,6 +14,7 @@ import {
 } from "@/modules/job-cards/actions";
 import { supplyByValues } from "@/modules/job-cards/validation";
 import type { FabricationOptionRow, Selection } from "@/modules/fabrication/queries";
+import type { PaperOption } from "@/modules/materials/queries";
 
 import { PaperQuantity } from "./paper-quantity";
 
@@ -37,6 +39,7 @@ export type JobCardPlanValues = {
   paperSize?: string | null;
   paperGsm?: string | null;
   paperFinish?: string | null;
+  materialId?: string | null;
   paperQty?: number | null;
   paperBundle?: string | null;
   paperParts?: number | null;
@@ -142,6 +145,9 @@ export function JobCardForm({
   startOpen,
   gangedOn,
   recentRuns,
+  papers,
+  gsmTolerancePct,
+  preferredMaterialId,
 }: {
   mode: "release" | "edit";
   poItemId?: string;
@@ -166,6 +172,11 @@ export function JobCardForm({
   hasExistingCard?: boolean;
   /** True on /job-cards/new, where the whole page IS the form. */
   startOpen?: boolean;
+  /** Papers in the store, for the picker (O2), and the GSM tolerance it works to. */
+  papers: PaperOption[];
+  gsmTolerancePct: number;
+  /** The design's usual paper (O6), offered first on a card with none. */
+  preferredMaterialId?: string | null;
   /**
    * The run this card is ganged onto, when it is on one.
    *
@@ -410,21 +421,22 @@ export function JobCardForm({
               card, because it is a decision made out of whatever stock is in the building.
             </p>
           )}
-          <div className={sheetOnRun ? "hidden" : "mt-2 grid gap-4 sm:grid-cols-3"}>
-            <Field
-              name="paperSize"
-              label="Size"
-              placeholder={'25" x 36"'}
-              defaultValue={card?.paperSize}
+          {/* Size, GSM and finish, from the store where it has the paper
+              (O2). The three inputs keep their names; the picker only adds
+              which SKU and how many sheets are on the shelf. */}
+          <div className={sheetOnRun ? "hidden" : "mt-2 space-y-4"}>
+            <PaperPicker
+              papers={papers}
+              tolerancePct={gsmTolerancePct}
+              defaults={{
+                materialId: card?.materialId,
+                paperSize: card?.paperSize,
+                paperGsm: card?.paperGsm,
+                paperFinish: card?.paperFinish,
+              }}
+              preferredMaterialId={card ? null : preferredMaterialId}
             />
-            <Field name="paperGsm" label="GSM" placeholder="100" defaultValue={card?.paperGsm} />
-            <Field
-              name="paperFinish"
-              label="Matt / gloss"
-              defaultValue={card?.paperFinish}
-            />
-
-            <div className="sm:col-span-2">
+            <div className="sm:max-w-md">
               <Field name="paperRemarks" label="Remarks" defaultValue={card?.paperRemarks} />
             </div>
           </div>

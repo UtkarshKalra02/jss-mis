@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { ClientPicker } from "@/components/clients/client-picker";
 import type { ClientOption } from "@/modules/designs/queries";
 import type { FabricationOptionRow, Selection } from "@/modules/fabrication/queries";
+import type { PaperOption } from "@/modules/materials/queries";
 import {
   createDesignAction,
   updateDesignAction,
@@ -18,6 +19,9 @@ import {
 } from "@/modules/designs/actions";
 
 const initialState: FormState = { ok: false, error: null };
+
+const inputClass =
+  "border-input bg-background h-9 w-full rounded-md border px-2 text-[13px] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none";
 
 type DesignValues = {
   id?: string;
@@ -27,6 +31,7 @@ type DesignValues = {
   jobSize?: string | null;
   gsm?: string | null;
   paperType?: string | null;
+  materialId?: string | null;
   printType?: string | null;
   noOfColours?: string | null;
   artworkUrl?: string | null;
@@ -68,12 +73,15 @@ export function DesignForm({
   canCreateClient,
   fabricationOptions,
   fabricationSelected,
+  papers,
 }: {
   mode: "create" | "edit";
   design?: DesignValues;
   clients: ClientOption[];
   /** Whether this person may create a client from the picker (K19). */
   canCreateClient: boolean;
+  /** Papers in the store, for the usual-paper picker (O6). */
+  papers: PaperOption[];
   fabricationOptions: FabricationOptionRow[];
   fabricationSelected: Map<string, Selection>;
 }) {
@@ -139,6 +147,28 @@ export function DesignForm({
             placeholder="300"
             inputMode="numeric"
           />
+          {/* O6: the paper this design usually prints on, from the store.
+              The two free-text fields above stay for designs that predate the
+              master; the job card's picker defaults to this. */}
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="design-material">Usual paper (from stock)</Label>
+            <select
+              id="design-material"
+              name="materialId"
+              defaultValue={design?.materialId ?? ""}
+              className={inputClass}
+            >
+              <option value="">— not linked —</option>
+              {papers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.sku} — {p.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-muted-foreground text-xs">
+              Job cards for this design start with this paper selected. Nothing is reserved.
+            </p>
+          </div>
           <Field
             name="printType"
             label="Print type"

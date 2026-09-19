@@ -120,6 +120,20 @@ Error: Invalid environment.
 That is deliberate. A build that succeeds and then 500s on every request is
 worse than one that refuses to start.
 
+### 5b. One-off data loads — the store (section O)
+
+The store was loaded from the IMS sheet by `scripts/import-materials.ts`. It reads an
+`.xlsx` in `data/`, is idempotent on SKU, GRN number and batch number, and refuses to
+commit if the view's closing stock disagrees with the sheet's. Dry-run first, then run,
+each against the database you mean:
+
+```bash
+npx tsx scripts/import-materials.ts data/ims-2026-09-19.xlsx --dry-run
+DOTENV_CONFIG_PATH=.env.production.local npx tsx scripts/import-materials.ts data/ims-2026-09-19.xlsx
+```
+
+Migration 0039 must be on that database first.
+
 ### 6. Migrations and the deploy, in the right order
 
 The build does **not** run migrations. Applying schema changes automatically on

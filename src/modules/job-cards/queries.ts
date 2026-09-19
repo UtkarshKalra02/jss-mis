@@ -8,6 +8,7 @@ import {
   design,
   jobCard,
   machine,
+  material,
   poItem,
   pressRun,
   purchaseOrder,
@@ -54,6 +55,9 @@ export type JobCardDetail = {
   paperSize: string | null;
   paperGsm: string | null;
   paperFinish: string | null;
+  /** The paper in the store this card names, when the picker chose one (O2). */
+  materialId: string | null;
+  materialSku: string | null;
   paperQty: number | null;
   paperBundle: PaperBundle | null;
   paperParts: number | null;
@@ -101,6 +105,7 @@ export type JobCardDetail = {
   designPaperType: string | null;
   designPrintType: string | null;
   designNoOfColours: string | null;
+  designMaterialId: string | null;
 };
 
 /**
@@ -139,6 +144,8 @@ export async function getJobCard(
       paperSize: jobCard.paperSize,
       paperGsm: jobCard.paperGsm,
       paperFinish: jobCard.paperFinish,
+      materialId: jobCard.materialId,
+      materialSku: material.sku,
       paperQty: jobCard.paperQty,
       paperBundle: jobCard.paperBundle,
       paperParts: jobCard.paperParts,
@@ -185,6 +192,8 @@ export async function getJobCard(
       designPaperType: design.paperType,
       designPrintType: design.printType,
       designNoOfColours: design.noOfColours,
+      /** The design's usual paper (O6) — the picker's default on this card. */
+      designMaterialId: design.materialId,
     })
     .from(jobCard)
     /*
@@ -197,6 +206,7 @@ export async function getJobCard(
     .innerJoin(purchaseOrder, eq(purchaseOrder.id, poItem.purchaseOrderId))
     .innerJoin(client, eq(client.id, purchaseOrder.clientId))
     .leftJoin(design, eq(design.id, poItem.designId))
+    .leftJoin(material, eq(material.id, jobCard.materialId))
     .leftJoin(pressRun, eq(pressRun.id, jobCard.pressRunId))
     .leftJoin(machine, eq(machine.id, jobCard.machineId))
     .where(and(eq(jobCard.id, id), LIVE))

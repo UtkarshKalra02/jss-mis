@@ -25,6 +25,8 @@ export const userRoleEnum = pgEnum("user_role", [
   "ACCOUNTS",
   "FLOOR",
   "OWNER",
+  /** Store entry — GRNs, issues, adjustments — and nothing else (O5). */
+  "DATA_ENTRY",
 ]);
 
 /** Descriptive only — see jobTypeEnum for what actually drives stage flow. */
@@ -307,4 +309,18 @@ export const auditActionEnum = pgEnum("audit_action", [
   "UPDATE",
   "SOFT_DELETE",
   "RESTORE",
+]);
+
+/* -------------------------------------------------------------------------- */
+/* Materials (section O)                                                       */
+/* -------------------------------------------------------------------------- */
+
+/** The units the store counts in — the sheet's own list, unchanged. */
+export const materialUnitEnum = pgEnum("material_unit", ["Sheet", "Kg", "Ltr", "Pc", "Pkt"]);
+
+export const materialAdjustmentReasonEnum = pgEnum("material_adjustment_reason", [
+  "Count correction",
+  "Damage",
+  "Return to vendor",
+  "Other",
 ]);

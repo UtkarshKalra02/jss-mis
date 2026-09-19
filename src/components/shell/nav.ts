@@ -18,6 +18,7 @@ import {
   Stamp,
   Target,
   Truck,
+  Warehouse,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
@@ -150,6 +151,17 @@ export const NAV: NavGroup[] = [
         phase: 2,
       },
       { resource: "dispatch", label: "Dispatch", href: "/dispatch", icon: Truck, phase: 2 },
+    ],
+  },
+  {
+    /**
+     * Section O. One entry: the stock list is the screen, and receiving,
+     * issuing and adjusting are buttons on it. Four sidebar rows for what is
+     * one desk's work would be four places to look for it.
+     */
+    heading: "Store",
+    items: [
+      { resource: "material", label: "Materials", href: "/materials", icon: Warehouse, phase: 1 },
     ],
   },
   {
