@@ -426,6 +426,7 @@ async function main() {
 
     // Live batches, with a reconciling adjustment where the sheet had already
     // issued from them.
+    const inserted: { batchNo: string; remaining: number }[] = [];
     for (const b of liveBatches) {
       const mId = materialId.get(b.sku);
       if (!mId) {
@@ -453,6 +454,7 @@ async function main() {
         tx,
       );
       counts.batches++;
+      inserted.push({ batchNo: b.batchNo, remaining: b.remaining });
 
       const diff = b.remaining - b.qtyReceived;
       if (diff !== 0) {
@@ -473,24 +475,24 @@ async function main() {
       }
     }
 
-    // Sanity: the view must now agree with the sheet, SKU by SKU. Batches
-    // skipped above (no master row) are reported, not counted.
+    // Sanity: every batch THIS RUN wrote must show the sheet's remaining in
+    // the view. Per batch, not per SKU — a SKU loaded on an earlier run has
+    // been issued from since, and the sheet is no longer its record, but a
+    // batch just written has exactly one right answer. Batches skipped above
+    // (no master row) are reported, not counted.
     const mismatches: string[] = [];
-    const bySku = new Map<string, number>();
-    for (const b of liveBatches) {
-      if (!materialId.has(b.sku)) continue;
-      bySku.set(b.sku, (bySku.get(b.sku) ?? 0) + b.remaining);
-    }
-    for (const [sku, expected] of bySku) {
+    for (const b of inserted) {
       const [r] = (
-        await tx.execute(sql`select closing_stock from v_material_stock where sku = ${sku}`)
-      ).rows as { closing_stock: string }[];
-      if (!r || Math.abs(Number(r.closing_stock) - expected) > 0.001) {
-        mismatches.push(`${sku}: sheet ${expected}, view ${r?.closing_stock ?? "missing"}`);
+        await tx.execute(
+          sql`select qty_remaining from v_material_batch_stock where batch_no = ${b.batchNo}`,
+        )
+      ).rows as { qty_remaining: string }[];
+      if (!r || Math.abs(Number(r.qty_remaining) - b.remaining) > 0.001) {
+        mismatches.push(`${b.batchNo}: sheet ${b.remaining}, view ${r?.qty_remaining ?? "missing"}`);
       }
     }
     if (mismatches.length > 0) {
-      console.error("Closing stock does not match the sheet — rolling back:\n  " + mismatches.join("\n  "));
+      console.error("Batch stock does not match the sheet — rolling back:\n  " + mismatches.join("\n  "));
       throw new Error("Import aborted: stock mismatch.");
     }
   });
