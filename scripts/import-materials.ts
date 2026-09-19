@@ -23,6 +23,10 @@
  * The opening figures are Utkarsh's, confirmed 19 Sep 2026 ("they are
  * correct"), and every imported row's remark says where it came from.
  *
+ * A batch whose SKU is missing from the Item List gets a master row made
+ * from the batch line (name, unit; category and type from the SKU's codes),
+ * with a remark saying so. The one such case on 19 Sep 2026 was P-DUP-995.
+ *
  * IDEMPOTENT on sku, grn_no and batch_no: re-running adds what is missing and
  * leaves what exists untouched, so a second download of the sheet a week
  * later is the same command.
@@ -92,6 +96,12 @@ function gsm(c: Cell): number | null {
   return m ? Math.round(Number(m[1])) : null;
 }
 
+/** "… 250Gsm …" or "… 12 Mic …" inside a free-text name → 250 / 12. */
+function gsmInName(name: string): number | null {
+  const m = /(\d+(?:\.\d+)?)\s*(?:gsm|mic)/i.exec(name);
+  return m ? Math.round(Number(m[1])) : null;
+}
+
 /** A Date cell, an ISO string, or dd/mm/yyyy → yyyy-mm-dd (IST calendar day). */
 function isoDate(c: Cell, fallback: string): string {
   if (c instanceof Date) {
@@ -135,6 +145,10 @@ type BatchRow = {
   batchNo: string;
   received: string;
   sku: string;
+  /** The batch line's own description and unit — used when the Item List
+      has no row for the SKU (P-DUP-995 was such a case). */
+  itemName: string | null;
+  unit: string | null;
   qtyReceived: number;
   remaining: number;
   remark: string | null;
@@ -234,6 +248,8 @@ async function readSheet(path: string) {
       batchNo,
       received: isoDate(v(2), today),
       sku,
+      itemName: text(v(4)),
+      unit: text(v(5)),
       qtyReceived,
       remaining,
       remark: text(v(10)),
@@ -300,7 +316,10 @@ async function main() {
     const bySku = new Map<string, number>();
     for (const b of liveBatches) bySku.set(b.sku, (bySku.get(b.sku) ?? 0) + b.remaining);
     const orphan = [...bySku.keys()].filter((s) => !items.some((i) => i.sku === s));
-    console.log(`Live stock on ${bySku.size} SKUs; ${orphan.length} batch SKUs with no master row:`, orphan.join(", ") || "none");
+    console.log(
+      `Live stock on ${bySku.size} SKUs; ${orphan.length} batch SKUs with no Item List row (a master row will be created from the batch line):`,
+      orphan.join(", ") || "none",
+    );
     const reconciling = liveBatches.filter((b) => b.remaining !== b.qtyReceived).length;
     console.log(`${reconciling} live batches need a reconciling adjustment (issued before import).`);
     process.exit(0);
@@ -424,15 +443,59 @@ async function main() {
       counts.grns++;
     }
 
+    // A batch whose SKU the Item List never listed. The batch line carries a
+    // name and a unit, and the SKU's own codes say category and type, so the
+    // master row is made from those and says so in its remark. Reported,
+    // because a mistyped SKU on a batch would arrive here too.
+    for (const b of liveBatches) {
+      if (materialId.has(b.sku)) continue;
+      const m = /^([A-Z0-9]+)-([A-Z0-9]+)-\d+$/i.exec(b.sku);
+      const cat = m ? [...categoryCodes].find(([, code]) => code === m[1]!.toUpperCase()) : undefined;
+      const typ = m ? typeId.get(m[2]!.toUpperCase()) : undefined;
+      const unit = b.unit && UNITS.has(b.unit) ? b.unit : null;
+      if (!m || !cat || !typ || !unit || !b.itemName) {
+        console.log(`  skip batch ${b.batchNo}: no material ${b.sku}, and not enough on the line to create one`);
+        continue;
+      }
+      const [existing] = await tx
+        .select({ id: schema.material.id })
+        .from(schema.material)
+        .where(and(eq(schema.material.sku, b.sku), isNull(schema.material.deletedAt)))
+        .limit(1);
+      if (existing) {
+        materialId.set(b.sku, existing.id);
+        continue;
+      }
+      const size = /(\d+(?:\.\d+)?\s*[xX]\s*\d+(?:\.\d+)?)/.exec(b.itemName)?.[1]?.replace(/\s+/g, "").toUpperCase() ?? null;
+      const row = await auditedInsert(
+        SYSTEM_ACTOR,
+        schema.material,
+        {
+          sku: b.sku,
+          name: b.itemName,
+          categoryId: catId.get(cat[0])!,
+          typeId: typ,
+          size,
+          // From the NAME, so it must say "Gsm"/"Mic" — the bare first number
+          // in "Duplex 31.5x41.5 250Gsm" is the size.
+          gsm: gsmInName(b.itemName),
+          unit: unit as "Sheet",
+          isActive: true,
+          remarks: `Created from batch ${b.batchNo} — the SKU was not in the sheet's Item List. Check size, GSM and colour. ${SOURCE}`,
+        },
+        tx,
+      );
+      materialId.set(b.sku, row.id);
+      counts.materials++;
+      console.log(`  created material ${b.sku} "${b.itemName}" from batch ${b.batchNo} (not in Item List)`);
+    }
+
     // Live batches, with a reconciling adjustment where the sheet had already
     // issued from them.
     const inserted: { batchNo: string; remaining: number }[] = [];
     for (const b of liveBatches) {
       const mId = materialId.get(b.sku);
-      if (!mId) {
-        console.log(`  skip batch ${b.batchNo}: no material ${b.sku}`);
-        continue;
-      }
+      if (!mId) continue;
       const [existing] = await tx
         .select({ id: schema.materialBatch.id })
         .from(schema.materialBatch)
