@@ -3818,3 +3818,95 @@ marked unverified: they were verified by the one person who could.
 same command. One batch was skipped and reported: `GRN-260814-135007-L3`, 720 sheets of
 "Duplex 31.5x41.5 250Gsm Gray Back" under SKU `P-DUP-995`, which has no row in the item
 master. It is loaded by adding the material and re-running.
+
+## P. The store, rebuilt to the sheet's own rules
+
+Section O built the store from the sheet's `Paper Batches` tab and shipped it on 19 Sep
+2026. On 20 Sep Utkarsh looked at a varnish: the app said 45 kg, the store had 20. His
+instruction was to study the whole sheet — every tab — and update the system to it. This
+section records what that study found and what changed. Section O's decisions stand except
+where a numbered item below says otherwise.
+
+**What the sheet is.** Twenty-seven tabs, but one record: `InOut (Manual)`, one row per
+movement since 28 Jan 2026 — SKU, In or Out, date, quantity, department, remark, sometimes
+a job name. The `IMS` tab's Closing Stock is exactly that ledger's running sum, checked for
+all 424 SKUs. `Paper Batches` and its issue and adjustment tabs are a batch layer added on
+31 July that was only partly kept: receipts and count corrections got a batch row, most
+issues went only to the ledger. On 33 SKUs the two disagreed, and O7 had loaded the wrong
+one. Utkarsh: "Current stock is correct in the IMS sheet."
+
+## P1 — the ledger is the record, replayed into batches
+
+`scripts/import-materials.ts` now reads the ledger and nothing from the batch tabs.
+`replayLedger()` (src/modules/materials/ledger.ts, pure, tested) turns it into the store's
+shape: every In is a batch, every Out is one or more issues taken oldest-first, rows the
+store marked "adj", "adjustment", "correction" or "Stock Count Correction" become count
+corrections. After writing, every SKU's closing stock in the view is compared with the
+ledger's running sum and the load rolls back on any difference. The varnish reads 20.
+
+**Where the ledger dips below zero** — 30 moments, items like Dhoti that were issued
+before any receipt was written — a shortfall batch is created at that point, drawn on,
+and marked; the next receipt for that SKU carries a negative adjustment for the amount
+owed. That is what the ledger's own running sum does (a dip is absorbed by the next In),
+and it is what keeps closing stock equal to the sheet's rather than higher by the dip.
+
+**The batch tab is retired, not reconciled.** Rows the earlier import wrote were
+soft-deleted (non-negotiable 7) before the replay, one audit row summarising the lot; an
+issue a person had entered against one of them is soft-deleted too and named in the
+output. Row identifiers are the ledger's row numbers (`IO-2334`, `MI-IO-2429`,
+`MA-IO-671`), so a re-run of the same file is a no-op and a later download appends.
+
+**Not loaded**: `manualfill-` (December 2025, free-text names), `Form responses 2` (job
+consumption, February only, not part of closing stock), the dated `Stock Report` and
+`Printoutlayout` (printouts of the same figures), `Reorder History` (a log; the audit log
+takes over), `Dealer-Details` (three vendors; BACKLOG). The importer also stops creating a
+master row from a batch line: P-DUP-995's 720 sheets exist only in the batch tab and never
+in the ledger, so the sheet's own stock does not count them. Reported, not invented.
+
+## P2 — what the sheet computed, the view computes
+
+The sheet's `Calc Method` is three different reorder rules, and O4 had flattened them into
+typed numbers. Now `material.reorder_method` is one of:
+
+- **On demand** (345 items): nothing is computed. Somebody orders when it is needed.
+- **Consumption** (54): average daily consumption = issued in a window ÷ window days
+  (`material_adc_window_days`, default 90, on the settings screen; the sheet divided
+  all-time issues by a fixed 97). Max level = ADC × lead time × safety factor (the sheet's
+  unnamed column M). Reorder level 80% of that. Days remaining = (stock + in transit) ÷
+  ADC. Order-by date = today + days remaining − lead time. Suggested order = at least the
+  MOQ, enough to reach max level.
+- **Interval** (25): the item is consumed on a cycle. "Days to issue" = interval − days
+  since the last issue; negative means **due for issue** — the sheet's "Operations check",
+  which is really a *nobody recorded using this* list, and is now a panel on the
+  Materials page.
+
+Statuses follow the sheet's: On demand · OK · Low · Order now · Critical – order now · No
+consumption data · Set interval · Retired. A person's word — Ordered / Hold / Ignore, dated
+— is `reorder_note`, the sheet's Manual Status. All of it is in `v_material_stock` (0040);
+`average_daily_consumption` and `max_level` are no longer read and are dropped in a later,
+deploy-first migration (BACKLOG).
+
+**A known, intended difference.** With a 90-day window, 33 Consumption items last issued
+before June read "No consumption data" where the sheet, averaging since January, said OK.
+A rate from three months ago is not a rate; the window is a setting if that is wrong.
+
+## P3 — paper is bought for a job, and the job's own paper is offered first
+
+The remarks on paper receipts are job names — "Nicobar", "SKY VALVE", "urbanzen kit" — and
+the newer batch tab has a `Job Ref` column; the ledger's "⚠️ Warning: … came from OUTSIDE
+Job X's own reserved paper" rows (nine of them) show the sheet's script preferred a job's
+own batch and warned when another job's was used. That is a real rule of the store.
+
+`material_batch.job_ref` and `material_issue.job_ref` (free text — most of the ledger
+predates job cards) carry it. The replay reads the job from the Job Name column, else from
+the remark of a receipt into Cutting. The issue form orders batches the job's own first,
+unreserved oldest-first next, other jobs' last, and says beside the batch when it is
+another job's; the issue records it. Allowed, never refused — the paper is there and the
+job is waiting, which is exactly the case the sheet warned about rather than blocked. A
+GRN line can name the job it is for. From a job card, the item's name is offered as the
+job.
+
+**Also carried across**: the department vocabulary (fixed for case and spacing, never
+merged — "6/C", "Cutting", "Store / Purchase"; the issue form offers the most-used as a
+picklist), the ledger's remarks, and a photo per SKU from `Form responses 4` (56 of them,
+Drive links, shown as a link because Drive does not serve them inline).

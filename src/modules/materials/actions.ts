@@ -25,9 +25,11 @@ import {
   materialType,
 } from "@/db/schema";
 import { actionError } from "@/lib/action-error";
+import { todayIST } from "@/lib/dates";
 import { allocateNumber } from "@/lib/numbering";
 
 import {
+  ADC_WINDOW_KEY,
   GSM_TOLERANCE_KEY,
   batchRemaining,
   getBatch,
@@ -36,7 +38,13 @@ import {
   skusUnderPrefix,
 } from "./queries";
 import { formatSku, nextSkuNumber, skuPrefix } from "./sku";
-import { adjustmentSchema, grnSchema, issueSchema, materialSchema } from "./validation";
+import {
+  adjustmentSchema,
+  grnSchema,
+  issueSchema,
+  materialSchema,
+  type MaterialInput,
+} from "./validation";
 
 /**
  * Store writes (section O).
@@ -90,13 +98,39 @@ function parseMaterial(formData: FormData) {
     finish: formData.get("finish"),
     unit: formData.get("unit"),
     isActive: formData.get("isActive") !== "false",
-    averageDailyConsumption: formData.get("averageDailyConsumption"),
+    reorderMethod: formData.get("reorderMethod") ?? "On demand",
     leadTimeDays: formData.get("leadTimeDays"),
     minOrderQty: formData.get("minOrderQty"),
-    maxLevel: formData.get("maxLevel"),
+    safetyFactor: formData.get("safetyFactor"),
+    issueIntervalDays: formData.get("issueIntervalDays"),
     inTransitQty: formData.get("inTransitQty"),
+    reorderNote: formData.get("reorderNote") ?? "",
+    imageUrl: formData.get("imageUrl"),
     remarks: formData.get("remarks"),
   });
+}
+
+/**
+ * The reorder figures, from the form (P2). The manual note keeps its date
+ * from when it was first set and gets a new one when it changes.
+ */
+function reorderFields(
+  v: MaterialInput,
+  existing: { reorderNote: string | null; reorderNoteOn: string | null } | null,
+) {
+  const note = v.reorderNote ? v.reorderNote : null;
+  const noteOn = note === null ? null : note === existing?.reorderNote ? existing.reorderNoteOn : todayIST();
+  return {
+    reorderMethod: v.reorderMethod,
+    leadTimeDays: orNull(v.leadTimeDays),
+    minOrderQty: orNull(v.minOrderQty),
+    safetyFactor: orNull(v.safetyFactor),
+    issueIntervalDays: orNull(v.issueIntervalDays),
+    inTransitQty: orNull(v.inTransitQty),
+    reorderNote: note,
+    reorderNoteOn: noteOn,
+    imageUrl: orNull(v.imageUrl),
+  };
 }
 
 /**
@@ -152,11 +186,7 @@ export async function createMaterialAction(
           finish: orNull(v.finish),
           unit: v.unit,
           isActive: v.isActive,
-          averageDailyConsumption: orNull(v.averageDailyConsumption),
-          leadTimeDays: orNull(v.leadTimeDays),
-          minOrderQty: orNull(v.minOrderQty),
-          maxLevel: orNull(v.maxLevel),
-          inTransitQty: orNull(v.inTransitQty),
+          ...reorderFields(v, null),
           remarks: orNull(v.remarks),
         },
         tx,
@@ -208,11 +238,7 @@ export async function updateMaterialAction(
       finish: orNull(v.finish),
       unit: v.unit,
       isActive: v.isActive,
-      averageDailyConsumption: orNull(v.averageDailyConsumption),
-      leadTimeDays: orNull(v.leadTimeDays),
-      minOrderQty: orNull(v.minOrderQty),
-      maxLevel: orNull(v.maxLevel),
-      inTransitQty: orNull(v.inTransitQty),
+      ...reorderFields(v, existing),
       remarks: orNull(v.remarks),
     });
 
@@ -229,7 +255,7 @@ export async function updateMaterialAction(
 /* GRN                                                                         */
 /* -------------------------------------------------------------------------- */
 
-const LINE_FIELDS = ["materialId", "qty", "lineRemarks"] as const;
+const LINE_FIELDS = ["materialId", "qty", "lineJobRef", "lineRemarks"] as const;
 
 function parseLines(formData: FormData) {
   const cols = Object.fromEntries(
@@ -238,6 +264,7 @@ function parseLines(formData: FormData) {
   return cols.materialId.map((_, i) => ({
     materialId: cols.materialId[i] ?? "",
     qty: cols.qty[i] ?? "",
+    jobRef: cols.lineJobRef[i] ?? "",
     remarks: cols.lineRemarks[i] ?? "",
   }));
 }
@@ -290,6 +317,7 @@ export async function createGrnAction(_prev: FormState, formData: FormData): Pro
             materialId: l.materialId,
             receivedDate: v.receivedDate,
             qtyReceived: l.qty,
+            jobRef: orNull(l.jobRef),
             remarks: orNull(l.remarks),
           },
           tx,
@@ -327,6 +355,7 @@ export async function createIssueAction(_prev: FormState, formData: FormData): P
       qty: formData.get("qty"),
       department: formData.get("department"),
       jobCardId: formData.get("jobCardId"),
+      jobRef: formData.get("jobRef"),
       remarks: formData.get("remarks"),
     });
     if (!parsed.success) return fail(firstIssue(parsed.error));
@@ -345,6 +374,19 @@ export async function createIssueAction(_prev: FormState, formData: FormData): P
       );
     }
 
+    // Another job's reserved paper (P3): allowed, and written on the issue,
+    // the way the sheet's ⚠️ Warning rows did.
+    const otherJob =
+      batch.jobRef && batch.jobRef.trim().toLowerCase() !== (v.jobRef ?? "").trim().toLowerCase()
+        ? batch.jobRef
+        : null;
+    const remarks = [
+      otherJob ? `Taken from paper reserved for job "${otherJob}".` : null,
+      v.remarks,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
     const created = await db.transaction(async (tx) =>
       auditedInsert(
         actor,
@@ -356,7 +398,8 @@ export async function createIssueAction(_prev: FormState, formData: FormData): P
           qty: v.qty,
           department: orNull(v.department),
           jobCardId: idOrNull(v.jobCardId),
-          remarks: orNull(v.remarks),
+          jobRef: orNull(v.jobRef),
+          remarks: remarks || null,
         },
         tx,
       ),
@@ -454,6 +497,36 @@ const tolerancePctSchema = z.coerce
   .number()
   .min(0, "Cannot be negative.")
   .max(50, "More than 50% would offer almost any board as a substitute.");
+
+const windowDaysSchema = z.coerce
+  .number()
+  .int("Must be a whole number of days.")
+  .min(7, "Fewer than seven days is noise, not a rate.")
+  .max(365, "More than a year is not current consumption.");
+
+/** The window daily consumption is averaged over (P2). ADMIN, on the settings screen. */
+export async function saveAdcWindowAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const user = await requireAccess("admin", "write");
+    const actor: Actor = { id: user.id, role: user.role };
+    const parsed = windowDaysSchema.safeParse(formData.get("adcWindowDays"));
+    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
+    const [row] = await db
+      .select({ id: appSetting.id, value: appSetting.value })
+      .from(appSetting)
+      .where(sql`${appSetting.key} = ${ADC_WINDOW_KEY}`)
+      .limit(1);
+    if (!row) return fail("The consumption window setting row is missing. Re-run the migrations.");
+    if (Number(row.value) === parsed.data) return ok("No change.");
+    await auditedUpdate(actor, appSetting, row.id, { value: String(parsed.data) });
+    revalidatePath("/admin/settings");
+    revalidatePath("/materials");
+    return ok(`Consumption window set to ${parsed.data} days.`);
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(actionError(error, "Could not save the setting."));
+  }
+}
 
 export async function saveGsmToleranceAction(
   _prev: FormState,

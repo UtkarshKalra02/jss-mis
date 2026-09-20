@@ -318,6 +318,22 @@ export const auditActionEnum = pgEnum("audit_action", [
 /** The units the store counts in — the sheet's own list, unchanged. */
 export const materialUnitEnum = pgEnum("material_unit", ["Sheet", "Kg", "Ltr", "Pc", "Pkt"]);
 
+/**
+ * How an item is reordered — the sheet's "Calc Method" (section P).
+ *   On demand:   nothing is computed; somebody orders when it is needed.
+ *   Consumption: days remaining from actual issues; max level from ADC.
+ *   Interval:    the item is consumed on a cycle; "due for issue" when the
+ *                last issue is older than the interval.
+ */
+export const materialReorderMethodEnum = pgEnum("material_reorder_method", [
+  "On demand",
+  "Consumption",
+  "Interval",
+]);
+
+/** The sheet's Manual Status on the reorder list: a person's override. */
+export const materialReorderNoteEnum = pgEnum("material_reorder_note", ["Ordered", "Hold", "Ignore"]);
+
 export const materialAdjustmentReasonEnum = pgEnum("material_adjustment_reason", [
   "Count correction",
   "Damage",

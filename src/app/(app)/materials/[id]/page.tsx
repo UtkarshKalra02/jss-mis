@@ -9,6 +9,7 @@ import { RemoveIssue } from "@/components/materials/remove-issue";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { statusTone } from "@/modules/materials/status";
 import {
   batchesForMaterial,
   getMaterial,
@@ -66,8 +67,14 @@ export default async function MaterialPage({
       <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="page-title tabular-nums">{stock.sku}</h1>
         <span className="text-[15px]">{stock.name}</span>
-        {!stock.isActive ? <span className="text-muted-foreground text-[13px]">Retired</span> : null}
-        {stock.needsReorder ? <span className="text-at-risk text-[13px]">Order now</span> : null}
+        <span className={cn("text-[13px]", statusTone(stock.stockStatus))}>{stock.stockStatus}</span>
+        {stock.reorderNote ? (
+          <span className="text-muted-foreground text-[13px]">
+            {stock.reorderNote}
+            {stock.reorderNoteOn ? ` since ${formatDate(stock.reorderNoteOn)}` : ""}
+          </span>
+        ) : null}
+        {stock.dueForIssue ? <span className="text-at-risk text-[13px]">Due for issue</span> : null}
       </div>
       <p className="text-muted-foreground mt-1 text-[13px]">
         {stock.categoryName} · {stock.typeName}
@@ -83,21 +90,64 @@ export default async function MaterialPage({
         </p>
       ) : null}
 
-      <dl className="mt-6 grid gap-4 rounded-lg border p-4 sm:grid-cols-3 lg:grid-cols-6">
-        <Figure label={`In stock (${unit})`} value={formatQty(stock.closingStock)} />
-        <Figure label="In transit" value={formatQty(stock.inTransitQty)} />
-        <Figure label="Open batches" value={stock.openBatches} />
-        <Figure
-          label="Reorder level"
-          value={stock.reorderLevel === null ? "—" : formatQty(stock.reorderLevel)}
-        />
-        <Figure
-          label="Days left"
-          value={stock.daysRemaining === null ? "—" : formatQty(stock.daysRemaining)}
-          tone={stock.needsReorder ? "text-at-risk" : undefined}
-        />
-        <Figure label="Lead time" value={stock.leadTimeDays === null ? "—" : `${stock.leadTimeDays} d`} />
-      </dl>
+      <div className="mt-6 flex flex-col gap-4 sm:flex-row">
+        {stock.imageUrl ? (
+          <a href={stock.imageUrl} target="_blank" rel="noreferrer" className="shrink-0">
+            {/* A Drive link, not an image URL — Drive does not serve these
+                inline. A labelled link is honest; a broken <img> is not. */}
+            <span className="bg-neutral-status-bg text-primary block rounded-md px-3 py-2 text-[12px] hover:underline">
+              Photo ↗
+            </span>
+          </a>
+        ) : null}
+        <dl className="grid flex-1 grid-cols-2 gap-4 rounded-lg border p-4 sm:grid-cols-3 lg:grid-cols-4">
+          <Figure label={`In stock (${unit})`} value={formatQty(stock.closingStock)} />
+          <Figure label="In transit" value={formatQty(stock.inTransitQty)} />
+          <Figure label="Open batches" value={stock.openBatches} />
+          <Figure label="Last issued" value={stock.lastIssueOn ? formatDate(stock.lastIssueOn) : "—"} />
+          {/* The sheet's derived figures (P2), all from actual issues. */}
+          <Figure
+            label={`Daily use (${unit})`}
+            value={stock.adc === null ? "—" : formatQty(stock.adc)}
+          />
+          <Figure
+            label="Days left"
+            value={stock.daysRemaining === null ? "—" : formatQty(stock.daysRemaining)}
+            tone={stock.needsReorder ? "text-at-risk" : undefined}
+          />
+          <Figure
+            label="Max / reorder level"
+            value={
+              stock.maxLevelCalc === null
+                ? "—"
+                : `${formatQty(stock.maxLevelCalc)} / ${formatQty(stock.reorderLevel)}`
+            }
+          />
+          <Figure
+            label="Order by"
+            value={stock.orderByDate ? formatDate(stock.orderByDate) : "—"}
+            tone={stock.needsReorder ? "text-at-risk" : undefined}
+          />
+          <Figure
+            label="Suggested order"
+            value={Number(stock.suggestedOrderQty) > 0 ? formatQty(stock.suggestedOrderQty) : "—"}
+          />
+          <Figure label="Method" value={stock.reorderMethod} />
+          <Figure label="Lead time" value={stock.leadTimeDays === null ? "—" : `${stock.leadTimeDays} d`} />
+          <Figure
+            label={stock.reorderMethod === "Interval" ? "Issue interval" : "MOQ"}
+            value={
+              stock.reorderMethod === "Interval"
+                ? stock.issueIntervalDays === null
+                  ? "—"
+                  : `${formatQty(stock.issueIntervalDays)} d`
+                : stock.minOrderQty === null
+                  ? "—"
+                  : formatQty(stock.minOrderQty)
+            }
+          />
+        </dl>
+      </div>
 
       {canWrite ? (
         <div className="mt-4 flex flex-wrap gap-2">
@@ -123,12 +173,14 @@ export default async function MaterialPage({
           {batches.length === 0 ? (
             <p className="text-muted-foreground mt-3 text-[13px]">Nothing received yet.</p>
           ) : (
-            <table className="data-grid mt-3 w-full">
+            <div className="mt-3 overflow-x-auto">
+            <table className="data-grid w-full">
               <thead>
                 <tr>
                   <th className="px-2">Batch</th>
                   <th className="px-2">Received</th>
                   <th className="px-2">From</th>
+                  <th className="px-2">For job</th>
                   <th className="px-2 text-right">Received</th>
                   <th className="px-2 text-right">Issued</th>
                   <th className="px-2 text-right">Adj.</th>
@@ -142,7 +194,10 @@ export default async function MaterialPage({
                     <tr key={b.batchId} className={cn(empty && "text-muted-foreground")}>
                       <td className="px-2 tabular-nums">{b.batchNo}</td>
                       <td className="px-2">{formatDate(b.receivedDate)}</td>
-                      <td className="px-2">{b.vendor ?? b.remarks ?? "—"}</td>
+                      <td className="max-w-56 truncate px-2" title={b.remarks ?? undefined}>
+                        {b.vendor ?? b.remarks ?? "—"}
+                      </td>
+                      <td className="px-2">{b.jobRef ?? "—"}</td>
                       <td className="px-2 text-right tabular-nums">{formatQty(b.qtyReceived)}</td>
                       <td className="px-2 text-right tabular-nums">{formatQty(b.qtyIssued)}</td>
                       <td className="px-2 text-right tabular-nums">{formatQty(b.qtyAdjusted)}</td>
@@ -154,15 +209,21 @@ export default async function MaterialPage({
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </section>
 
         <section className="rounded-lg border p-4">
           <h2 className="text-sm font-medium">Movements</h2>
+          <p className="text-muted-foreground mt-1 text-xs">
+            Newest first. The whole ledger since January is here; rows marked &ldquo;row N&rdquo;
+            came from the sheet.
+          </p>
           {movements.length === 0 ? (
             <p className="text-muted-foreground mt-3 text-[13px]">No issues or adjustments yet.</p>
           ) : (
-            <table className="data-grid mt-3 w-full">
+            <div className="mt-3 overflow-x-auto">
+            <table className="data-grid w-full">
               <thead>
                 <tr>
                   <th className="px-2">No.</th>
@@ -190,6 +251,8 @@ export default async function MaterialPage({
                         >
                           {m.jcNo}
                         </Link>
+                      ) : m.jobRef ? (
+                        <span className="ml-2">· {m.jobRef}</span>
                       ) : null}
                       {m.remarks ? (
                         <span className="text-muted-foreground ml-2 text-[11px]">{m.remarks}</span>
@@ -205,6 +268,7 @@ export default async function MaterialPage({
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </section>
       </div>

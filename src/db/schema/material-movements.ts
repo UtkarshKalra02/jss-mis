@@ -54,6 +54,9 @@ export const materialIssue = pgTable(
 
     jobCardId: uuid().references(() => jobCard.id),
 
+    /** The job by name, as the ledger recorded it — for issues that predate job cards, and for jobs without one. */
+    jobRef: text(),
+
     remarks: text(),
   },
   (t) => [

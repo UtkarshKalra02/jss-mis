@@ -1,10 +1,14 @@
 "use client";
 
-import { useActionState, useId } from "react";
+import { useActionState, useId, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { materialUnitEnum } from "@/db/schema/enums";
+import {
+  materialReorderMethodEnum,
+  materialReorderNoteEnum,
+  materialUnitEnum,
+} from "@/db/schema/enums";
 import {
   createMaterialAction,
   updateMaterialAction,
@@ -47,6 +51,7 @@ export function MaterialForm({
 
   const cat = categories.find((c) => c.id === material?.categoryId);
   const typ = types.find((t) => t.id === material?.typeId);
+  const [method, setMethod] = useState<string>(material?.reorderMethod ?? "On demand");
 
   return (
     <form action={formAction} className="space-y-6">
@@ -176,23 +181,34 @@ export function MaterialForm({
       </section>
 
       <section className="rounded-lg border p-4">
-        <h2 className="text-sm font-medium">Reorder figures</h2>
+        <h2 className="text-sm font-medium">How it is reordered</h2>
         <p className="text-muted-foreground mt-1 text-xs">
-          All optional. Days remaining and the reorder flag on the stock list are computed from
-          these; leave one blank and that part of the answer is left blank too.
+          The sheet&rsquo;s Calc Method (P2). Consumption and days remaining are worked out from
+          actual issues; nothing here is a stock figure.
         </p>
         <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-2">
-            <Label htmlFor={`${id}-adc`}>Average daily consumption</Label>
-            <Input
-              id={`${id}-adc`}
-              name="averageDailyConsumption"
-              type="number"
-              min={0}
-              step="0.01"
-              defaultValue={material?.averageDailyConsumption ?? ""}
-              className="text-right tabular-nums"
-            />
+            <Label htmlFor={`${id}-method`}>Method</Label>
+            <select
+              id={`${id}-method`}
+              name="reorderMethod"
+              value={method}
+              onChange={(e) => setMethod(e.target.value)}
+              className={inputClass}
+            >
+              {materialReorderMethodEnum.enumValues.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <p className="text-muted-foreground text-xs">
+              {method === "On demand"
+                ? "Ordered when somebody needs it. Nothing is computed."
+                : method === "Consumption"
+                  ? "Days remaining from the rate it is issued at; max level from that rate."
+                  : "Used on a cycle. Flagged when the last issue is older than the interval."}
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor={`${id}-lead`}>Lead time (days)</Label>
@@ -218,18 +234,35 @@ export function MaterialForm({
               className="text-right tabular-nums"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-max`}>Max level</Label>
+          <div className={method === "Consumption" ? "space-y-2" : "hidden"}>
+            <Label htmlFor={`${id}-factor`}>Safety factor</Label>
             <Input
-              id={`${id}-max`}
-              name="maxLevel"
+              id={`${id}-factor`}
+              name="safetyFactor"
               type="number"
               min={0}
-              step="0.01"
-              defaultValue={material?.maxLevel ?? ""}
+              step="0.5"
+              defaultValue={material?.safetyFactor ?? ""}
               className="text-right tabular-nums"
             />
-            <p className="text-muted-foreground text-xs">Reorder level is 80% of this.</p>
+            <p className="text-muted-foreground text-xs">
+              Max level = daily consumption × lead time × this. 2 holds two lead times&rsquo; worth.
+            </p>
+          </div>
+          <div className={method === "Interval" ? "space-y-2" : "hidden"}>
+            <Label htmlFor={`${id}-interval`}>Issue interval (days)</Label>
+            <Input
+              id={`${id}-interval`}
+              name="issueIntervalDays"
+              type="number"
+              min={0.5}
+              step="0.5"
+              defaultValue={material?.issueIntervalDays ?? ""}
+              className="text-right tabular-nums"
+            />
+            <p className="text-muted-foreground text-xs">
+              How often it is normally issued. Overdue when the last issue is older than this.
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor={`${id}-transit`}>In transit</Label>
@@ -245,6 +278,35 @@ export function MaterialForm({
             <p className="text-muted-foreground text-xs">
               Ordered, not arrived. Typed by hand; clear it when the GRN is entered.
             </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${id}-note`}>Reorder note</Label>
+            <select
+              id={`${id}-note`}
+              name="reorderNote"
+              defaultValue={material?.reorderNote ?? ""}
+              className={inputClass}
+            >
+              <option value="">— none —</option>
+              {materialReorderNoteEnum.enumValues.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <p className="text-muted-foreground text-xs">
+              Your word on the reorder list: Ordered, Hold or Ignore. Dated when set.
+            </p>
+          </div>
+          <div className="space-y-2 sm:col-span-2 lg:col-span-3">
+            <Label htmlFor={`${id}-image`}>Photo</Label>
+            <Input
+              id={`${id}-image`}
+              name="imageUrl"
+              type="url"
+              defaultValue={material?.imageUrl ?? ""}
+              placeholder="https://drive.google.com/…"
+            />
           </div>
           <div className="space-y-2 sm:col-span-2 lg:col-span-3">
             <Label htmlFor={`${id}-remarks`}>Remarks</Label>

@@ -3,11 +3,15 @@ import Link from "next/link";
 
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
-import { DataTable } from "@/components/data-table/data-table";
+import { Suspense } from "react";
+
 import { CategoryFilter } from "@/components/materials/category-filter";
+import { MaterialSearch } from "@/components/materials/material-search";
+import { StockList } from "@/components/materials/stock-list";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { stockColumns } from "@/modules/materials/columns";
-import { listCategories, listStock } from "@/modules/materials/queries";
+import { formatDate, formatQty } from "@/lib/format";
+import { listCategories, listDueForIssue, listStock } from "@/modules/materials/queries";
 
 export const metadata: Metadata = { title: "Materials · JSS MIS" };
 
@@ -20,15 +24,16 @@ export const metadata: Metadata = { title: "Materials · JSS MIS" };
 export default async function MaterialsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; removed?: string }>;
+  searchParams: Promise<{ category?: string; q?: string; removed?: string }>;
 }) {
   const user = await requireAccess("material");
   const canWrite = can(user.role, "material", "write");
 
-  const { category = "", removed } = await searchParams;
-  const [rows, categories] = await Promise.all([
-    listStock({ categoryId: category || undefined }),
+  const { category = "", q = "", removed } = await searchParams;
+  const [rows, categories, due] = await Promise.all([
+    listStock({ categoryId: category || undefined, query: q }),
     listCategories(),
+    listDueForIssue(),
   ]);
 
   const reorder = rows.filter((r) => r.needsReorder).length;
@@ -68,18 +73,78 @@ export default async function MaterialsPage({
         </p>
       ) : null}
 
-      <div className="mt-6">
-        <CategoryFilter value={category} categories={categories} />
+      {/* The sheet's "Operations check — due for issue" (P2). An Interval
+          item nobody has recorded issuing for longer than its interval:
+          usually the floor took it and the ledger was not told. */}
+      {due.length > 0 ? (
+        <section className="mt-6 rounded-lg border p-4">
+          <h2 className="text-sm font-medium">Due for issue — check the floor</h2>
+          <p className="text-muted-foreground mt-1 text-xs">
+            Used on a cycle, but not issued since the date shown. Either it was used and not
+            recorded, or the interval is wrong.
+          </p>
+          <div className="mt-3 overflow-x-auto">
+          <table className="data-grid w-full">
+            <thead>
+              <tr>
+                <th className="hidden px-2 sm:table-cell">SKU</th>
+                <th className="px-2">Material</th>
+                <th className="px-2 text-right">In stock</th>
+                <th className="hidden px-2 sm:table-cell">Last issued</th>
+                <th className="hidden px-2 text-right sm:table-cell">Every</th>
+                <th className="px-2 text-right">Overdue by</th>
+              </tr>
+            </thead>
+            <tbody>
+              {due.map((r) => (
+                <tr key={r.materialId}>
+                  <td className="hidden px-2 whitespace-nowrap tabular-nums sm:table-cell">
+                    <Link href={`/materials/${r.materialId}`} className="text-primary hover:underline">
+                      {r.sku}
+                    </Link>
+                  </td>
+                  <td className="px-2">
+                    <Link href={`/materials/${r.materialId}`} className="hover:underline sm:pointer-events-none">
+                      {r.name}
+                    </Link>
+                    <span className="text-muted-foreground block text-[11px] tabular-nums sm:hidden">{r.sku}</span>
+                  </td>
+                  <td className="px-2 text-right whitespace-nowrap tabular-nums">
+                    {formatQty(r.closingStock)} {r.unit}
+                  </td>
+                  <td className="hidden px-2 sm:table-cell">{formatDate(r.lastIssueOn)}</td>
+                  <td className="hidden px-2 text-right tabular-nums sm:table-cell">
+                    {formatQty(r.issueIntervalDays)} d
+                  </td>
+                  <td className="text-at-risk px-2 text-right whitespace-nowrap tabular-nums">
+                    {formatQty(Math.abs(Number(r.daysToIssue)))} d
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        </section>
+      ) : null}
+
+      <div className="mt-6 flex flex-wrap items-end gap-3">
+        <Suspense fallback={<Skeleton className="h-9 w-full max-w-lg" />}>
+          <MaterialSearch initialQuery={q} />
+        </Suspense>
+        <Suspense fallback={null}>
+          <CategoryFilter value={category} categories={categories} />
+        </Suspense>
       </div>
 
       <div className="mt-4">
-        <DataTable
-          columns={stockColumns}
-          data={rows}
+        <StockList
+          rows={rows}
           emptyMessage={
-            canWrite
-              ? "No materials yet. Add one, or import the stock sheet."
-              : "No materials yet."
+            q
+              ? `Nothing matches "${q}".`
+              : canWrite
+                ? "No materials yet. Add one, or import the stock sheet."
+                : "No materials yet."
           }
         />
       </div>

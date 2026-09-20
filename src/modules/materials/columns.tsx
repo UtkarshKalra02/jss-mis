@@ -3,18 +3,21 @@
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import Link from "next/link";
 
-import { formatQty } from "@/lib/format";
+import { formatDate, formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import type { StockRow } from "./queries";
+import { statusTone } from "./status";
 
 /**
- * The stock grid (section O).
+ * The stock grid (section O, statuses from P2).
  *
- * Semantic colour only: amber on a material that needs reordering. Closing
- * stock is never coloured — a low number is only a problem relative to how
- * fast it goes, and `needsReorder` is where that judgement lives.
+ * Semantic colour only: red for Critical, amber for Order now / Low and for
+ * an Interval item that is due. Closing stock is never coloured — a low
+ * number is only a problem relative to how fast it goes, and the status is
+ * where that judgement lives.
  */
+
 export const stockColumns: LegacyColumnDef<StockRow>[] = [
   {
     accessorKey: "sku",
@@ -95,14 +98,39 @@ export const stockColumns: LegacyColumnDef<StockRow>[] = [
     ),
   },
   {
-    accessorKey: "needsReorder",
-    header: "Reorder",
-    meta: { filterable: true, width: "7rem" },
-    cell: ({ row }) =>
-      row.original.needsReorder ? (
-        <span className="text-at-risk">Order now</span>
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      ),
+    accessorKey: "orderByDate",
+    header: "Order by",
+    meta: { width: "7rem" },
+    cell: ({ row }) => (
+      <span className="tabular-nums">
+        {row.original.orderByDate ? formatDate(row.original.orderByDate) : "—"}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "suggestedOrderQty",
+    header: "Suggested",
+    meta: { align: "right", width: "6.5rem" },
+    cell: ({ row }) => (
+      <span className={cn("tabular-nums", Number(row.original.suggestedOrderQty) === 0 && "text-muted-foreground")}>
+        {formatQty(row.original.suggestedOrderQty)}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "stockStatus",
+    header: "Status",
+    meta: { filterable: true, width: "11rem" },
+    cell: ({ row }) => (
+      <span className={statusTone(row.original.stockStatus)}>
+        {row.original.stockStatus}
+        {row.original.reorderNote ? (
+          <span className="text-muted-foreground ml-1 text-[11px]">· {row.original.reorderNote}</span>
+        ) : null}
+        {row.original.dueForIssue ? (
+          <span className="text-at-risk ml-1 text-[11px]">· due for issue</span>
+        ) : null}
+      </span>
+    ),
   },
 ];

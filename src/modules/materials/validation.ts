@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { materialAdjustmentReasonEnum, materialUnitEnum } from "@/db/schema/enums";
+import {
+  materialAdjustmentReasonEnum,
+  materialReorderMethodEnum,
+  materialReorderNoteEnum,
+  materialUnitEnum,
+} from "@/db/schema/enums";
 
 /**
  * Store validation (section O).
@@ -56,11 +61,29 @@ export const materialSchema = z.object({
   finish: trimmed,
   unit: z.enum(materialUnitEnum.enumValues, { message: "Choose the unit it is counted in." }),
   isActive: z.boolean().default(true),
-  averageDailyConsumption: optionalQty,
+  reorderMethod: z.enum(materialReorderMethodEnum.enumValues),
   leadTimeDays: optionalInt,
   minOrderQty: optionalQty,
-  maxLevel: optionalQty,
+  safetyFactor: optionalQty,
+  issueIntervalDays: z
+    .string()
+    .trim()
+    .transform((v) => (v.length === 0 ? undefined : v))
+    .optional()
+    .refine((v) => v === undefined || (/^\d+(\.\d)?$/.test(v) && Number(v) > 0), {
+      message: "Issue interval must be a number of days, more than zero.",
+    }),
   inTransitQty: optionalQty,
+  reorderNote: z.union([z.enum(materialReorderNoteEnum.enumValues), z.literal("")]).optional(),
+  imageUrl: optionalUrl,
+  remarks: trimmed,
+});
+
+export const grnLineSchema = z.object({
+  materialId: z.uuid({ message: "Choose the material." }),
+  qty: requiredQty,
+  /** Paper bought for a particular job (P3). */
+  jobRef: trimmed,
   remarks: trimmed,
 });
 
@@ -70,15 +93,7 @@ export const grnSchema = z.object({
   invoiceNo: trimmed,
   invoiceUrl: optionalUrl,
   remarks: trimmed,
-  lines: z
-    .array(
-      z.object({
-        materialId: z.uuid({ message: "Choose the material." }),
-        qty: requiredQty,
-        remarks: trimmed,
-      }),
-    )
-    .min(1, "A receipt needs at least one line."),
+  lines: z.array(grnLineSchema).min(1, "A receipt needs at least one line."),
 });
 
 export const issueSchema = z.object({
@@ -87,6 +102,8 @@ export const issueSchema = z.object({
   qty: requiredQty,
   department: trimmed,
   jobCardId: z.union([z.uuid(), z.literal("")]).optional(),
+  /** The job by name — for work with no card, as the ledger always had it. */
+  jobRef: trimmed,
   remarks: trimmed,
 });
 

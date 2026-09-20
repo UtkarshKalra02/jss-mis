@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { requireAccess } from "@/auth/guard";
+import { AdcWindowForm } from "@/components/materials/adc-window-form";
 import { GsmToleranceForm } from "@/components/materials/gsm-tolerance-form";
 import { AtRiskWindowForm } from "@/components/stages/settings-form";
-import { getGsmTolerancePct } from "@/modules/materials/queries";
+import { getAdcWindowDays, getGsmTolerancePct } from "@/modules/materials/queries";
 import { getAtRiskWindowDays } from "@/modules/stages/queries";
 
 export const metadata: Metadata = { title: "Settings · JSS MIS" };
@@ -12,9 +13,10 @@ export const metadata: Metadata = { title: "Settings · JSS MIS" };
 export default async function AdminSettingsPage() {
   await requireAccess("admin", "write");
 
-  const [atRiskWindowDays, gsmTolerancePct] = await Promise.all([
+  const [atRiskWindowDays, gsmTolerancePct, adcWindowDays] = await Promise.all([
     getAtRiskWindowDays(),
     getGsmTolerancePct(),
+    getAdcWindowDays(),
   ]);
 
   return (
@@ -34,6 +36,10 @@ export default async function AdminSettingsPage() {
 
       <section className="mt-4 rounded-lg border p-4">
         <GsmToleranceForm current={gsmTolerancePct} />
+      </section>
+
+      <section className="mt-4 rounded-lg border p-4">
+        <AdcWindowForm current={adcWindowDays} />
       </section>
 
       <p className="text-muted-foreground mt-6 max-w-prose text-[13px]">

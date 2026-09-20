@@ -281,6 +281,13 @@
       "when": 1789804878965,
       "tag": "0039_material_stock",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789908097256,
+      "tag": "0040_material_reorder_from_ledger",
+      "breakpoints": true
     }
   ]
 }

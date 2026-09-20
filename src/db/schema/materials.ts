@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { baseColumns } from "./_shared";
-import { materialUnitEnum } from "./enums";
+import { materialReorderMethodEnum, materialReorderNoteEnum, materialUnitEnum } from "./enums";
 
 /**
  * IMS — material stock: board, ink, chemicals, foil, consumables (section O).
@@ -120,14 +120,37 @@ export const material = pgTable(
     isActive: boolean().notNull().default(true),
 
     /* ---------------------------------------------------------------------- */
-    /* Planning figures — typed in, from the sheet, used by v_material_stock   */
+    /* Reorder figures — typed; what the view DERIVES from them is in 0040     */
     /* ---------------------------------------------------------------------- */
 
-    /** Per day, in `unit`. What "days remaining" divides by. */
-    averageDailyConsumption: numeric({ precision: 12, scale: 2 }),
+    /**
+     * The sheet's Calc Method (P2). Decides which of the figures below mean
+     * anything: an On-demand item computes nothing; a Consumption item gets
+     * days remaining and a max level from its actual issues; an Interval item
+     * is watched for a missed issue.
+     */
+    reorderMethod: materialReorderMethodEnum().notNull().default("On demand"),
+
     /** Indent to receipt, in days. */
     leadTimeDays: integer(),
     minOrderQty: numeric({ precision: 12, scale: 2 }),
+
+    /**
+     * The multiplier in max level = ADC × lead time × factor — the sheet's
+     * unnamed column M. 2 means "hold two lead times' worth".
+     */
+    safetyFactor: numeric({ precision: 6, scale: 2 }),
+
+    /** Interval items: how many days normally pass between issues. */
+    issueIntervalDays: numeric({ precision: 6, scale: 1 }),
+
+    /**
+     * SUPERSEDED BY THE VIEW (P2). Both were imported from the sheet on
+     * 19 Sep 2026 and are no longer read or written by any screen: ADC is now
+     * computed from issues and max level from ADC. Kept only because dropping
+     * a column is a deploy-first migration (DEPLOYMENT.md §6); BACKLOG has it.
+     */
+    averageDailyConsumption: numeric({ precision: 12, scale: 2 }),
     maxLevel: numeric({ precision: 12, scale: 2 }),
 
     /**
@@ -137,6 +160,17 @@ export const material = pgTable(
      * — by the person, which the GRN form reminds them of.
      */
     inTransitQty: numeric({ precision: 12, scale: 2 }),
+
+    /**
+     * A person's word on the reorder list (P2): Ordered, Hold or Ignore,
+     * with the day it was said. The sheet logged these in Reorder History;
+     * here the audit log is the history.
+     */
+    reorderNote: materialReorderNoteEnum(),
+    reorderNoteOn: date(),
+
+    /** A photo of the thing, for the store to recognise it — the sheet's Form responses 4. */
+    imageUrl: text(),
 
     remarks: text(),
   },
@@ -150,6 +184,11 @@ export const material = pgTable(
 
     check("material_gsm_positive", sql`${t.gsm} is null or ${t.gsm} > 0`),
     check("material_lead_time_non_negative", sql`${t.leadTimeDays} is null or ${t.leadTimeDays} >= 0`),
+    check(
+      "material_issue_interval_positive",
+      sql`${t.issueIntervalDays} is null or ${t.issueIntervalDays} > 0`,
+    ),
+    check("material_safety_factor_non_negative", sql`${t.safetyFactor} is null or ${t.safetyFactor} >= 0`),
     check(
       "material_in_transit_non_negative",
       sql`${t.inTransitQty} is null or ${t.inTransitQty} >= 0`,
@@ -216,6 +255,15 @@ export const materialBatch = pgTable(
 
     receivedDate: date().notNull(),
     qtyReceived: numeric({ precision: 12, scale: 2 }).notNull(),
+
+    /**
+     * The job this paper was bought for, when it was bought for one (P3).
+     * Free text as the sheet had it — a job name — because most of the
+     * ledger predates the MIS's job cards. Issues for that job are offered
+     * its own paper first; taking it for another job is warned about, not
+     * refused.
+     */
+    jobRef: text(),
 
     remarks: text(),
   },

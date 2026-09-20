@@ -20,14 +20,21 @@ export type IssuePreset = {
   jobCardId?: string;
   jcNo?: string;
   department?: string;
+  /** The job by name, to match paper reserved for it (P3). */
+  jobRef?: string;
 };
+
+const sameJob = (a: string | null | undefined, b: string | null | undefined) =>
+  Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
 
 /**
  * Material leaving the store (section O).
  *
- * Choose the material, then the batch — OLDEST FIRST, preselected, so the
- * default is the FIFO one and picking another is a decision (O3). What the
- * batch has left is shown beside it; the database refuses more than that.
+ * Choose the material, then the batch — the JOB'S OWN paper first when the
+ * job is named (P3), then oldest first, preselected, so the default is the
+ * right one and picking another is a decision (O3). Taking another job's
+ * reserved paper is allowed and said so beside the batch, the way the sheet
+ * warned. What the batch has left is shown; the database refuses more.
  *
  * Arrives pre-filled from a job card's page: the paper the card names, the
  * parent-sheet count from paperCount() (J18's "what left the godown"), and
@@ -37,10 +44,13 @@ export type IssuePreset = {
 export function IssueForm({
   materials,
   batches,
+  departments,
   preset = {},
 }: {
   materials: MaterialOption[];
   batches: OpenBatch[];
+  /** Where issues have gone before, most used first — a picklist, not a rule. */
+  departments: string[];
   preset?: IssuePreset;
 }) {
   const [state, formAction] = useActionState(createIssueAction, initialState);
@@ -48,15 +58,24 @@ export function IssueForm({
   const id = useId();
 
   const [materialId, setMaterialId] = useState(preset.materialId ?? "");
-  const forMaterial = batches.filter((b) => b.materialId === materialId);
+  const [jobRef, setJobRef] = useState(preset.jobRef ?? "");
+
+  /* The job's own paper first, then unreserved oldest-first, then other jobs'. */
+  const order = (list: OpenBatch[]) =>
+    [...list].sort((a, b) => {
+      const rank = (x: OpenBatch) => (sameJob(x.jobRef, jobRef) ? 0 : x.jobRef ? 2 : 1);
+      return rank(a) - rank(b) || (a.receivedDate < b.receivedDate ? -1 : a.receivedDate > b.receivedDate ? 1 : 0);
+    });
+  const forMaterial = order(batches.filter((b) => b.materialId === materialId));
   const [batchId, setBatchId] = useState(forMaterial[0]?.batchId ?? "");
 
   const chosen = materials.find((m) => m.id === materialId);
   const batch = forMaterial.find((b) => b.batchId === batchId) ?? forMaterial[0];
+  const otherJob = batch?.jobRef && !sameJob(batch.jobRef, jobRef) ? batch.jobRef : null;
 
   const pickMaterial = (next: string) => {
     setMaterialId(next);
-    setBatchId(batches.find((b) => b.materialId === next)?.batchId ?? "");
+    setBatchId(order(batches.filter((b) => b.materialId === next))[0]?.batchId ?? "");
   };
 
   return (
@@ -118,14 +137,21 @@ export function IssueForm({
                 onChange={(e) => setBatchId(e.target.value)}
                 className={inputClass}
               >
-                {forMaterial.map((b, i) => (
+                {forMaterial.map((b) => (
                   <option key={b.batchId} value={b.batchId}>
-                    {b.batchNo} · received {formatDate(b.receivedDate)} · {formatQty(b.qtyRemaining)}{" "}
-                    {chosen?.unit} left{i === 0 ? " · oldest" : ""}
+                    {b.batchNo} · {formatDate(b.receivedDate)} · {formatQty(b.qtyRemaining)}{" "}
+                    {chosen?.unit} left
+                    {b.jobRef ? (sameJob(b.jobRef, jobRef) ? " · this job's" : ` · for ${b.jobRef}`) : ""}
                   </option>
                 ))}
               </select>
             )}
+            {otherJob ? (
+              <p className="text-at-risk text-xs">
+                This batch was bought for &ldquo;{otherJob}&rdquo;. You can still issue from it; the
+                issue will say so.
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-2">
@@ -157,9 +183,29 @@ export function IssueForm({
             <Input
               id={`${id}-dept`}
               name="department"
+              list={`${id}-depts`}
               defaultValue={preset.department ?? ""}
               placeholder="Offset Printing"
             />
+            <datalist id={`${id}-depts`}>
+              {departments.map((d) => (
+                <option key={d} value={d} />
+              ))}
+            </datalist>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`${id}-job`}>Job</Label>
+            <Input
+              id={`${id}-job`}
+              name="jobRef"
+              value={jobRef}
+              onChange={(e) => setJobRef(e.target.value)}
+              placeholder="Nicobar"
+            />
+            <p className="text-muted-foreground text-xs">
+              By name. Paper bought for this job is offered first.
+            </p>
           </div>
 
           <div className="space-y-2">

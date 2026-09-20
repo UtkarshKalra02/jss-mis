@@ -6,7 +6,7 @@ import { IssueForm, type IssuePreset } from "@/components/materials/issue-form";
 import { getJobCard } from "@/modules/job-cards/queries";
 import { paperCount } from "@/modules/job-cards/paper";
 import type { PaperBundle } from "@/modules/job-cards/paper";
-import { listMaterialOptions, listOpenBatches } from "@/modules/materials/queries";
+import { listDepartments, listMaterialOptions, listOpenBatches } from "@/modules/materials/queries";
 
 export const metadata: Metadata = { title: "Issue material · JSS MIS" };
 
@@ -23,7 +23,11 @@ export default async function IssuePage({
   await requireAccess("material", "write");
   const { material, jobCard } = await searchParams;
 
-  const [materials, batches] = await Promise.all([listMaterialOptions(), listOpenBatches()]);
+  const [materials, batches, departments] = await Promise.all([
+    listMaterialOptions(),
+    listOpenBatches(),
+    listDepartments(),
+  ]);
 
   let preset: IssuePreset = { materialId: material };
   if (jobCard) {
@@ -40,6 +44,9 @@ export default async function IssuePage({
         jobCardId: card.id,
         jcNo: card.jcNo,
         department: "Offset Printing",
+        // The job by name, so paper reserved for it under that name is
+        // offered first (P3). The item's name is what the store calls the job.
+        jobRef: card.itemName,
       };
     }
   }
@@ -54,7 +61,7 @@ export default async function IssuePage({
         From a batch to the floor. Oldest batch first unless you choose otherwise.
       </p>
       <div className="mt-8">
-        <IssueForm materials={materials} batches={batches} preset={preset} />
+        <IssueForm materials={materials} batches={batches} departments={departments} preset={preset} />
       </div>
     </div>
   );

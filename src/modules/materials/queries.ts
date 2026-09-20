@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, isNull, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
@@ -62,17 +62,54 @@ export type StockRow = typeof vMaterialStock.$inferSelect;
  * from the view. Inactive materials are included and marked, not hidden — a
  * discontinued board with 200 sheets left is still 200 sheets.
  */
-export async function listStock(opts: { categoryId?: string } = {}): Promise<StockRow[]> {
+export async function listStock(
+  opts: { categoryId?: string; query?: string } = {},
+): Promise<StockRow[]> {
+  const q = opts.query?.trim();
+  const matches = q
+    ? or(
+        ilike(vMaterialStock.sku, `%${q}%`),
+        ilike(vMaterialStock.name, `%${q}%`),
+        ilike(vMaterialStock.typeName, `%${q}%`),
+        ilike(vMaterialStock.size, `%${q}%`),
+      )
+    : undefined;
   return db
     .select()
     .from(vMaterialStock)
-    .where(opts.categoryId ? eq(vMaterialStock.categoryId, opts.categoryId) : undefined)
+    .where(and(opts.categoryId ? eq(vMaterialStock.categoryId, opts.categoryId) : undefined, matches))
     .orderBy(
       desc(vMaterialStock.needsReorder),
+      desc(vMaterialStock.dueForIssue),
       asc(vMaterialStock.categoryName),
       asc(vMaterialStock.typeName),
       asc(vMaterialStock.name),
     );
+}
+
+/**
+ * The sheet's "Operations check — due for issue" (P2): Interval items whose
+ * last issue is older than their interval. Most often it means the floor
+ * used it and nobody typed it; sometimes it means the interval is wrong.
+ */
+export async function listDueForIssue(): Promise<StockRow[]> {
+  return db
+    .select()
+    .from(vMaterialStock)
+    .where(eq(vMaterialStock.dueForIssue, true))
+    .orderBy(asc(vMaterialStock.daysToIssue));
+}
+
+/** The departments issues have gone to, most used first — the issue form's picklist. */
+export async function listDepartments(): Promise<string[]> {
+  const rows = await db
+    .select({ department: materialIssue.department, n: sql<number>`count(*)::int` })
+    .from(materialIssue)
+    .where(and(isNull(materialIssue.deletedAt), sql`${materialIssue.department} is not null`))
+    .groupBy(materialIssue.department)
+    .orderBy(desc(sql`count(*)`))
+    .limit(30);
+  return rows.map((r) => r.department!).filter(Boolean);
 }
 
 export async function getStock(materialId: string): Promise<StockRow | null> {
@@ -148,6 +185,7 @@ export async function batchesForMaterial(materialId: string) {
       qtyIssued: vMaterialBatchStock.qtyIssued,
       qtyAdjusted: vMaterialBatchStock.qtyAdjusted,
       qtyRemaining: vMaterialBatchStock.qtyRemaining,
+      jobRef: materialBatch.jobRef,
       remarks: materialBatch.remarks,
     })
     .from(vMaterialBatchStock)
@@ -172,8 +210,11 @@ export async function listOpenBatches() {
       materialId: vMaterialBatchStock.materialId,
       receivedDate: vMaterialBatchStock.receivedDate,
       qtyRemaining: vMaterialBatchStock.qtyRemaining,
+      /** Paper bought for a job (P3): the issue form offers it to that job first. */
+      jobRef: materialBatch.jobRef,
     })
     .from(vMaterialBatchStock)
+    .innerJoin(materialBatch, eq(materialBatch.id, vMaterialBatchStock.batchId))
     .where(gt(vMaterialBatchStock.qtyRemaining, "0"))
     .orderBy(asc(vMaterialBatchStock.receivedDate), asc(vMaterialBatchStock.batchNo));
 }
@@ -189,8 +230,10 @@ export async function listAllBatches(): Promise<OpenBatch[]> {
       materialId: vMaterialBatchStock.materialId,
       receivedDate: vMaterialBatchStock.receivedDate,
       qtyRemaining: vMaterialBatchStock.qtyRemaining,
+      jobRef: materialBatch.jobRef,
     })
     .from(vMaterialBatchStock)
+    .innerJoin(materialBatch, eq(materialBatch.id, vMaterialBatchStock.batchId))
     .orderBy(desc(vMaterialBatchStock.receivedDate), asc(vMaterialBatchStock.batchNo));
 }
 
@@ -203,6 +246,7 @@ export async function getBatch(batchId: string, runner: Runner = db) {
       sku: material.sku,
       name: material.name,
       unit: material.unit,
+      jobRef: materialBatch.jobRef,
     })
     .from(materialBatch)
     .innerJoin(material, eq(material.id, materialBatch.materialId))
@@ -231,6 +275,7 @@ export type Movement = {
   detail: string | null;
   jobCardId: string | null;
   jcNo: string | null;
+  jobRef: string | null;
   remarks: string | null;
   enteredBy: string | null;
 };
@@ -247,6 +292,7 @@ export async function movementsForMaterial(materialId: string): Promise<Movement
       detail: materialIssue.department,
       jobCardId: materialIssue.jobCardId,
       jcNo: jobCard.jcNo,
+      jobRef: materialIssue.jobRef,
       remarks: materialIssue.remarks,
       enteredBy: appUser.name,
     })
@@ -279,6 +325,7 @@ export async function movementsForMaterial(materialId: string): Promise<Movement
       ...a,
       jobCardId: null,
       jcNo: null,
+      jobRef: null,
     })),
   ];
 
@@ -339,6 +386,18 @@ export async function listGrns() {
 /* -------------------------------------------------------------------------- */
 /* The job card's paper picker (O2)                                            */
 /* -------------------------------------------------------------------------- */
+
+export const ADC_WINDOW_KEY = "material_adc_window_days";
+
+export async function getAdcWindowDays(): Promise<number> {
+  const [row] = await db
+    .select({ value: appSetting.value })
+    .from(appSetting)
+    .where(and(eq(appSetting.key, ADC_WINDOW_KEY), isNull(appSetting.deletedAt)))
+    .limit(1);
+  const parsed = Number(row?.value);
+  return Number.isFinite(parsed) ? parsed : 90;
+}
 
 export const GSM_TOLERANCE_KEY = "paper_gsm_tolerance_pct";
 

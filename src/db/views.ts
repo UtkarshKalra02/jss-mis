@@ -6,6 +6,8 @@ import {
   delegationStatusEnum,
   invoiceStatusEnum,
   jobTypeEnum,
+  materialReorderMethodEnum,
+  materialReorderNoteEnum,
   materialUnitEnum,
   poItemStatusEnum,
   priorityEnum,
@@ -413,4 +415,24 @@ export const vMaterialStock = pgView("v_material_stock", {
   reorderLevel: numeric("reorder_level"),
   daysRemaining: numeric("days_remaining"),
   needsReorder: boolean("needs_reorder").notNull(),
+
+  /* Appended by 0040 (section P): the sheet's Stock Intelligence, derived. */
+  reorderMethod: materialReorderMethodEnum("reorder_method").notNull(),
+  safetyFactor: numeric("safety_factor"),
+  issueIntervalDays: numeric("issue_interval_days"),
+  reorderNote: materialReorderNoteEnum("reorder_note"),
+  reorderNoteOn: date("reorder_note_on"),
+  imageUrl: text("image_url"),
+  /** Issued in the window ÷ window days. Null = nothing issued in the window. */
+  adc: numeric("adc"),
+  /** ADC × lead time × safety factor. */
+  maxLevelCalc: numeric("max_level_calc"),
+  lastIssueOn: date("last_issue_on"),
+  /** Interval items: interval − days since the last issue. Negative = overdue. */
+  daysToIssue: numeric("days_to_issue"),
+  dueForIssue: boolean("due_for_issue").notNull(),
+  orderByDate: date("order_by_date"),
+  suggestedOrderQty: numeric("suggested_order_qty").notNull(),
+  /** On demand · OK · Low · Order now · Critical – order now · No consumption data · Set interval · Retired */
+  stockStatus: text("stock_status").notNull(),
 }).existing();

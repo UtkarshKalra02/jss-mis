@@ -231,6 +231,12 @@ const SCHEMA_EXPECTATIONS: {
     sql: sql`select 1 from information_schema.tables where table_name = 'design_process'`,
   },
   {
+    what: "material reorder columns (v_material_stock.stock_status)",
+    since: "0040_material_reorder_from_ledger",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'v_material_stock' and column_name = 'stock_status'`,
+  },
+  {
     what: "material stock: tables, views, issue guard, DATA_ENTRY",
     since: "0039_material_stock",
     sql: sql`select 1 from pg_trigger where tgname = 'material_issue_guard_trg'`,

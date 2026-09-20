@@ -336,6 +336,14 @@ is why the card's page offers the issue pre-filled rather than leaving the count
 
 ### Left open, deliberately
 
+- **`material.average_daily_consumption` and `material.max_level`** are superseded by the
+  view (P2) and read by nothing. Dropping them is a deploy-first migration.
+- **Vendors** (`Dealer-Details`: three rows with phone numbers, and GRN vendor names typed
+  four ways) are free text on the GRN. A vendor master is small and obvious once ordering
+  is ever built; not before.
+- **Job references are names, not links.** `job_ref` on batches and issues is the ledger's
+  own free text. Matching it to a PO item or job card is a lookup that would earn itself
+  when the store starts issuing against cards rather than names.
 - **A press run has no material.** The run owns the sheet for ganged cards (J15) and its
   paper band is free text; `material_id` is on `job_card` only. Adding it to `press_run`
   is small when ganged jobs start being issued from the store.
@@ -344,9 +352,9 @@ is why the card's page offers the issue pre-filled rather than leaving the count
 - **Exhausted batches and movement history before 19 Sep 2026** live in the sheet, not
   the database (O7). If anyone needs them queryable, the importer's shape extends to the
   Paper Batch Issues and Stock Adjustments tabs.
-- **One unloaded batch**: `GRN-260814-135007-L3`, 720 sheets of Duplex 31.5x41.5 250Gsm
-  Gray Back under `P-DUP-995`, which has no master row. Add the material, re-run the
-  importer.
+- **P-DUP-995, 720 sheets of Duplex 31.5x41.5 250Gsm Gray Back**: in the sheet's GRN and
+  batch tabs, never in the ledger, so the sheet's own closing stock does not count it (P1).
+  The material row exists with no stock. If the paper is real, receive it.
 - **Vendor ordering.** The list flags what needs ordering; there is no purchase order to a
   vendor, so in-transit stays a typed figure.
 

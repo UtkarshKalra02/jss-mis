@@ -15,9 +15,9 @@ import { Feedback, Submit, inputClass, useRedirectOnSuccess } from "./form-bits"
 
 const initialState: FormState = { ok: false, error: null };
 
-type Line = { key: string; materialId: string; qty: string; remarks: string };
+type Line = { key: string; materialId: string; qty: string; jobRef: string; remarks: string };
 let seq = 0;
-const blank = (materialId = ""): Line => ({ key: `l${(seq += 1)}`, materialId, qty: "", remarks: "" });
+const blank = (materialId = ""): Line => ({ key: `l${(seq += 1)}`, materialId, qty: "", jobRef: "", remarks: "" });
 
 /**
  * A goods receipt: one vendor document, one or more lines, each becoming a
@@ -83,7 +83,8 @@ export function GrnForm({
                 <th className="w-8 px-2"></th>
                 <th className="min-w-72 px-2">Material</th>
                 <th className="w-32 px-2 text-right">Qty</th>
-                <th className="min-w-48 px-2">Remarks</th>
+                <th className="min-w-40 px-2">For job</th>
+                <th className="min-w-40 px-2">Remarks</th>
                 <th className="w-10 px-2"></th>
               </tr>
             </thead>
@@ -127,6 +128,18 @@ export function GrnForm({
                         />
                         <span className="text-muted-foreground w-10 text-[11px]">{chosen?.unit ?? ""}</span>
                       </div>
+                    </td>
+                    {/* Paper bought for a particular job (P3). Issues for
+                        that job are offered this batch first. */}
+                    <td className="px-2 py-1">
+                      <input
+                        name="lineJobRef"
+                        value={line.jobRef}
+                        onChange={(e) => patch(line.key, "jobRef", e.target.value)}
+                        className={inputClass}
+                        placeholder="Nicobar"
+                        aria-label={`Job, line ${i + 1}`}
+                      />
                     </td>
                     <td className="px-2 py-1">
                       <input
