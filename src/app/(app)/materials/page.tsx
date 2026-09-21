@@ -28,6 +28,9 @@ export default async function MaterialsPage({
 }) {
   const user = await requireAccess("material");
   const canWrite = can(user.role, "material", "write");
+  // The In/Out log is for checking on the store, so it is an admin's, not
+  // the store's (P4).
+  const canAudit = can(user.role, "admin", "write");
 
   const { category = "", q = "", removed } = await searchParams;
   const [rows, categories, due] = await Promise.all([
@@ -44,6 +47,11 @@ export default async function MaterialsPage({
         <h1 className="page-title">Materials</h1>
         {canWrite ? (
           <div className="flex flex-wrap items-center gap-2">
+            {canAudit ? (
+              <Button asChild size="sm" variant="ghost">
+                <Link href="/materials/log">In/Out log</Link>
+              </Button>
+            ) : null}
             <Button asChild size="sm" variant="outline">
               <Link href="/materials/adjust">Adjust</Link>
             </Button>

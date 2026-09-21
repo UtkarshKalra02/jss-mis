@@ -3910,3 +3910,28 @@ job.
 merged — "6/C", "Cutting", "Store / Purchase"; the issue form offers the most-used as a
 picklist), the ledger's remarks, and a photo per SKU from `Form responses 4` (56 of them,
 Drive links, shown as a link because Drive does not serve them inline).
+
+## P4 — the In/Out log is the admin's, not the store's
+
+Utkarsh asked for a log of everything going in and out of the store, shown only to an
+admin. It exists at `/materials/log`: every receipt, issue and adjustment across every
+material, **in the order they were entered**, each row saying who typed it and when
+beside the date it was given. That ordering is the point. The stock list and each
+material's page say what stock *is*; this page says what the store's people have been
+*doing* to it, which is a different question and one the store does not ask of itself.
+
+So it is gated on `admin`, not on `material`. DATA_ENTRY and PLANNER write the store and
+never see this page; OWNER reads the store and does not see it either — "admin" was the
+brief, and widening to OWNER is a one-line change if it is ever wanted. The link is a
+button on the Materials page, rendered only for a role that holds `admin`.
+
+**What is on it.** In rows are batches (a GRN line, or an opening balance or replayed
+ledger row with no GRN behind it — the number shown is the GRN's when there is one); Out
+rows are issues, negative; adjustments are signed as entered. Filters — kind, dates,
+material — live in the URL as every register's do (F22). With no dates set it shows the
+last thirty days, and says so: the ledger runs from January, and a page of everything is
+not a page. Five hundred rows is the cap, with a notice to narrow the dates.
+
+**What is not on it.** Removed issues. The log shows live rows only; a removal is in
+`audit_log`, which is the record of removals. Showing soft-deleted rows here would also
+drag in the batch tab the P1 replay retired, which is noise, not history.

@@ -18,6 +18,14 @@ import {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * The three things the In/Out log can show (P4). Here, not in queries.ts,
+ * because the log's filter is a client component and must not pull the
+ * database module into the browser bundle.
+ */
+export const MOVEMENT_KINDS = ["In", "Out", "Adjustment"] as const;
+export type MovementKind = (typeof MOVEMENT_KINDS)[number];
+
 const trimmed = z
   .string()
   .trim()

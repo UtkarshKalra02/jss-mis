@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, gt, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, isNull, lte, or, sql } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
@@ -15,6 +16,8 @@ import {
   materialType,
 } from "@/db/schema";
 import { vMaterialBatchStock, vMaterialStock } from "@/db/views";
+
+import type { MovementKind } from "./validation";
 
 type Runner = typeof db | Tx;
 
@@ -330,6 +333,178 @@ export async function movementsForMaterial(materialId: string): Promise<Movement
   ];
 
   return rows.sort((a, b) => (a.on < b.on ? 1 : a.on > b.on ? -1 : a.no < b.no ? 1 : -1));
+}
+
+/* -------------------------------------------------------------------------- */
+/* The In/Out log — every movement in the store, for ADMIN (P4)                */
+/* -------------------------------------------------------------------------- */
+
+export type LogRow = {
+  kind: MovementKind;
+  id: string;
+  no: string;
+  /** The date the movement is dated — received, issued or counted on. */
+  on: string;
+  /** When the row was actually typed in, which is what the log is for. */
+  enteredAt: Date;
+  enteredBy: string | null;
+  materialId: string;
+  sku: string;
+  name: string;
+  unit: string;
+  batchNo: string;
+  /** Signed: In positive, Out negative, an adjustment as it was entered. */
+  qty: string;
+  /** Vendor for an In, department for an Out, reason for an adjustment. */
+  detail: string | null;
+  jobCardId: string | null;
+  jcNo: string | null;
+  jobRef: string | null;
+  remarks: string | null;
+};
+
+export type LogFilters = {
+  /** yyyy-mm-dd, inclusive, against the movement's own date. */
+  from?: string;
+  to?: string;
+  kind?: MovementKind;
+  query?: string;
+};
+
+/** More than this and the page stops being a page; narrow the dates. */
+export const LOG_LIMIT = 500;
+
+/**
+ * Every receipt, issue and adjustment across the store, newest entry first —
+ * the sheet's `InOut (Manual)` tab, read the other way round: not what stock
+ * is, but what people have been typing into it. That is why every row says
+ * who entered it and when, beside the date it claims to be for.
+ *
+ * Three selects merged here rather than one UNION: the three tables carry
+ * different columns, and the per-material movements list already does it
+ * this way. Each is capped at the limit before the merge, so the page is
+ * bounded whatever the date range.
+ */
+export async function listMovementLog(
+  filters: LogFilters = {},
+): Promise<{ rows: LogRow[]; truncated: boolean }> {
+  const q = filters.query?.trim();
+  const matches = q
+    ? or(ilike(material.sku, `%${q}%`), ilike(material.name, `%${q}%`))
+    : undefined;
+  const between = (col: PgColumn) =>
+    and(
+      filters.from ? gte(col, filters.from) : undefined,
+      filters.to ? lte(col, filters.to) : undefined,
+    );
+  const wants = (kind: MovementKind) => !filters.kind || filters.kind === kind;
+
+  const [ins, outs, adjs] = await Promise.all([
+    wants("In")
+      ? db
+          .select({
+            id: materialBatch.id,
+            no: materialBatch.batchNo,
+            on: materialBatch.receivedDate,
+            enteredAt: materialBatch.createdAt,
+            enteredBy: appUser.name,
+            materialId: material.id,
+            sku: material.sku,
+            name: material.name,
+            unit: material.unit,
+            batchNo: materialBatch.batchNo,
+            qty: materialBatch.qtyReceived,
+            detail: grn.vendor,
+            grnNo: grn.grnNo,
+            jobRef: materialBatch.jobRef,
+            remarks: materialBatch.remarks,
+          })
+          .from(materialBatch)
+          .innerJoin(material, eq(material.id, materialBatch.materialId))
+          .leftJoin(grn, eq(grn.id, materialBatch.grnId))
+          .leftJoin(appUser, eq(appUser.id, materialBatch.createdBy))
+          .where(and(isNull(materialBatch.deletedAt), between(materialBatch.receivedDate), matches))
+          .orderBy(desc(materialBatch.createdAt))
+          .limit(LOG_LIMIT)
+      : [],
+    wants("Out")
+      ? db
+          .select({
+            id: materialIssue.id,
+            no: materialIssue.issueNo,
+            on: materialIssue.issuedOn,
+            enteredAt: materialIssue.createdAt,
+            enteredBy: appUser.name,
+            materialId: material.id,
+            sku: material.sku,
+            name: material.name,
+            unit: material.unit,
+            batchNo: materialBatch.batchNo,
+            qty: materialIssue.qty,
+            detail: materialIssue.department,
+            jobCardId: materialIssue.jobCardId,
+            jcNo: jobCard.jcNo,
+            jobRef: materialIssue.jobRef,
+            remarks: materialIssue.remarks,
+          })
+          .from(materialIssue)
+          .innerJoin(materialBatch, eq(materialBatch.id, materialIssue.batchId))
+          .innerJoin(material, eq(material.id, materialBatch.materialId))
+          .leftJoin(jobCard, eq(jobCard.id, materialIssue.jobCardId))
+          .leftJoin(appUser, eq(appUser.id, materialIssue.createdBy))
+          .where(and(isNull(materialIssue.deletedAt), between(materialIssue.issuedOn), matches))
+          .orderBy(desc(materialIssue.createdAt))
+          .limit(LOG_LIMIT)
+      : [],
+    wants("Adjustment")
+      ? db
+          .select({
+            id: materialAdjustment.id,
+            no: materialAdjustment.adjustmentNo,
+            on: materialAdjustment.adjustedOn,
+            enteredAt: materialAdjustment.createdAt,
+            enteredBy: appUser.name,
+            materialId: material.id,
+            sku: material.sku,
+            name: material.name,
+            unit: material.unit,
+            batchNo: materialBatch.batchNo,
+            qty: materialAdjustment.qty,
+            detail: materialAdjustment.reason,
+            remarks: materialAdjustment.remarks,
+          })
+          .from(materialAdjustment)
+          .innerJoin(materialBatch, eq(materialBatch.id, materialAdjustment.batchId))
+          .innerJoin(material, eq(material.id, materialBatch.materialId))
+          .leftJoin(appUser, eq(appUser.id, materialAdjustment.createdBy))
+          .where(and(isNull(materialAdjustment.deletedAt), between(materialAdjustment.adjustedOn), matches))
+          .orderBy(desc(materialAdjustment.createdAt))
+          .limit(LOG_LIMIT)
+      : [],
+  ]);
+
+  const rows: LogRow[] = [
+    ...ins.map(({ grnNo, ...b }) => ({
+      kind: "In" as const,
+      ...b,
+      // A receipt with a GRN behind it is one line of that GRN; an opening
+      // balance or a replayed ledger row has only its batch number.
+      no: grnNo ?? b.batchNo,
+      jobCardId: null,
+      jcNo: null,
+    })),
+    ...outs.map((i) => ({ kind: "Out" as const, ...i, qty: `-${i.qty}` })),
+    ...adjs.map((a) => ({
+      kind: "Adjustment" as const,
+      ...a,
+      jobCardId: null,
+      jcNo: null,
+      jobRef: null,
+    })),
+  ];
+
+  rows.sort((a, b) => b.enteredAt.getTime() - a.enteredAt.getTime() || (a.no < b.no ? 1 : -1));
+  return { rows: rows.slice(0, LOG_LIMIT), truncated: rows.length > LOG_LIMIT };
 }
 
 /** Paper issued against one job card — shown on the card's page (O3). */
