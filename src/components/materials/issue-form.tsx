@@ -14,15 +14,9 @@ import { Feedback, Submit, inputClass, useRedirectOnSuccess } from "./form-bits"
 
 const initialState: FormState = { ok: false, error: null };
 
-export type IssuePreset = {
-  materialId?: string;
-  qty?: string;
-  jobCardId?: string;
-  jcNo?: string;
-  department?: string;
-  /** The job by name, to match paper reserved for it (P3). */
-  jobRef?: string;
-};
+import type { IssuePreset } from "@/modules/materials/issue-preset";
+
+export type { IssuePreset };
 
 const sameJob = (a: string | null | undefined, b: string | null | undefined) =>
   Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());

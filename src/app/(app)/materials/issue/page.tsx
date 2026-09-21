@@ -2,10 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { requireAccess } from "@/auth/guard";
-import { IssueForm, type IssuePreset } from "@/components/materials/issue-form";
+import { IssueForm } from "@/components/materials/issue-form";
 import { getJobCard } from "@/modules/job-cards/queries";
-import { paperCount } from "@/modules/job-cards/paper";
-import type { PaperBundle } from "@/modules/job-cards/paper";
+import { issuePresetFromCard, type IssuePreset } from "@/modules/materials/issue-preset";
 import { listDepartments, listMaterialOptions, listOpenBatches } from "@/modules/materials/queries";
 
 export const metadata: Metadata = { title: "Issue material · JSS MIS" };
@@ -32,23 +31,7 @@ export default async function IssuePage({
   let preset: IssuePreset = { materialId: material };
   if (jobCard) {
     const card = await getJobCard(jobCard);
-    if (card) {
-      const sheets = paperCount({
-        qty: card.paperQty,
-        bundle: card.paperBundle as PaperBundle | null,
-        parts: card.paperParts,
-      });
-      preset = {
-        materialId: card.materialId ?? material,
-        qty: sheets.parentSheets ? String(sheets.parentSheets) : undefined,
-        jobCardId: card.id,
-        jcNo: card.jcNo,
-        department: "Offset Printing",
-        // The job by name, so paper reserved for it under that name is
-        // offered first (P3). The item's name is what the store calls the job.
-        jobRef: card.itemName,
-      };
-    }
+    if (card) preset = issuePresetFromCard(card, material);
   }
 
   return (
