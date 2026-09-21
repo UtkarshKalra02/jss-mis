@@ -12,7 +12,9 @@ export const metadata: Metadata = { title: "Purchase orders · JSS MIS" };
 
 export default async function PurchaseOrdersPage() {
   const user = await requireAccess("purchase_order");
-  const canWrite = can(user.role, "purchase_order", "write");
+  // "Capture PO" is offered on "create", which the PLANNER holds (P5).
+  // Nothing on this list edits a row, so nothing here needs "write".
+  const canCreate = can(user.role, "purchase_order", "create");
   const canImport = can(user.role, "import", "write");
 
   const orders = await listPurchaseOrders();
@@ -21,7 +23,7 @@ export default async function PurchaseOrdersPage() {
     <div>
       <div className="flex items-baseline justify-between">
         <h1 className="page-title">Purchase orders</h1>
-        {canWrite ? (
+        {canCreate ? (
           <div className="flex items-center gap-2">
             {canImport ? (
               <Button asChild size="sm" variant="outline">
@@ -43,7 +45,7 @@ export default async function PurchaseOrdersPage() {
           columns={purchaseOrderColumns}
           data={orders}
           emptyMessage={
-            canWrite ? "No purchase orders yet. Capture the first one." : "No purchase orders yet."
+            canCreate ? "No purchase orders yet. Capture the first one." : "No purchase orders yet."
           }
         />
       </div>

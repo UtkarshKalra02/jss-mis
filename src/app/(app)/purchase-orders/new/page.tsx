@@ -10,7 +10,8 @@ import { listDesignOptions, listOpenItemOptions } from "@/modules/purchase-order
 export const metadata: Metadata = { title: "Capture PO · JSS MIS" };
 
 export default async function NewPurchaseOrderPage() {
-  await requireAccess("purchase_order", "write");
+  // "create", not "write": the PLANNER may capture a PO and nothing more (P5).
+  await requireAccess("purchase_order", "create");
 
   const [clients, designs, openItems] = await Promise.all([
     listClientOptions(),

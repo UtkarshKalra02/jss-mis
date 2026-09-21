@@ -197,6 +197,16 @@ export const ACCESS: Matrix = {
     job_planning: "write",
 
     /**
+     * Preeti captures purchase orders, at Utkarsh's direction (P5).
+     *
+     * "create", the K20 level, not "write": she can record a PO and its items
+     * when one lands on her desk, and cannot edit, remove or cancel one that
+     * exists — that stays the order desk's. The capture form calls only the
+     * create action, so the screen offers exactly what the guard permits.
+     */
+    purchase_order: "create",
+
+    /**
      * Preeti raises job cards, transcribes the run figures, and decides what
      * gets combined onto one sheet (J14). `job_card` and `press_run` carry the
      * same grant deliberately: ganging is a decision made while raising a
@@ -375,7 +385,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   ADMIN: "Everything, including users and configuration.",
   ORDER_DESK: "Enquiries, quotations, POs and designs.",
-  PLANNER: "Job planning, stage updates and dispatch.",
+  PLANNER: "Job planning, stage updates, dispatch, and capturing POs.",
   ACCOUNTS: "Invoices, receipts, AR ledger and dispatch.",
   FLOOR: "Stage updates only, on a phone.",
   OWNER: "Sees everything, edits nothing — delegates, records enquiries, adds clients.",

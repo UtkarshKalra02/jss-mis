@@ -49,9 +49,13 @@ const ok = (extra: Partial<FormState> = {}): FormState => ({ ok: true, error: nu
 const fail = (error: string): FormState => ({ ok: false, error });
 const warn = (warning: string): FormState => ({ ok: false, error: null, warning });
 
-/** Spec 6.3: PO capture belongs to ORDER_DESK (and ADMIN). */
-async function requirePoWriter(): Promise<Actor> {
-  const user = await requireAccess("purchase_order", "write");
+/**
+ * Spec 6.3: PO capture belongs to ORDER_DESK (and ADMIN). Since P5 the
+ * PLANNER may capture too, on "create": the one action that cannot rewrite
+ * anybody else's work. Everything that touches an existing PO stays "write".
+ */
+async function requirePoWriter(access: "create" | "write" = "write"): Promise<Actor> {
+  const user = await requireAccess("purchase_order", access);
   return { id: user.id, role: user.role };
 }
 
@@ -159,7 +163,7 @@ export async function createPurchaseOrderAction(
   formData: FormData,
 ): Promise<FormState> {
   try {
-    const actor = await requirePoWriter();
+    const actor = await requirePoWriter("create");
 
     const parsed = createPoSchema.safeParse({
       clientId: formData.get("clientId"),

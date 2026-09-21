@@ -357,6 +357,13 @@ is why the card's page offers the issue pre-filled rather than leaving the count
   The material row exists with no stock. If the paper is real, receive it.
 - **Vendor ordering.** The list flags what needs ordering; there is no purchase order to a
   vendor, so in-transit stays a typed figure.
+- **The importer retires a person's adjustments without naming them.** A re-run
+  soft-deletes the batches it wrote earlier and everything against them. Issues a person
+  entered against one are counted and printed (`humanIssuesRetired`); adjustments are
+  folded into `retiredAdjustments` with the importer's own. On 21 Sep 2026 the production
+  replay retired `MA-2026-0001` (−8 Kg on I-PAN-257, entered by hand) this way, and it was
+  only noticed by reading the log afterwards. The importer should list them the way it
+  lists issues.
 
 Captured 2 Sep 2026, verbatim:
 

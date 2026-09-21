@@ -3935,3 +3935,13 @@ not a page. Five hundred rows is the cap, with a notice to narrow the dates.
 **What is not on it.** Removed issues. The log shows live rows only; a removal is in
 `audit_log`, which is the record of removals. Showing soft-deleted rows here would also
 drag in the batch tab the P1 replay retired, which is noise, not history.
+
+## P5 — the planner captures purchase orders
+
+Utkarsh asked that Preeti be able to add POs. PLANNER now holds `purchase_order: "create"`
+— the K20 level, not "write". She reaches the list, sees any PO, and captures a new one
+with its items; she cannot edit, remove or cancel one that exists, which stays the order
+desk's (spec 6.3). The capture form calls only the create action, so the screen offers
+exactly what the guard permits, and `tests/planner-po.test.ts` pins that the grant is
+"create" and not more. Widening to full write, as K19 did for Punit on clients, is the
+one-word change if the narrower shape turns out to be the wrong one.
