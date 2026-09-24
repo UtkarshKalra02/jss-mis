@@ -10,6 +10,7 @@ import { formatDate, formatQty } from "@/lib/format";
 import { createAdjustmentAction, type FormState } from "@/modules/materials/actions";
 import type { MaterialOption, OpenBatch } from "@/modules/materials/queries";
 
+import { MaterialPicker } from "./material-picker";
 import { Feedback, Submit, inputClass, useRedirectOnSuccess } from "./form-bits";
 
 const initialState: FormState = { ok: false, error: null };
@@ -42,23 +43,14 @@ export function AdjustmentForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor={`${id}-material`}>Material</Label>
-            <select
+            <MaterialPicker
               id={`${id}-material`}
               name="material"
-              required
+              materials={materials}
               value={materialId}
-              onChange={(e) => setMaterialId(e.target.value)}
-              className={inputClass}
-            >
-              <option value="" disabled>
-                Choose…
-              </option>
-              {materials.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.sku} — {m.name} ({formatQty(m.closingStock)} {m.unit} in stock)
-                </option>
-              ))}
-            </select>
+              onChange={setMaterialId}
+              label="Material"
+            />
           </div>
 
           <div className="space-y-2 sm:col-span-2">

@@ -3945,3 +3945,38 @@ desk's (spec 6.3). The capture form calls only the create action, so the screen 
 exactly what the guard permits, and `tests/planner-po.test.ts` pins that the grant is
 "create" and not more. Widening to full write, as K19 did for Punit on clients, is the
 one-word change if the narrower shape turns out to be the wrong one.
+
+## P6 — the material is found by typing, not by scrolling
+
+Utkarsh reported that receiving a GRN meant scrolling the whole material list to reach a
+paper. The control was a native `<select>` holding every active material, and a browser's
+dropdown jumps only on the first characters of an option — every option here begins with
+its SKU, so "sbs 25x36" matched nothing and there was no way to type to a paper at all.
+This is the control the store touches on every single receipt.
+
+`MaterialPicker` replaces it on all three store forms — Receive (GRN) lines, Issue and
+Adjust — because they carried the same dropdown and the same problem. It is built on the
+`cmdk` Command and Popover primitives already in the project; no dependency was added.
+
+**Matching is word by word, in any order**, across SKU, name, type, category, size, GSM
+and finish. "sbs 25x36 325" and "325 sbs 36" find the same paper: the store thinks in
+dimensions and weights and says them in whatever order they come to mind, never in the
+order a material's name happens to be written. The rule is a pure function in
+`src/modules/materials/search.ts` with `tests/material-search.test.ts` against it, kept
+apart from the component for the same reason the job card's paper arithmetic is — so it
+can be tested without a browser or a database.
+
+**The list is capped at 60 while typing and says how many more match.** Four hundred rows
+in a popover is slow on the phone the store actually uses, but a silent cap would hide the
+paper somebody is looking for.
+
+**What did not change**: the picker posts a hidden input under the old field name, so
+every action and every validation schema is untouched, and it offers exactly the
+materials the dropdown did — active ones, from `listMaterialOptions`. Whether retired
+materials should be reachable when a late delivery arrives is a separate question and was
+deliberately not answered here.
+
+**Two things the browser check caught** and the tests could not: the popover inherited the
+GRN table cell's width and truncated every name, and the first fix for that — a width with
+a `min-w` and a `max-w` — ran off the side of a phone, because a min-width beats a
+max-width. It is one width expression now.

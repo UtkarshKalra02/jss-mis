@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { todayIST } from "@/lib/dates";
-import { formatQty } from "@/lib/format";
 import { createGrnAction, type FormState } from "@/modules/materials/actions";
 import type { MaterialOption } from "@/modules/materials/queries";
 
+import { MaterialPicker } from "./material-picker";
 import { Feedback, Submit, inputClass, useRedirectOnSuccess } from "./form-bits";
 
 const initialState: FormState = { ok: false, error: null };
@@ -95,23 +95,13 @@ export function GrnForm({
                   <tr key={line.key}>
                     <td className="text-muted-foreground px-2 text-center tabular-nums">{i + 1}</td>
                     <td className="px-2 py-1">
-                      <select
+                      <MaterialPicker
                         name="materialId"
-                        required
+                        materials={materials}
                         value={line.materialId}
-                        onChange={(e) => patch(line.key, "materialId", e.target.value)}
-                        className={inputClass}
-                        aria-label={`Material, line ${i + 1}`}
-                      >
-                        <option value="" disabled>
-                          Choose…
-                        </option>
-                        {materials.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.sku} — {m.name} ({formatQty(m.closingStock)} {m.unit} in stock)
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => patch(line.key, "materialId", v)}
+                        label={`Material, line ${i + 1}`}
+                      />
                     </td>
                     <td className="px-2 py-1">
                       <div className="flex items-center gap-1">
