@@ -10,8 +10,14 @@ import {
   DesignDelete,
 } from "@/components/designs/design-controls";
 import { DesignForm } from "@/components/designs/design-form";
+import { DesignOrderBook } from "@/components/designs/design-order-book";
 import { DesignTooling } from "@/components/tooling/design-tooling";
-import { getApproverName, getDesign, listClientOptions } from "@/modules/designs/queries";
+import {
+  getApproverName,
+  getDesign,
+  listClientOptions,
+  orderBookForDesign,
+} from "@/modules/designs/queries";
 import { designSelections, fabricationVocabulary } from "@/modules/fabrication/queries";
 import { listPaperOptions } from "@/modules/materials/queries";
 import { toolingForDesign } from "@/modules/tooling/queries";
@@ -26,15 +32,23 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
   const design = await getDesign(id);
   if (!design) notFound();
 
-  const [clients, approverName, tools, fabricationOptions, fabricationSelected, papers] =
-    await Promise.all([
-      listClientOptions(),
-      getApproverName(design.approvedBy),
-      toolingForDesign(id),
-      fabricationVocabulary(),
-      designSelections(id),
-      listPaperOptions(),
-    ]);
+  const [
+    clients,
+    approverName,
+    tools,
+    fabricationOptions,
+    fabricationSelected,
+    papers,
+    orderBook,
+  ] = await Promise.all([
+    listClientOptions(),
+    getApproverName(design.approvedBy),
+    toolingForDesign(id),
+    fabricationVocabulary(),
+    designSelections(id),
+    listPaperOptions(),
+    orderBookForDesign(id),
+  ]);
 
   const canAddTooling = can(user.role, "tooling", "write");
 
@@ -48,6 +62,11 @@ export default async function DesignPage({ params }: { params: Promise<{ id: str
         <h1 className="page-title tabular-nums">{design.designCode}</h1>
         <span className="text-muted-foreground text-[13px]">{design.jobName}</span>
       </div>
+
+      {/* What the client has on order for this design, across every item (P7).
+          Above tooling because "how much is owed" is the question somebody
+          opens a design with; where the die lives is the one they come back to. */}
+      <DesignOrderBook book={orderBook} />
 
       {/*
         The tooling attached to this design, with location and condition (I8).

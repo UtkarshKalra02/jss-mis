@@ -3980,3 +3980,31 @@ deliberately not answered here.
 GRN table cell's width and truncated every name, and the first fix for that — a width with
 a `min-w` and a `max-w` — ran off the side of a phone, because a min-width beats a
 max-width. It is one width expression now.
+
+## P7 — a design's order book: the total N2 declined to store
+
+Utkarsh asked whether a repeat's quantity gets added onto the item it repeats. It does
+not, and N2 is why: one row cannot hold two promised dates, and the original row must keep
+saying what its purchase order said. What N2 cost was visibility — with the repeats as
+separate items, nothing showed how much of a design a client had on order altogether.
+
+The design page now carries an **On order** panel: ordered, dispatched, still pending and
+open items (with an overdue count), then every item raised against that design, each
+linking to itself and its PO, with its own committed date coloured for overdue and
+at-risk.
+
+**The totals are read, never stored.** They are a sum of the rows at render time, the same
+rule as `pending_qty` and `current_stage` (non-negotiables 1 and 2) — so the items stay
+separate and honest and the figure cannot drift from them. Every number comes from
+`v_po_item_status`, which is what the Item Tracker and the repeat picker read, so "open"
+and "pending" mean here what they mean everywhere else.
+
+A design belongs to one client, so a design's order book is already that client's; there is
+no second filter to get wrong. The totalling is a pure function in
+`src/modules/designs/order-book.ts` with `tests/design-order-book.test.ts` against it.
+
+**What this makes visible is that the link is barely used.** No PO item in either database
+named a design before this was built — the panel reads "No purchase order item has named
+this design yet" on every design that has never been picked on a PO. That is the
+pre-existing condition J24 already named when it stopped the job card depending on the
+design; this is the first screen that shows it rather than merely stating it.
