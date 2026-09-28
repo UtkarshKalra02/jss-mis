@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, ilike, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
@@ -61,10 +61,30 @@ export type TypeOption = Awaited<ReturnType<typeof listTypes>>[number];
 export type StockRow = typeof vMaterialStock.$inferSelect;
 
 /**
- * The stock grid: every live material with closing stock and reorder flags,
- * from the view. Inactive materials are included and marked, not hidden — a
- * discontinued board with 200 sheets left is still 200 sheets.
+ * THE PAPER CATEGORY, BY CODE RATHER THAN BY NAME (P9).
+ *
+ * Paper has its own screen, and the store's screen excludes it, so both need
+ * a handle on which category that is. `code` is the one safe handle: it is
+ * the SKU fragment — category P + type SBS gives P-SBS-007 — so it cannot be
+ * edited without invalidating every SKU in the store. The display NAME is
+ * editable on the master, and keying on it would break the split silently the
+ * first time somebody typed "Paper & Board".
+ *
+ * This is the only place either screen names a category.
  */
+export const PAPER_CATEGORY_CODE = "P";
+
+export async function paperCategoryId(runner: Runner = db): Promise<string | null> {
+  const [row] = await runner
+    .select({ id: materialCategory.id })
+    .from(materialCategory)
+    .where(
+      and(eq(materialCategory.code, PAPER_CATEGORY_CODE), isNull(materialCategory.deletedAt)),
+    )
+    .limit(1);
+  return row?.id ?? null;
+}
+
 /**
  * What the search box matches, as one predicate.
  *
@@ -83,14 +103,31 @@ function stockMatches(query?: string) {
   );
 }
 
+/**
+ * The stock grid: every live material with closing stock and reorder flags,
+ * from the view. Inactive materials are included and marked, not hidden — a
+ * discontinued board with 200 sheets left is still 200 sheets.
+ *
+ * `excludeCategoryId` is how the store's screen drops paper since P9: paper
+ * has its own screen, and one row appearing on both would make two totals
+ * that have to be reconciled by whoever reads them.
+ */
 export async function listStock(
-  opts: { categoryId?: string; query?: string } = {},
+  opts: { categoryId?: string; excludeCategoryId?: string; query?: string } = {},
 ): Promise<StockRow[]> {
   const matches = stockMatches(opts.query);
   return db
     .select()
     .from(vMaterialStock)
-    .where(and(opts.categoryId ? eq(vMaterialStock.categoryId, opts.categoryId) : undefined, matches))
+    .where(
+      and(
+        opts.categoryId ? eq(vMaterialStock.categoryId, opts.categoryId) : undefined,
+        opts.excludeCategoryId
+          ? ne(vMaterialStock.categoryId, opts.excludeCategoryId)
+          : undefined,
+        matches,
+      ),
+    )
     .orderBy(
       desc(vMaterialStock.needsReorder),
       desc(vMaterialStock.dueForIssue),
@@ -118,9 +155,13 @@ export type CategoryCount = {
  * Categories with nothing in them are not returned; the page renders a tab
  * only for what exists, so the strip does not carry nine names when the
  * search matched two.
+ *
+ * `excludeCategoryId` drops paper from the strip since P9, for the same
+ * reason the grid drops it: the tab would lead to rows this screen no longer
+ * shows.
  */
 export async function countByCategory(
-  opts: { query?: string } = {},
+  opts: { query?: string; excludeCategoryId?: string } = {},
 ): Promise<CategoryCount[]> {
   return db
     .select({
@@ -129,9 +170,48 @@ export async function countByCategory(
       n: sql<number>`count(*)::int`,
     })
     .from(vMaterialStock)
-    .where(stockMatches(opts.query))
+    .where(
+      and(
+        stockMatches(opts.query),
+        opts.excludeCategoryId
+          ? ne(vMaterialStock.categoryId, opts.excludeCategoryId)
+          : undefined,
+      ),
+    )
     .groupBy(vMaterialStock.categoryId, vMaterialStock.categoryName)
     .orderBy(asc(vMaterialStock.categoryName));
+}
+
+export type TypeCount = {
+  typeId: string;
+  typeName: string;
+  n: number;
+};
+
+/**
+ * How many materials of each TYPE sit inside one category (P9).
+ *
+ * The paper screen's tabs. Paper divides into SBS, Duplex, Art, Kraft,
+ * Mapletho — which is the division the godown thinks in, and one the store's
+ * own screen could never show because type means something different in every
+ * category.
+ *
+ * Same rule as the category counts: the search applies, so the tabs say where
+ * a typed word's matches are.
+ */
+export async function countByType(
+  opts: { categoryId: string; query?: string },
+): Promise<TypeCount[]> {
+  return db
+    .select({
+      typeId: vMaterialStock.typeId,
+      typeName: vMaterialStock.typeName,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(vMaterialStock)
+    .where(and(eq(vMaterialStock.categoryId, opts.categoryId), stockMatches(opts.query)))
+    .groupBy(vMaterialStock.typeId, vMaterialStock.typeName)
+    .orderBy(asc(vMaterialStock.typeName));
 }
 
 /**

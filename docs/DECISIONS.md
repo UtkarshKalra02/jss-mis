@@ -4094,3 +4094,39 @@ ragged rows at 375px; measured, the strip is 969px of content in a 351px box on 
 and the page itself does not overflow.
 
 The URL parameter is unchanged (`?category=<id>`), so links already saved still work.
+
+## P9 — paper leaves the store's screen and becomes its own
+
+P8 made paper a tab. Utkarsh then asked for it to be "a different section all in itself",
+and chose the harder half of the question: paper does not appear on the Materials screen
+at all any more.
+
+- **`/paper`** — its own sidebar entry. 221 rows. The grid is paper-shaped: the Category
+  column is gone, because a word repeated 221 times is a column of noise, and **Finish**
+  is in its place, because with type, size and GSM equal it is the only thing that tells
+  two papers apart — and it was nowhere on the store's grid. The tabs are paper TYPES
+  (SBS 123, Duplex 51, Art Card 20, Kraft 8, Other 13, Mapletho 4, Gum 2), which is the
+  division the godown racks by.
+- **`/materials`** — 204 rows: ink, chemicals, adhesives, coatings, consumables. Its
+  category strip no longer carries Paper, because a tab leading to rows the screen does
+  not show is worse than no tab.
+
+221 + 204 = 425, which is what the single screen showed before. Nothing is hidden and
+nothing is counted twice.
+
+**The split is keyed on the category's CODE, never its name.** `code` is the SKU
+fragment — category P plus type SBS gives P-SBS-007 — so it cannot change without
+invalidating every SKU in the store. The display name is editable on the master, and
+keying on it would break both screens silently the first time somebody typed "Paper &
+Board". `PAPER_CATEGORY_CODE` is the only place either screen names a category.
+
+**The cells are shared, not copied.** `paperColumns` picks the store grid's own column
+definitions by key and adds one. How a quantity or a status renders is one decision, and
+two screens rendering it separately is how they start to disagree.
+
+**What deliberately did NOT split.** Receiving, issuing, adjusting and the In/Out log
+still span the whole store, and the Paper screen's buttons point at the same forms. This
+is a split in what is easy to READ, not a claim that paper is a separate store — the
+batches, the ledger and the audit trail are one thing. Utkarsh accepted that asymmetry
+when choosing this shape: "Materials" now means something narrower on its own screen than
+it does on the forms.

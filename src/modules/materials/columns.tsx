@@ -134,3 +134,43 @@ export const stockColumns: LegacyColumnDef<StockRow>[] = [
     ),
   },
 ];
+
+/* -------------------------------------------------------------------------- */
+/* The paper grid (P9)                                                         */
+/* -------------------------------------------------------------------------- */
+
+const byKey = (key: string) =>
+  stockColumns.find((c) => "accessorKey" in c && c.accessorKey === key)!;
+
+/**
+ * Paper, on its own screen.
+ *
+ * Two differences from the store's grid, and both are the point of splitting
+ * them. CATEGORY IS GONE — every row is paper, so a column repeating that
+ * word 221 times is a column of noise. FINISH IS HERE — cream, white, gray
+ * back — because with type, size and GSM equal it is the only thing left that
+ * tells two papers apart, and on the store's grid it was nowhere.
+ *
+ * The cells are the store grid's own, picked by key rather than rewritten:
+ * how a quantity or a status renders is one decision, and it should not start
+ * drifting between two screens.
+ */
+export const paperColumns: LegacyColumnDef<StockRow>[] = [
+  byKey("sku"),
+  byKey("name"),
+  byKey("typeName"),
+  byKey("size"),
+  byKey("gsm"),
+  {
+    accessorKey: "finish",
+    header: "Finish",
+    meta: { filterable: true, width: "7rem" },
+    cell: ({ row }) => row.original.finish ?? "—",
+  },
+  byKey("closingStock"),
+  byKey("inTransitQty"),
+  byKey("daysRemaining"),
+  byKey("orderByDate"),
+  byKey("suggestedOrderQty"),
+  byKey("stockStatus"),
+];

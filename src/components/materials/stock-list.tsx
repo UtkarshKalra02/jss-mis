@@ -15,11 +15,20 @@ import type { StockRow } from "@/modules/materials/queries";
  * the shelf, checking what is left before issuing. Stock leads on the card
  * because that is the answer; status follows because it is the judgement.
  */
-export function StockList({ rows, emptyMessage }: { rows: StockRow[]; emptyMessage: string }) {
+export function StockList({
+  rows,
+  emptyMessage,
+  columns = stockColumns,
+}: {
+  rows: StockRow[];
+  emptyMessage: string;
+  /** The paper screen passes its own (P9); the phone layout is shared. */
+  columns?: typeof stockColumns;
+}) {
   return (
     <>
       <div className="hidden md:block">
-        <DataTable columns={stockColumns} data={rows} emptyMessage={emptyMessage} />
+        <DataTable columns={columns} data={rows} emptyMessage={emptyMessage} />
       </div>
 
       <ul className="space-y-2 md:hidden">

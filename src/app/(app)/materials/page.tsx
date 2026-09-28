@@ -11,13 +11,23 @@ import { StockList } from "@/components/materials/stock-list";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatQty } from "@/lib/format";
-import { countByCategory, listDueForIssue, listStock } from "@/modules/materials/queries";
+import {
+  countByCategory,
+  listDueForIssue,
+  listStock,
+  paperCategoryId,
+} from "@/modules/materials/queries";
 
 export const metadata: Metadata = { title: "Materials · JSS MIS" };
 
 /**
- * The store (section O): every material with what is in stock, from
- * v_material_stock. Materials that need reordering sort first.
+ * The store, MINUS PAPER (section O, split at P9): ink, chemicals, adhesives,
+ * coatings and consumables, from v_material_stock. Materials that need
+ * reordering sort first.
+ *
+ * Paper is at /paper. Receiving, issuing, adjusting and the In/Out log still
+ * span everything — this split is about what is easy to READ, not about what
+ * the store is.
  *
  * ADMIN, PLANNER and DATA_ENTRY write; OWNER reads.
  */
@@ -33,11 +43,16 @@ export default async function MaterialsPage({
   const canAudit = can(user.role, "admin", "write");
 
   const { category = "", q = "", removed } = await searchParams;
+
+  // Paper has its own screen since P9, so it is not on this one. Resolved by
+  // category code, never by name — see paperCategoryId.
+  const paperId = (await paperCategoryId()) ?? undefined;
+
   const [rows, counts, due] = await Promise.all([
-    listStock({ categoryId: category || undefined, query: q }),
+    listStock({ categoryId: category || undefined, excludeCategoryId: paperId, query: q }),
     // Counts respect the search but not the category, so the strip says where
     // a typed word's matches are rather than only what the open tab holds.
-    countByCategory({ query: q }),
+    countByCategory({ query: q, excludeCategoryId: paperId }),
     listDueForIssue(),
   ]);
 

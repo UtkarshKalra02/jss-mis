@@ -7,6 +7,7 @@ import {
   ClipboardList,
   FileSpreadsheet,
   FileText,
+  Layers,
   LayoutDashboard,
   MessageSquareQuote,
   Package,
@@ -155,12 +156,21 @@ export const NAV: NavGroup[] = [
   },
   {
     /**
-     * Section O. One entry: the stock list is the screen, and receiving,
-     * issuing and adjusting are buttons on it. Four sidebar rows for what is
-     * one desk's work would be four places to look for it.
+     * Section O, split at P9.
+     *
+     * It was one entry, on the reasoning that the stock list IS the screen and
+     * receiving and issuing are buttons on it. That still holds for the verbs —
+     * there is still one Receive form and one Issue form, reached from either
+     * screen. What changed is the reading: paper is half the store and the only
+     * material anybody looks up by size and GSM, so it gets its own list rather
+     * than being one row of a category filter.
+     *
+     * Both entries carry `material`, so the role matrix decides them together
+     * and there is no second permission to keep in step.
      */
     heading: "Store",
     items: [
+      { resource: "material", label: "Paper", href: "/paper", icon: Layers, phase: 1 },
       { resource: "material", label: "Materials", href: "/materials", icon: Warehouse, phase: 1 },
     ],
   },
