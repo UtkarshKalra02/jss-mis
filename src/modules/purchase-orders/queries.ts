@@ -393,3 +393,56 @@ export async function countLiveItems(purchaseOrderId: string, tx?: Tx): Promise<
 
   return row?.n ?? 0;
 }
+
+/* -------------------------------------------------------------------------- */
+/* The reconciliation pass, and the draft item index (N5)                      */
+/* -------------------------------------------------------------------------- */
+
+export type IndexItem = {
+  poItemId: string;
+  itemCode: string;
+  itemName: string;
+  clientId: string;
+  clientCode: string;
+  clientName: string;
+  purchaseOrderId: string;
+  poInternalNo: string;
+  poDate: string;
+  designId: string | null;
+  committedDate: string | null;
+  status: string;
+  orderedQty: number;
+  dispatchedQty: number;
+  pendingQty: number;
+};
+
+/**
+ * Every live item in the factory, for the reconciliation pass (N5).
+ *
+ * Cancelled items are left out: they are not owed and not a product anybody
+ * is indexing. Everything else comes, because the pass exists to find what is
+ * wrong and you cannot filter for that in advance.
+ */
+export async function listItemsForIndex(): Promise<IndexItem[]> {
+  return db
+    .select({
+      poItemId: vPoItemStatus.poItemId,
+      itemCode: vPoItemStatus.itemCode,
+      itemName: vPoItemStatus.itemName,
+      clientId: vPoItemStatus.clientId,
+      clientCode: vPoItemStatus.clientCode,
+      clientName: vPoItemStatus.clientName,
+      purchaseOrderId: vPoItemStatus.purchaseOrderId,
+      poInternalNo: vPoItemStatus.poInternalNo,
+      poDate: vPoItemStatus.poDate,
+      designId: vPoItemStatus.designId,
+      committedDate: vPoItemStatus.committedDate,
+      status: vPoItemStatus.status,
+      orderedQty: vPoItemStatus.orderedQty,
+      dispatchedQty: vPoItemStatus.dispatchedQty,
+      pendingQty: vPoItemStatus.pendingQty,
+    })
+    .from(vPoItemStatus)
+    .where(ne(vPoItemStatus.status, "Cancelled"))
+    .orderBy(asc(vPoItemStatus.clientCode), asc(vPoItemStatus.itemName));
+}

@@ -408,3 +408,29 @@ follows:
 Not built here, because adding a test stack is a decision about how the project is
 maintained rather than part of fixing a bug, and it should be taken deliberately.
 
+
+## Making the order data true (N5, and what follows)
+
+The imported delivery figures are approximate: deliveries that physically went out together
+were recorded against whichever item came to hand, so some items read negative pending
+(more sent than ordered) and their twins read a pending that was in fact already delivered.
+`/items/by-name` is the pass that sizes this. What it finds decides the rest, and none of
+the following is built:
+
+- **An order-side adjustment**, the twin of `material_adjustment`: a signed, dated, reasoned
+  row against a PO item saying what was delivered before or outside the system. Pending
+  stays computed (`ordered − dispatched + adjustments`), so non-negotiable 2 holds. This is
+  what turns reconstructing a year of challans into an afternoon. **Decide before building:**
+  an item settled by adjustment was not delivered on a date, so it should be excluded from
+  `v_otd` the way F8 excludes items with no committed date — never quietly counted on time.
+- **Oldest-committed-date-first dispatch.** Two orders of one product are fungible, so a
+  delivery should fill the earliest promise first and spill into the next — the rule the
+  store already uses for issuing from batches. Would make the commonest recording mistake
+  the default correct behaviour, and gives every lumped historical delivery one defensible
+  split instead of a judgement call per item.
+- **The item index.** `design` already is this — a design is client plus job name, everything
+  else optional — and `po_item.design_id` already links them; nothing uses it (J24). Pointing
+  items at designs makes the rollup exact rather than name-matched, and the design order book
+  (P7) becomes the pending-by-item screen with no new code. Needs a backfill from the pass
+  above, the design picker made required on PO capture, and probably relabelling "Designs"
+  to "Items" or "Products" in the nav the way `tooling` is labelled "Job Kitting" (I10).

@@ -4164,3 +4164,31 @@ is a split in what is easy to READ, not a claim that paper is a separate store �
 batches, the ledger and the audit trail are one thing. Utkarsh accepted that asymmetry
 when choosing this shape: "Materials" now means something narrower on its own screen than
 it does on the forms.
+
+## N5 — the pass that sizes the problem before anything is built to fix it
+
+Utkarsh saw an item reading **−4,325 pending**: two POs for the same product shipped
+together and the whole 9,325 was recorded against one of them. Over-delivery is allowed on
+purpose (K12) and negative pending is its honest reading, so the figure is not a bug — the
+challan is wrong, and it is wrong the way bulk-imported delivery data is generally wrong.
+
+He asked how to make things right, and said challan generation can wait until the data is
+accurate. **The first move is to measure, not to build a cure.** `/items/by-name` groups
+every item by client and name and shows, across all their purchase orders, total ordered,
+sent and pending — flagging anything that cannot be true (over-delivered, closed but still
+owing) and anything spelled more than one way. Worst first, so it can be read from the top
+and stopped when it stops being interesting.
+
+**It answers two questions in one reading**, which is why it is one screen rather than two.
+How wrong are the figures — and which names are really one product, which is the draft of
+the item index. Deciding both per name, once, beats two passes over the same list.
+
+**It writes nothing, deliberately.** A screen that offered to fix things would invite
+fixing them one at a time before anybody knows whether there are twelve or four hundred —
+and twelve and four hundred want completely different answers. What gets built next is in
+BACKLOG and waits on what this shows.
+
+**Folding is on case and internal spacing only**, and `spellings` counts what folded, so a
+group that merged two spellings says so rather than hiding it. Genuinely different wording
+is never folded — "Mono carton" and "Mono carton outer" stay apart, because this file must
+not decide what the factory calls its own products.

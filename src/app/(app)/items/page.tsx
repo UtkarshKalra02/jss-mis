@@ -55,11 +55,17 @@ export default async function ItemsPage({
     <div>
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="page-title">Item tracker</h1>
-        {canAddItem ? (
-          <Button asChild size="sm">
-            <Link href="/items/new">Add item</Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The same items read by name rather than one per row (N5). */}
+          <Button asChild size="sm" variant="outline">
+            <Link href="/items/by-name">By item</Link>
           </Button>
-        ) : null}
+          {canAddItem ? (
+            <Button asChild size="sm">
+              <Link href="/items/new">Add item</Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
       <p className="text-muted-foreground mt-1 text-[13px]">
         Search by item code, item name, client, PO number or job card number.
