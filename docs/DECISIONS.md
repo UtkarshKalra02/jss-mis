@@ -3670,9 +3670,45 @@ row with the design, name and rate carried over, job type set to `Repeat`, and t
 at Utkarsh's direction: what a client ordered last year is reachable through the design
 picker; this list answers what they are running now and want more of.
 
+> **Superseded by N3 (28 Sep 2026).** Every item is repeatable now, whatever its status.
+> The rest of this entry — a repeat is a new row, never a bigger old one — still holds.
+
 **Where the quantities do add up is the floor, not the order.** Two lots of one printing
 share a design, and since J25 a job card covers several items, so both can run on one card
 and one plate without either order record lying about what the client asked for.
+
+## N3 — every item is repeatable, not only the open ones
+
+Utkarsh asked whether the repeat list only offers open items, and said to let all orders
+come into it. It did, and now it does not: `listRepeatableItemOptions` returns every item
+regardless of status, Closed and Cancelled included, newest order first.
+
+N2's reasoning for the narrow list was that "what a client ordered last year is reachable
+through the design picker". That was the weak part of it. The design picker carries the
+DESIGN across and nothing else — not the item's name, not its rate — so repeating an old
+job through it meant retyping what the system already knew. And a client re-orders a
+carton that was delivered and closed months ago far more often than one still on the
+floor, which is the common case the list was excluding.
+
+**Cancelled items are offered too.** A cancelled order that comes back is an ordinary
+thing; hiding it would send somebody to retype it. Each row carries its status, so a
+delivered or cancelled item reads as one rather than looking live.
+
+**The list needed a search box the moment it stopped being short.** A long-standing client
+has hundreds of items, and an unfiltered table is the scrolling problem P6 had just fixed
+on the store's forms. The panel filters by item name, code, design code, PO number and
+status, renders the 25 most recent, and says how many more matched.
+
+**The matching rule is now shared.** `matchesEveryTerm` in `src/lib/search.ts` was already
+the database-side rule — every term must match something, any field, so typing more always
+narrows. `queryWords` and `matchesQuery` beside it are the same rule for a list already in
+the browser, which is what the material picker (P6) and this panel both need. Both halves
+live in one file so they cannot drift into two different ideas of what search means.
+
+**What did not change is N2's actual holding**: a repeat is a new row with its own
+quantity and its own committed date, and the item it repeats is not touched. Widening
+which items can be repeated says nothing about whether repeating one may edit it. It may
+not.
 
 ## O. Material stock — the IMS, and paper on the job card
 

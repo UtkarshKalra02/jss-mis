@@ -14,9 +14,13 @@ import { todayIST } from "@/lib/dates";
 import { formatCommittedDate, formatQty } from "@/lib/format";
 import { createPurchaseOrderAction, type FormState } from "@/modules/purchase-orders/actions";
 import type { ClientOption } from "@/modules/designs/queries";
-import type { DesignOption, OpenItemOption } from "@/modules/purchase-orders/queries";
+import type { DesignOption, RepeatItemOption } from "@/modules/purchase-orders/queries";
+import { matchesQuery, queryWords } from "@/lib/search";
 
 import { PoAwaited } from "./po-awaited";
+
+/** Rows of the repeat table rendered before the search box has to do the work. */
+const REPEAT_LIMIT = 25;
 
 const initialState: FormState = { ok: false, error: null };
 
@@ -68,7 +72,7 @@ function Submit({ label }: { label: string }) {
  * design, the name, the rate — and the job type is Repeat because that is
  * what it is. Quantity and date are left for the person to type, on purpose.
  */
-function repeatOf(source: OpenItemOption): ItemDraft {
+function repeatOf(source: RepeatItemOption): ItemDraft {
   return {
     ...blankItem(),
     itemName: source.itemName,
@@ -104,13 +108,13 @@ export function PoForm({
   mode = "po",
   clients,
   designs,
-  openItems,
+  repeatableItems,
 }: {
   mode?: "po" | "item";
   clients: ClientOption[];
   designs: DesignOption[];
-  /** Open items still owed quantity, every client — the repeat list (N2). */
-  openItems: OpenItemOption[];
+  /** Every item ever made, every client — the repeat list (N3). */
+  repeatableItems: RepeatItemOption[];
 }) {
   const withoutPo = mode === "item";
   const router = useRouter();
@@ -118,6 +122,7 @@ export function PoForm({
   const formId = useId();
 
   const [clientId, setClientId] = useState("");
+  const [repeatQuery, setRepeatQuery] = useState("");
   const [poNo, setPoNo] = useState("");
   const [poDate, setPoDate] = useState(todayIST());
   const [fileUrl, setFileUrl] = useState("");
@@ -145,14 +150,31 @@ export function PoForm({
   );
 
   const selectedClient = clients.find((c) => c.id === clientId);
-  const repeatsForClient = openItems.filter((i) => i.clientId === clientId);
+  /*
+   * The client's own items, newest first, narrowed by the search box (N3).
+   * Capped at REPEAT_LIMIT rows: with every status in the list a long-standing
+   * client has hundreds, and a table nobody scrolls to the end of is the
+   * problem the search box exists to solve.
+   */
+  const repeatsForClient = repeatableItems.filter((i) => i.clientId === clientId);
+  const repeatWords = queryWords(repeatQuery);
+  const repeatMatches =
+    repeatWords.length === 0
+      ? repeatsForClient
+      : repeatsForClient.filter((i) =>
+          matchesQuery(
+            `${i.itemCode} ${i.itemName} ${i.designCode ?? ""} ${i.poInternalNo} ${i.status}`.toLowerCase(),
+            repeatWords,
+          ),
+        );
+  const repeatShown = repeatMatches.slice(0, REPEAT_LIMIT);
 
   /*
    * The first row is created blank so the table is never empty. If it is
    * still untouched when a repeat is picked, it is replaced rather than left
    * as an empty row above the real one that the server would then refuse.
    */
-  const addRepeat = (source: OpenItemOption) =>
+  const addRepeat = (source: RepeatItemOption) =>
     setItems((rows) => {
       const untouched =
         rows.length === 1 && rows[0]!.itemName === "" && rows[0]!.orderedQty === "";
@@ -271,13 +293,21 @@ export function PoForm({
       {clientId && repeatsForClient.length > 0 ? (
         <section className="space-y-3">
           <div>
-            <h2 className="text-sm font-medium">Repeat an open item</h2>
+            <h2 className="text-sm font-medium">Repeat a previous item</h2>
             <p className="text-muted-foreground mt-1 text-xs">
-              Open items this client still has quantity owed on. Repeat one to add a new row
-              with its design, name and rate filled in — the new quantity and committed date
-              are yours to type. The existing item is not changed.
+              Everything this client has ordered before, newest first — delivered and
+              cancelled ones too. Repeat one to add a new row with its design, name and rate
+              filled in; the new quantity and committed date are yours to type. The existing
+              item is not changed.
             </p>
           </div>
+          <input
+            value={repeatQuery}
+            onChange={(e) => setRepeatQuery(e.target.value)}
+            placeholder="Search by item name, code, design or PO"
+            aria-label="Search this client's previous items"
+            className="border-input bg-background h-9 w-full max-w-md rounded-md border px-2 text-[13px] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none"
+          />
           <div className="overflow-x-auto rounded-lg border">
             <table className="data-grid w-full">
               <thead>
@@ -288,11 +318,12 @@ export function PoForm({
                   <th className="px-2 text-right">Ordered</th>
                   <th className="px-2 text-right">Pending</th>
                   <th className="px-2">Committed</th>
+                  <th className="px-2">Status</th>
                   <th className="w-24 px-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {repeatsForClient.map((item) => (
+                {repeatShown.map((item) => (
                   <tr key={item.poItemId}>
                     <td className="px-2 tabular-nums">{item.itemCode}</td>
                     <td className="px-2">
@@ -312,6 +343,7 @@ export function PoForm({
                     <td className="text-muted-foreground px-2 text-[12px]">
                       {formatCommittedDate(item.committedDate)}
                     </td>
+                    <td className="text-muted-foreground px-2 text-[12px]">{item.status}</td>
                     <td className="px-2 py-1 text-right">
                       <Button
                         type="button"
@@ -326,6 +358,16 @@ export function PoForm({
                 ))}
               </tbody>
             </table>
+            {repeatMatches.length === 0 ? (
+              <p className="text-muted-foreground px-3 py-3 text-[13px]">
+                Nothing of this client&rsquo;s matches &ldquo;{repeatQuery}&rdquo;.
+              </p>
+            ) : repeatMatches.length > REPEAT_LIMIT ? (
+              <p className="text-muted-foreground px-3 py-2 text-[11px]">
+                Showing the {REPEAT_LIMIT} most recent of {repeatMatches.length}. Search to
+                find an older one.
+              </p>
+            ) : null}
           </div>
         </section>
       ) : null}

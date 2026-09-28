@@ -1,18 +1,13 @@
 /**
- * Matching a typed query against the material list (P6).
+ * What a material's text is, for the picker's search (P6).
  *
- * Separate from the picker component, and structurally typed rather than
- * importing MaterialOption, so the rule can be tested without a database or a
- * browser — the same reason the job card's paper arithmetic lives apart from
- * the form that shows it.
- *
- * EVERY WORD MUST MATCH SOMEWHERE, IN ANY ORDER. The store thinks in
- * dimensions and weights and says them in whatever order they come to mind:
- * "sbs 25x36 325" and "325 sbs 36" are the same request, and neither is the
- * order the material's name happens to be written in. A single substring
- * match over the whole name — which is what a browser's own dropdown does,
- * and only from the first character at that — finds neither.
+ * The matching RULE itself is `src/lib/search.ts` — every word must match
+ * somewhere, in any order — and is shared with the repeat list. What is
+ * material-specific, and stays here, is which fields a person might type at:
+ * the store thinks in dimensions and weights, not only in names.
  */
+
+export { matchesQuery, queryWords } from "@/lib/search";
 
 export type SearchableMaterial = {
   sku: string;
@@ -31,13 +26,4 @@ export function searchText(m: SearchableMaterial): string {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-}
-
-export function queryWords(query: string): string[] {
-  return query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-}
-
-/** True when every word of the query appears somewhere in the material. */
-export function matchesQuery(text: string, words: string[]): boolean {
-  return words.every((w) => text.includes(w));
 }

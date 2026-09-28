@@ -31,3 +31,27 @@ export function matchesEveryTerm(
 
   return and(...terms.map((term) => or(...fieldsFor(`%${term}%`))));
 }
+
+/* -------------------------------------------------------------------------- */
+/* The same rule, in the browser                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `matchesEveryTerm` above is for a database query. These two are the same
+ * rule applied to a list already in hand — the material picker's four hundred
+ * materials (P6), the repeat list's items (N3) — where there is no SQL to
+ * build and filtering in the browser is instant.
+ *
+ * The rule is deliberately identical: every word must match somewhere, in any
+ * order, so typing more always narrows. Keeping both halves in this file is
+ * what stops them drifting into two different ideas of what search means.
+ */
+
+export function queryWords(query: string): string[] {
+  return query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** True when every word of the query appears somewhere in `text`. */
+export function matchesQuery(text: string, words: string[]): boolean {
+  return words.every((w) => text.includes(w));
+}

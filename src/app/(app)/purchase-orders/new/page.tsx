@@ -5,7 +5,7 @@ import { requireAccess } from "@/auth/guard";
 import { PoForm } from "@/components/purchase-orders/po-form";
 import { Button } from "@/components/ui/button";
 import { listClientOptions } from "@/modules/designs/queries";
-import { listDesignOptions, listOpenItemOptions } from "@/modules/purchase-orders/queries";
+import { listDesignOptions, listRepeatableItemOptions } from "@/modules/purchase-orders/queries";
 
 export const metadata: Metadata = { title: "Capture PO · JSS MIS" };
 
@@ -13,10 +13,10 @@ export default async function NewPurchaseOrderPage() {
   // "create", not "write": the PLANNER may capture a PO and nothing more (P5).
   await requireAccess("purchase_order", "create");
 
-  const [clients, designs, openItems] = await Promise.all([
+  const [clients, designs, repeatableItems] = await Promise.all([
     listClientOptions(),
     listDesignOptions(),
-    listOpenItemOptions(),
+    listRepeatableItemOptions(),
   ]);
 
   return (
@@ -56,7 +56,7 @@ export default async function NewPurchaseOrderPage() {
             </Button>
           </div>
         ) : (
-          <PoForm clients={clients} designs={designs} openItems={openItems} />
+          <PoForm clients={clients} designs={designs} repeatableItems={repeatableItems} />
         )}
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
@@ -232,7 +232,7 @@ export async function findDuplicatePoNo(
 /* Repeats, and orders an item can move to (N1, N2)                            */
 /* -------------------------------------------------------------------------- */
 
-export type OpenItemOption = {
+export type RepeatItemOption = {
   poItemId: string;
   clientId: string;
   itemCode: string;
@@ -245,19 +245,29 @@ export type OpenItemOption = {
   committedDate: string | null;
   poInternalNo: string;
   poAwaited: boolean;
+  /** Open, Closed or Cancelled — shown, so a delivered item reads as one. */
+  status: string;
+  /** The order's date: what the list is sorted by, newest first. */
+  poDate: string;
 };
 
 /**
- * Every open item still owed quantity, across every client, for the "repeat
- * of…" list on the capture form (N2).
+ * Every item this factory has ever made, for the "repeat of…" list (N3).
  *
- * All clients at once and filtered in the browser, for the reason
- * listDesignOptions gives: the client can be changed after rows are typed.
- * OPEN AND OWED ONLY — Utkarsh's call. What a client ordered last year is
- * reachable through the design picker; this list answers "what are we running
- * for them right now that they want more of".
+ * WAS OPEN ITEMS ONLY, and N2 said so deliberately: "what a client ordered
+ * last year is reachable through the design picker". Utkarsh reversed it —
+ * a client re-orders a carton that was delivered and closed months ago far
+ * more often than one still on the floor, and the design picker only carries
+ * the design across, not the item's name, rate or quantity.
+ *
+ * So every status is here, Closed and Cancelled included, and each row says
+ * which it is. A cancelled item that comes back is an ordinary thing; hiding
+ * it would send somebody to retype what the system already knows.
+ *
+ * NEWEST ORDER FIRST, because a list of everything is only useful from the
+ * recent end. The form filters it to the chosen client and searches within it.
  */
-export async function listOpenItemOptions(): Promise<OpenItemOption[]> {
+export async function listRepeatableItemOptions(): Promise<RepeatItemOption[]> {
   return db
     .select({
       poItemId: vPoItemStatus.poItemId,
@@ -272,16 +282,13 @@ export async function listOpenItemOptions(): Promise<OpenItemOption[]> {
       committedDate: vPoItemStatus.committedDate,
       poInternalNo: vPoItemStatus.poInternalNo,
       poAwaited: vPoItemStatus.poAwaited,
+      status: vPoItemStatus.status,
+      poDate: vPoItemStatus.poDate,
     })
     .from(vPoItemStatus)
     .innerJoin(poItem, eq(poItem.id, vPoItemStatus.poItemId))
     .leftJoin(design, eq(design.id, poItem.designId))
-    .where(and(eq(vPoItemStatus.status, "Open"), gt(vPoItemStatus.pendingQty, 0)))
-    .orderBy(
-      asc(vPoItemStatus.clientCode),
-      sql`${vPoItemStatus.committedDate} asc nulls last`,
-      asc(vPoItemStatus.itemCode),
-    );
+    .orderBy(desc(vPoItemStatus.poDate), desc(vPoItemStatus.itemCode));
 }
 
 export type LinkablePurchaseOrder = {

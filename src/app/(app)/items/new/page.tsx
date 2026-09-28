@@ -5,7 +5,7 @@ import { requireAccess } from "@/auth/guard";
 import { PoForm } from "@/components/purchase-orders/po-form";
 import { Button } from "@/components/ui/button";
 import { listClientOptions } from "@/modules/designs/queries";
-import { listDesignOptions, listOpenItemOptions } from "@/modules/purchase-orders/queries";
+import { listDesignOptions, listRepeatableItemOptions } from "@/modules/purchase-orders/queries";
 
 export const metadata: Metadata = { title: "Add item · JSS MIS" };
 
@@ -25,10 +25,10 @@ export const metadata: Metadata = { title: "Add item · JSS MIS" };
 export default async function NewItemPage() {
   await requireAccess("purchase_order", "write");
 
-  const [clients, designs, openItems] = await Promise.all([
+  const [clients, designs, repeatableItems] = await Promise.all([
     listClientOptions(),
     listDesignOptions(),
-    listOpenItemOptions(),
+    listRepeatableItemOptions(),
   ]);
 
   return (
@@ -60,7 +60,7 @@ export default async function NewItemPage() {
             </Button>
           </div>
         ) : (
-          <PoForm mode="item" clients={clients} designs={designs} openItems={openItems} />
+          <PoForm mode="item" clients={clients} designs={designs} repeatableItems={repeatableItems} />
         )}
       </div>
     </div>
