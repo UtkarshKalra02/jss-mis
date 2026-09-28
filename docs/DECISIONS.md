@@ -4017,6 +4017,20 @@ GRN table cell's width and truncated every name, and the first fix for that — 
 a `min-w` and a `max-w` — ran off the side of a phone, because a min-width beats a
 max-width. It is one width expression now.
 
+**Extended to the design form (28 Sep 2026).** "Usual paper (from stock)" was the same
+native dropdown over ~200 papers, and Utkarsh asked for the same fix. Two things had to
+change for it to fit:
+
+- The picker's prop type is now STRUCTURAL rather than `MaterialOption`. The store's list
+  and the paper list are different queries with different shapes, and both are pickable —
+  the component should say what it needs rather than name one caller's type.
+  `listPaperOptions` gained `category_name` and `unit`, which it was already selecting
+  from in the view, so a `PaperOption` satisfies it.
+- An optional `emptyLabel`. A design's paper is genuinely optional, so the picker needed a
+  way back to "none" — offered as the first row and shown on the trigger when nothing is
+  chosen. Where a choice is required the prop is omitted and there is nothing to clear to,
+  which is the behaviour the three store forms keep.
+
 ## P7 — a design's order book: the total N2 declined to store
 
 Utkarsh asked whether a repeat's quantity gets added onto the item it repeats. It does

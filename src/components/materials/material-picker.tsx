@@ -13,8 +13,25 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { MaterialOption } from "@/modules/materials/queries";
 import { matchesQuery, queryWords, searchText } from "@/modules/materials/search";
+
+/**
+ * STRUCTURAL, not `MaterialOption`. The store's list and the paper list are
+ * two different queries with two different shapes, and both are pickable —
+ * the picker should say what it needs rather than name one of them.
+ */
+export type PickableMaterial = {
+  id: string;
+  sku: string;
+  name: string;
+  typeName: string | null;
+  categoryName: string | null;
+  size: string | null;
+  gsm: string | number | null;
+  finish: string | null;
+  unit: string;
+  closingStock: string;
+};
 
 /**
  * Choosing one of four hundred materials by typing, not by scrolling.
@@ -47,16 +64,23 @@ export function MaterialPicker({
   id,
   label = "material",
   disabled,
+  emptyLabel,
 }: {
   /** Field name to post. Omit for a picker that only drives other controls. */
   name?: string;
-  materials: MaterialOption[];
+  materials: PickableMaterial[];
   value: string;
   onChange: (materialId: string) => void;
   id?: string;
   /** Used in the accessible name: "Material, line 2". */
   label?: string;
   disabled?: boolean;
+  /**
+   * Shown when nothing is chosen, and offered as the first row to go back to
+   * — for a field where "none" is a real answer, like a design's usual paper
+   * (O6). Omitted where a choice is required, so there is nothing to clear to.
+   */
+  emptyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -97,7 +121,9 @@ export function MaterialPicker({
                 <span className="text-muted-foreground"> — {chosen.name}</span>
               </span>
             ) : (
-              <span className="text-muted-foreground">Search by SKU, name, size or GSM…</span>
+              <span className="text-muted-foreground">
+                {emptyLabel ?? "Search by SKU, name, size or GSM…"}
+              </span>
             )}
             <ChevronsUpDown className="text-muted-foreground size-4 shrink-0" />
           </button>
@@ -124,6 +150,20 @@ export function MaterialPicker({
               <CommandEmpty>
                 Nothing matches “{query}”. Try fewer words, or the SKU.
               </CommandEmpty>
+              {emptyLabel ? (
+                <CommandItem
+                  value="__none__"
+                  onSelect={() => {
+                    onChange("");
+                    setQuery("");
+                    setOpen(false);
+                  }}
+                  className="gap-2"
+                >
+                  <Check className={cn("size-4 shrink-0", value ? "opacity-0" : "opacity-100")} />
+                  <span className="text-muted-foreground">{emptyLabel}</span>
+                </CommandItem>
+              ) : null}
               {shown.map(({ m }) => (
                 <CommandItem
                   key={m.id}

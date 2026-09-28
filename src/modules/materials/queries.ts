@@ -597,6 +597,9 @@ export type PaperOption = {
   gsm: number | null;
   finish: string | null;
   closingStock: string;
+  /** Carried so a PaperOption satisfies the picker's shape (O6/P6). */
+  categoryName: string;
+  unit: string;
 };
 
 /**
@@ -619,6 +622,8 @@ export async function listPaperOptions(): Promise<PaperOption[]> {
       gsm: vMaterialStock.gsm,
       finish: vMaterialStock.finish,
       closingStock: vMaterialStock.closingStock,
+      categoryName: vMaterialStock.categoryName,
+      unit: vMaterialStock.unit,
     })
     .from(vMaterialStock)
     .where(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { FabricationPicker } from "@/components/designs/fabrication-picker";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ClientPicker } from "@/components/clients/client-picker";
+import { MaterialPicker } from "@/components/materials/material-picker";
 import type { ClientOption } from "@/modules/designs/queries";
 import type { FabricationOptionRow, Selection } from "@/modules/fabrication/queries";
 import type { PaperOption } from "@/modules/materials/queries";
@@ -19,9 +20,6 @@ import {
 } from "@/modules/designs/actions";
 
 const initialState: FormState = { ok: false, error: null };
-
-const inputClass =
-  "border-input bg-background h-9 w-full rounded-md border px-2 text-[13px] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none";
 
 type DesignValues = {
   id?: string;
@@ -86,6 +84,8 @@ export function DesignForm({
   fabricationSelected: Map<string, Selection>;
 }) {
   const router = useRouter();
+  /* The picker is controlled, so the design's existing paper is the seed. */
+  const [materialId, setMaterialId] = useState(design?.materialId ?? "");
   const [state, formAction] = useActionState(
     mode === "create" ? createDesignAction : updateDesignAction,
     initialState,
@@ -152,19 +152,15 @@ export function DesignForm({
               master; the job card's picker defaults to this. */}
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="design-material">Usual paper (from stock)</Label>
-            <select
+            <MaterialPicker
               id="design-material"
               name="materialId"
-              defaultValue={design?.materialId ?? ""}
-              className={inputClass}
-            >
-              <option value="">— not linked —</option>
-              {papers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.sku} — {p.name}
-                </option>
-              ))}
-            </select>
+              materials={papers}
+              value={materialId}
+              onChange={setMaterialId}
+              label="Usual paper"
+              emptyLabel="— not linked —"
+            />
             <p className="text-muted-foreground text-xs">
               Job cards for this design start with this paper selected. Nothing is reserved.
             </p>
