@@ -65,18 +65,28 @@ export type StockRow = typeof vMaterialStock.$inferSelect;
  * from the view. Inactive materials are included and marked, not hidden — a
  * discontinued board with 200 sheets left is still 200 sheets.
  */
+/**
+ * What the search box matches, as one predicate.
+ *
+ * Shared by the grid and the tabs' counts (P8) rather than written twice: a
+ * tab saying "Paper 12" above a grid showing eight rows is worse than no
+ * count at all, and two copies of this is exactly how that happens.
+ */
+function stockMatches(query?: string) {
+  const q = query?.trim();
+  if (!q) return undefined;
+  return or(
+    ilike(vMaterialStock.sku, `%${q}%`),
+    ilike(vMaterialStock.name, `%${q}%`),
+    ilike(vMaterialStock.typeName, `%${q}%`),
+    ilike(vMaterialStock.size, `%${q}%`),
+  );
+}
+
 export async function listStock(
   opts: { categoryId?: string; query?: string } = {},
 ): Promise<StockRow[]> {
-  const q = opts.query?.trim();
-  const matches = q
-    ? or(
-        ilike(vMaterialStock.sku, `%${q}%`),
-        ilike(vMaterialStock.name, `%${q}%`),
-        ilike(vMaterialStock.typeName, `%${q}%`),
-        ilike(vMaterialStock.size, `%${q}%`),
-      )
-    : undefined;
+  const matches = stockMatches(opts.query);
   return db
     .select()
     .from(vMaterialStock)
@@ -88,6 +98,40 @@ export async function listStock(
       asc(vMaterialStock.typeName),
       asc(vMaterialStock.name),
     );
+}
+
+export type CategoryCount = {
+  categoryId: string;
+  categoryName: string;
+  n: number;
+};
+
+/**
+ * How many materials sit behind each tab (P8).
+ *
+ * THE SEARCH IS APPLIED, THE CATEGORY IS NOT. That is the whole point: with a
+ * word typed, the tabs say where the matches are — "sbs" lights up Paper and
+ * nothing else — so switching tab is a decision rather than a guess. Counting
+ * everything regardless of the search would make every tab a constant and the
+ * numbers decoration.
+ *
+ * Categories with nothing in them are not returned; the page renders a tab
+ * only for what exists, so the strip does not carry nine names when the
+ * search matched two.
+ */
+export async function countByCategory(
+  opts: { query?: string } = {},
+): Promise<CategoryCount[]> {
+  return db
+    .select({
+      categoryId: vMaterialStock.categoryId,
+      categoryName: vMaterialStock.categoryName,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(vMaterialStock)
+    .where(stockMatches(opts.query))
+    .groupBy(vMaterialStock.categoryId, vMaterialStock.categoryName)
+    .orderBy(asc(vMaterialStock.categoryName));
 }
 
 /**

@@ -4058,3 +4058,31 @@ named a design before this was built — the panel reads "No purchase order item
 this design yet" on every design that has never been picked on a PO. That is the
 pre-existing condition J24 already named when it stopped the job card depending on the
 design; this is the first screen that shows it rather than merely stating it.
+
+## P8 — the store's categories become tabs, with counts
+
+Utkarsh asked for a tab for paper. Paper is 221 of the store's 425 materials and the only
+material a job card consumes by size and GSM, so "show me the paper" is the commonest
+thing anybody does on that screen — and it was a dropdown, which made the commonest action
+two clicks and a read.
+
+The category dropdown is replaced by a tab strip: **All** first, then every category the
+store actually holds. `category-filter.tsx` is deleted rather than left beside it; two
+controls doing one job is how they end up disagreeing.
+
+**The tabs are data, not a list in the component** (non-negotiable 5). They come from
+`countByCategory`, so a category added on the master appears without a deploy, and one
+nothing is filed under does not appear at all.
+
+**Each tab carries a count, and the count obeys the search box.** That is the part worth
+keeping: with "sbs" typed the strip collapses to `All 123 · Paper 123` and the other eight
+categories vanish, so the strip says where the matches are rather than repeating a
+constant. The search predicate is now one function shared by the grid and the counts — a
+tab reading "Paper 12" above a grid of eight rows would be worse than no count, and two
+copies of that predicate is exactly how it happens.
+
+**On a phone the strip scrolls sideways rather than wrapping.** Ten tabs wrap into three
+ragged rows at 375px; measured, the strip is 969px of content in a 351px box on one line,
+and the page itself does not overflow.
+
+The URL parameter is unchanged (`?category=<id>`), so links already saved still work.
