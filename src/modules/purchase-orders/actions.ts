@@ -685,3 +685,127 @@ export async function setPurchaseOrderCancelledAction(
     return fail(actionError(error, "Could not change the purchase order."));
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Merging items that share a name (N4)                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Folds several same-named items on one PO into the earliest of them.
+ *
+ * UTKARSH ASKED FOR THIS KNOWING WHAT IT COSTS. N2 refused to add a repeat's
+ * quantity onto the item it repeats, and the reasoning has not changed: one
+ * row holds one committed date, so folding 5,000 due 5 Oct into 4,000 due
+ * 15 Nov leaves one promise recorded and one gone, and OTD then measures the
+ * whole 9,000 against whichever survived. He was shown that and chose it, so
+ * the job here is to make it deliberate rather than to prevent it.
+ *
+ * Three things make it deliberate:
+ *
+ *   - The DATE IS CHOSEN, never inferred. When the group's dates differ the
+ *     form makes somebody pick, and the action refuses a merge that does not
+ *     name one. Picking silently — earliest, or the survivor's — would be the
+ *     system quietly deciding which promise to keep.
+ *   - NOTHING DISPATCHED MAY BE MERGED, the same rule removal has and for the
+ *     same reason: the absorbed item is soft-deleted, and a live dispatch_line
+ *     pointing at a row nothing displays would leave the challan saying it
+ *     went out with nothing to say it against.
+ *   - THE SURVIVOR CARRIES THE RECORD. Its remark gains a line naming each
+ *     item folded in and its quantity, so the 9,000 can still be read back as
+ *     the 5,000 and the 4,000 it came from. The audit log has the rest.
+ *
+ * Stage events on the absorbed items are NOT repointed. They are append-only
+ * (C6) and repointing them would mean updating rows the database refuses to
+ * update; they stay against their own item, which is soft-deleted, exactly as
+ * they do when an item is removed today.
+ */
+export async function mergePoItemsAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requirePoWriter();
+
+    const survivorId = String(formData.get("survivorId") ?? "");
+    const absorbedIds = formData.getAll("absorbedId").map(String).filter(Boolean);
+    const committedDate = String(formData.get("committedDate") ?? "").trim();
+
+    if (!survivorId || absorbedIds.length === 0) {
+      return fail("Nothing to merge.");
+    }
+    if (absorbedIds.includes(survivorId)) {
+      return fail("An item cannot be merged into itself.");
+    }
+
+    const survivor = await getPoItem(survivorId);
+    if (!survivor) return fail("That item no longer exists.");
+
+    const absorbed: NonNullable<Awaited<ReturnType<typeof getPoItem>>>[] = [];
+    for (const id of absorbedIds) {
+      const row = await getPoItem(id);
+      if (!row) return fail("One of the items no longer exists. Reload and try again.");
+      if (row.purchaseOrderId !== survivor.purchaseOrderId) {
+        return fail("Items can only be merged within one purchase order.");
+      }
+      absorbed.push(row);
+    }
+
+    // Same rule as removal: a delivery already recorded against an item is a
+    // fact, and soft-deleting the item it points at would orphan the challan.
+    for (const row of [survivor, ...absorbed]) {
+      const dispatched = await dispatchedQtyFor(row.id);
+      if (dispatched > 0) {
+        return fail(
+          `${row.itemCode} has ${dispatched} dispatched against it and cannot be merged. Cancel it instead, or merge the rest.`,
+        );
+      }
+    }
+
+    /*
+     * The date is the caller's, and it is required whenever the group does not
+     * already agree. An item with no committed date at all is the historical
+     * import case (F8), and merging into one is allowed only if every item in
+     * the group is likewise blank.
+     */
+    const dates = new Set([survivor, ...absorbed].map((r) => r.committedDate ?? ""));
+    if (dates.size > 1 && !committedDate) {
+      return fail(
+        "These items promise different dates. Choose which one the merged item keeps.",
+      );
+    }
+    const finalDate = committedDate || survivor.committedDate;
+
+    const totalQty =
+      survivor.orderedQty + absorbed.reduce((n, r) => n + r.orderedQty, 0);
+
+    const foldedIn = absorbed
+      .map((r) => `${r.itemCode} (${r.orderedQty})`)
+      .join(", ");
+    const note = `Merged in ${foldedIn}. Ordered quantity is the total of all of them.`;
+    const remarks = survivor.remarks ? `${survivor.remarks}\n${note}` : note;
+
+    await db.transaction(async (tx) => {
+      await withStatusWrite(tx, async () => {
+        await auditedUpdate(
+          actor,
+          poItem,
+          survivor.id,
+          { orderedQty: totalQty, committedDate: finalDate, remarks },
+          tx,
+        );
+        for (const row of absorbed) await auditedSoftDelete(actor, poItem, row.id, tx);
+      });
+      await recomputeForPoItem(survivor.id, tx);
+    });
+
+    revalidatePath("/purchase-orders");
+    revalidatePath(`/purchase-orders/${survivor.purchaseOrderId}`);
+
+    return ok({
+      message: `${absorbed.length} item${absorbed.length === 1 ? "" : "s"} merged into ${survivor.itemCode}, now ${totalQty} ordered.`,
+    });
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(actionError(error, "Could not merge the items."));
+  }
+}

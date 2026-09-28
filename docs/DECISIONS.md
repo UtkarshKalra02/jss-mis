@@ -3671,7 +3671,9 @@ at Utkarsh's direction: what a client ordered last year is reachable through the
 picker; this list answers what they are running now and want more of.
 
 > **Superseded by N3 (28 Sep 2026).** Every item is repeatable now, whatever its status.
-> The rest of this entry — a repeat is a new row, never a bigger old one — still holds.
+> The rest of this entry — a repeat is a new row, never a bigger old one — still holds
+> when the row is CREATED. Folding two existing rows together afterwards is N4, which
+> Utkarsh asked for knowing it discards one of the two promised dates.
 
 **Where the quantities do add up is the floor, not the order.** Two lots of one printing
 share a design, and since J25 a job card covers several items, so both can run on one card
@@ -3709,6 +3711,38 @@ live in one file so they cannot drift into two different ideas of what search me
 quantity and its own committed date, and the item it repeats is not touched. Widening
 which items can be repeated says nothing about whether repeating one may edit it. It may
 not.
+
+## N4 — same-named items on one PO can be folded into one
+
+Utkarsh asked for items sharing a name on a purchase order to become one item. He was
+shown what it costs — one row holds one committed date, so folding 5,000 due 5 Oct into
+4,000 due 15 Nov leaves one promise recorded and one gone, and OTD then measures the whole
+9,000 against whichever survived — and chose it anyway. **This is a deliberate exception to
+N2, not a reversal of it**: N2 governs what happens when a repeat is CREATED (still a new
+row, always), and N4 governs folding rows that already exist.
+
+So the job was to make it deliberate rather than to prevent it. Three things do that:
+
+- **The date is chosen, never inferred.** When the group's dates differ the panel makes
+  somebody pick, spells out that the other is not recorded anywhere afterwards, and the
+  action refuses a merge that does not name one. Picking silently — earliest, or the
+  survivor's — would be the system quietly deciding which promise to keep.
+- **Nothing dispatched may be merged.** The same rule removal has (K21) and for the same
+  reason: the absorbed item is soft-deleted, and a live `dispatch_line` pointing at a row
+  nothing displays leaves a challan saying goods went out with nothing to read it against.
+  The panel names the blocking items rather than hiding the group.
+- **The survivor carries the record.** Its remark gains a line naming each item folded in
+  and its quantity, so the 9,000 reads back as the 5,000 and the 4,000 it came from. The
+  audit log has the rest — the UPDATE and the SOFT_DELETE are both in it.
+
+**Stage events are NOT repointed.** They are append-only (C6), so moving them would mean
+updating rows the database refuses to update. They stay against their own item, which is
+soft-deleted — exactly the state an item's events are in when it is removed today.
+
+**Grouping is on the name trimmed and case-folded**, because "Mono Carton" and "mono
+carton " are the same thing typed twice, which is the case this exists for. Cancelled
+items are left out so they neither group nor block. The survivor is the lowest item code,
+which is the one entered first. `tests/same-name-groups.test.ts` pins all of it.
 
 ## O. Material stock — the IMS, and paper on the job card
 

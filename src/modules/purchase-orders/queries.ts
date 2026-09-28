@@ -143,6 +143,53 @@ export async function listPoItems(purchaseOrderId: string) {
 
 export type PoItemRow = Awaited<ReturnType<typeof listPoItems>>[number];
 
+export type SameNameGroup = {
+  /** The name as the first item spells it — the survivor's spelling wins. */
+  itemName: string;
+  items: PoItemRow[];
+  orderedQty: number;
+  /** True when the group's items do not all promise the same date (N4). */
+  datesDiffer: boolean;
+  /** Items with deliveries against them; a group holding any cannot merge. */
+  dispatched: PoItemRow[];
+};
+
+/**
+ * Items on one PO that share a name, grouped (N4).
+ *
+ * MATCHED ON THE NAME TRIMMED AND CASE-FOLDED, because "Mono Carton" and
+ * "mono carton " are the same thing typed twice and the whole point is to
+ * find what a person would call one item. Groups of one are not returned —
+ * there is nothing to merge.
+ *
+ * The survivor is the lowest item code, which is the one entered first.
+ */
+export function sameNameGroups(items: PoItemRow[]): SameNameGroup[] {
+  const buckets = new Map<string, PoItemRow[]>();
+  for (const item of items) {
+    if (item.status === "Cancelled") continue;
+    const key = item.itemName.trim().toLowerCase();
+    const list = buckets.get(key);
+    if (list) list.push(item);
+    else buckets.set(key, [item]);
+  }
+
+  return [...buckets.values()]
+    .filter((list) => list.length > 1)
+    .map((list) => {
+      const sorted = [...list].sort((a, b) => (a.itemCode < b.itemCode ? -1 : 1));
+      const dates = new Set(sorted.map((i) => i.committedDate ?? ""));
+      return {
+        itemName: sorted[0]!.itemName,
+        items: sorted,
+        orderedQty: sorted.reduce((n, i) => n + i.orderedQty, 0),
+        datesDiffer: dates.size > 1,
+        dispatched: sorted.filter((i) => i.dispatchedQty > 0),
+      };
+    })
+    .sort((a, b) => (a.itemName < b.itemName ? -1 : 1));
+}
+
 export async function getPoItem(id: string) {
   const [row] = await db
     .select()

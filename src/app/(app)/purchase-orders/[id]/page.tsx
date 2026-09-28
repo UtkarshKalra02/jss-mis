@@ -12,10 +12,12 @@ import {
 } from "@/components/purchase-orders/po-controls";
 import { StagePill } from "@/components/stages/stage-pill";
 import { listClientOptions } from "@/modules/designs/queries";
+import { MergeSameName } from "@/components/purchase-orders/merge-same-name";
 import {
   getPurchaseOrder,
   listDesignOptions,
   listPoItems,
+  sameNameGroups,
 } from "@/modules/purchase-orders/queries";
 import { removalBlockers } from "@/modules/purchase-orders/removal";
 import {
@@ -158,6 +160,10 @@ export default async function PurchaseOrderPage({
           </tbody>
         </table>
       </div>
+
+      {/* N4: same-named items, and the one control that folds them together.
+          Above the edit forms because it is about the list just above it. */}
+      {canWrite ? <MergeSameName groups={sameNameGroups(items)} /> : null}
 
       {canWrite ? (
         <div className="mt-8 max-w-3xl space-y-4">
