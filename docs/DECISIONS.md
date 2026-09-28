@@ -4031,6 +4031,14 @@ change for it to fit:
   chosen. Where a choice is required the prop is omitted and there is nothing to clear to,
   which is the behaviour the three store forms keep.
 
+**The job card's paper picker is deliberately NOT this component**, and stays as it is at
+Utkarsh's direction (28 Sep 2026). `paper-picker.tsx` is a different instrument for a
+different question: it narrows by type, size and GSM and orders by nearest GSM within the
+tolerance from `app_setting` (O2). That is the planner choosing what will run, not
+somebody finding a SKU they already have in mind. Converting it to type-to-find would
+throw away the tolerance logic that is the whole point of it. Five forms now pick a
+material; four use `MaterialPicker` and this one does not, on purpose.
+
 ## P7 — a design's order book: the total N2 declined to store
 
 Utkarsh asked whether a repeat's quantity gets added onto the item it repeats. It does
