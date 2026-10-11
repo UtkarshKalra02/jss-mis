@@ -29,7 +29,7 @@ async function makeOrder(tx: Tx, clientId: string, poNo: string | null = null) {
   const [po] = (
     await tx.execute(
       sql`insert into purchase_order (internal_no, client_id, po_date, po_no)
-          values (${uniq("PO-")}, ${clientId}, current_date, ${poNo}) returning id`,
+          values (${uniq("PO-")}, ${clientId}, today_ist(), ${poNo}) returning id`,
     )
   ).rows as { id: string }[];
   return po!.id;
@@ -39,7 +39,7 @@ async function makeItem(tx: Tx, poId: string, orderedQty = 1000) {
   const [item] = (
     await tx.execute(
       sql`insert into po_item (item_code, purchase_order_id, item_name, ordered_qty, committed_date)
-          values (${uniq("ITM-")}, ${poId}, 'Carton', ${orderedQty}, current_date) returning id`,
+          values (${uniq("ITM-")}, ${poId}, 'Carton', ${orderedQty}, today_ist()) returning id`,
     )
   ).rows as { id: string }[];
   return item!.id;
@@ -49,7 +49,7 @@ async function dispatchAll(tx: Tx, clientId: string, itemId: string, qty: number
   const [d] = (
     await tx.execute(
       sql`insert into dispatch (challan_no, client_id, dispatch_date, status)
-          values (${uniq("CH-")}, ${clientId}, current_date, 'Dispatched') returning id`,
+          values (${uniq("CH-")}, ${clientId}, today_ist(), 'Dispatched') returning id`,
     )
   ).rows as { id: string }[];
   await tx.execute(

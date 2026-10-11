@@ -33,21 +33,21 @@ async function scenario(tx: Tx, opts: { orderedQty?: number } = {}) {
   const [po] = (
     await tx.execute(
       sql`insert into purchase_order (internal_no, client_id, po_date)
-          values (${uniq("PO-")}, ${c!.id}, current_date) returning id`,
+          values (${uniq("PO-")}, ${c!.id}, today_ist()) returning id`,
     )
   ).rows as { id: string }[];
 
   const [item] = (
     await tx.execute(
       sql`insert into po_item (item_code, purchase_order_id, item_name, ordered_qty, committed_date)
-          values (${uniq("ITM-")}, ${po!.id}, 'Status item', ${ordered}, current_date) returning id`,
+          values (${uniq("ITM-")}, ${po!.id}, 'Status item', ${ordered}, today_ist()) returning id`,
     )
   ).rows as { id: string }[];
 
   const [d] = (
     await tx.execute(
       sql`insert into dispatch (challan_no, client_id, dispatch_date, status)
-          values (${uniq("CH-")}, ${c!.id}, current_date, 'Dispatched') returning id`,
+          values (${uniq("CH-")}, ${c!.id}, today_ist(), 'Dispatched') returning id`,
     )
   ).rows as { id: string }[];
 
@@ -98,7 +98,7 @@ describe("status write lock (B5)", () => {
       const result = await expectFailure(tx, (sp) =>
         sp.execute(
           sql`insert into po_item (item_code, purchase_order_id, item_name, ordered_qty, committed_date, status)
-              values (${uniq("ITM-")}, ${s.poId}, 'Born closed', 5, current_date, 'Closed')`,
+              values (${uniq("ITM-")}, ${s.poId}, 'Born closed', 5, today_ist(), 'Closed')`,
         ),
       );
       expect(result.threw).toBe(true);
@@ -221,7 +221,7 @@ describe("status recompute (B5)", () => {
       const [second] = (
         await tx.execute(
           sql`insert into po_item (item_code, purchase_order_id, item_name, ordered_qty, committed_date)
-              values (${uniq("ITM-")}, ${s.poId}, 'Second item', 5, current_date) returning id`,
+              values (${uniq("ITM-")}, ${s.poId}, 'Second item', 5, today_ist()) returning id`,
         )
       ).rows as { id: string }[];
 

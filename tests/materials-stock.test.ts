@@ -75,19 +75,19 @@ describe("batch remaining is arithmetic, not a column", () => {
       expect(await remaining(tx, b)).toBe(500);
 
       await tx.execute(
-        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, current_date, 120)`,
+        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, today_ist(), 120)`,
       );
       expect(await remaining(tx, b)).toBe(380);
 
       await tx.execute(
         sql`insert into material_adjustment (adjustment_no, batch_id, adjusted_on, qty, reason)
-            values (${uniq("MA-")}, ${b}, current_date, -30, 'Damage')`,
+            values (${uniq("MA-")}, ${b}, today_ist(), -30, 'Damage')`,
       );
       expect(await remaining(tx, b)).toBe(350);
 
       await tx.execute(
         sql`insert into material_adjustment (adjustment_no, batch_id, adjusted_on, qty, reason)
-            values (${uniq("MA-")}, ${b}, current_date, 10, 'Count correction')`,
+            values (${uniq("MA-")}, ${b}, today_ist(), 10, 'Count correction')`,
       );
       expect(await remaining(tx, b)).toBe(360);
     });
@@ -99,7 +99,7 @@ describe("batch remaining is arithmetic, not a column", () => {
       const b = await batch(tx, materialId, 100);
       const [i] = (
         await tx.execute(
-          sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, current_date, 40) returning id`,
+          sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, today_ist(), 40) returning id`,
         )
       ).rows as { id: string }[];
       expect(await remaining(tx, b)).toBe(60);
@@ -118,7 +118,7 @@ describe("closing stock and reorder flags", () => {
       await batch(tx, materialId, 700, "2026-09-01");
       // Empty the first batch entirely.
       await tx.execute(
-        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${a}, current_date, 300)`,
+        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${a}, today_ist(), 300)`,
       );
 
       const s = await stock(tx, materialId);
@@ -140,7 +140,7 @@ describe("closing stock and reorder flags", () => {
       );
       const b = await batch(tx, materialId, 700);
       await tx.execute(
-        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, current_date - 1, 90)`,
+        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, today_ist() - 1, 90)`,
       );
       // ADC 1/day → max 4, level 3.2; 610 + 200 covers it comfortably.
       const s = await stock(tx, materialId);
@@ -164,12 +164,12 @@ describe("an issue cannot take a batch below zero (0039 guard)", () => {
       const { materialId } = await fixture(tx);
       const b = await batch(tx, materialId, 100);
       await tx.execute(
-        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, current_date, 90)`,
+        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, today_ist(), 90)`,
       );
 
       const result = await expectFailure(tx, (sp) =>
         sp.execute(
-          sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, current_date, 11)`,
+          sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, today_ist(), 11)`,
         ),
       );
       expect(result.threw).toBe(true);
@@ -178,7 +178,7 @@ describe("an issue cannot take a batch below zero (0039 guard)", () => {
 
       // Exactly what is left is fine.
       await tx.execute(
-        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, current_date, 10)`,
+        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, today_ist(), 10)`,
       );
       expect(await remaining(tx, b)).toBe(0);
     });
@@ -190,7 +190,7 @@ describe("an issue cannot take a batch below zero (0039 guard)", () => {
       const b = await batch(tx, materialId, 100);
       const [i] = (
         await tx.execute(
-          sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, current_date, 60) returning id`,
+          sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, today_ist(), 60) returning id`,
         )
       ).rows as { id: string }[];
 
@@ -247,7 +247,7 @@ describe("reorder statuses follow the sheet's Calc Method (P2)", () => {
       const b = await batch(tx, materialId, 1000);
       // 90 in the window (default 90 days) → ADC 1/day; max 4; stock 910 → OK.
       await tx.execute(
-        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, current_date - 10, 90)`,
+        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, today_ist() - 10, 90)`,
       );
       const s = await intel(tx, materialId);
       expect(Number(s.adc)).toBeCloseTo(1, 3);
@@ -273,7 +273,7 @@ describe("reorder statuses follow the sheet's Calc Method (P2)", () => {
       const b = await batch(tx, materialId, 1000);
       // 900 issued over the window → ADC 10/day; 100 left → 10 days > 5 lead → Low (100 < 0.8×100=80? no) …
       await tx.execute(
-        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, current_date - 1, 960)`,
+        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, today_ist() - 1, 960)`,
       );
       // ADC 960/90 = 10.67; left 40 → 3.75 days ≤ 5 → Order now; max = 10.67×5×2 = 106.7; suggest max(200, 106.7−40) = 200
       const s = await intel(tx, materialId);
@@ -289,7 +289,7 @@ describe("reorder statuses follow the sheet's Calc Method (P2)", () => {
       await setMethod(tx, materialId, "reorder_method = 'Interval', issue_interval_days = 7");
       const b = await batch(tx, materialId, 100);
       await tx.execute(
-        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, current_date - 10, 5)`,
+        sql`insert into material_issue (issue_no, batch_id, issued_on, qty) values (${uniq("MI-")}, ${b}, today_ist() - 10, 5)`,
       );
       const s = await intel(tx, materialId);
       expect(s.stock_status).toBe("OK");
@@ -306,7 +306,7 @@ describe("reorder statuses follow the sheet's Calc Method (P2)", () => {
       expect((await intel(tx, materialId)).stock_status).toBe("Set interval");
       // Empty it.
       const b2 = await batch(tx, materialId, 1);
-      await tx.execute(sql`insert into material_adjustment (adjustment_no, batch_id, adjusted_on, qty, reason) values (${uniq("MA-")}, ${b2}, current_date, -11, 'Damage')`);
+      await tx.execute(sql`insert into material_adjustment (adjustment_no, batch_id, adjusted_on, qty, reason) values (${uniq("MA-")}, ${b2}, today_ist(), -11, 'Damage')`);
       const s = await intel(tx, materialId);
       expect(s.stock_status).toBe("Critical – order now");
       expect(Number(s.suggested_order_qty)).toBe(2);

@@ -4462,3 +4462,25 @@ floor, here are the numbers", not adding processes. So a new process is a migrat
 is also what keeps dev and production holding the same stage list.
 
 Applied to dev and to production on 11 Oct 2026 before pushing; both read 17 stages.
+
+## S3 — the test fixtures were on UTC, so the suite failed every night
+
+Found on 12 Oct 2026 while verifying S2, at 01:14 IST. Two tests failed —
+`views.test.ts` expecting 10 days to a committed date and getting 9,
+`materials-stock.test.ts` expecting −3 and getting −4 — and both failed with the S2 work
+stashed, so neither was caused by it.
+
+**The cause is C10, in the tests themselves.** Thirty fixture rows across six files built
+their dates from `current_date`, which Postgres evaluates in the **session's** timezone —
+UTC on Neon. The views they are checked against use `today_ist()`. Between 00:00 and 05:30
+IST those are different days, so a fixture written as "committed in 10 days" was read by
+the view as 9, and the suite failed every night in that five-and-a-half-hour window and
+passed every day.
+
+This is the exact failure C10 exists to prevent, and the production code has no instance of
+it — `current_date` appears nowhere in `src/` or in a migration except in two comments
+warning against it. Only the fixtures still had it. All thirty are now `today_ist()`.
+
+Worth keeping visible because of what it implies about the suite: **a green run says
+nothing about the hours nobody runs it in.** Anything a test derives from a date has to go
+through `today_ist()` for the same reason the product does.

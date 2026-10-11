@@ -34,7 +34,7 @@ async function fixture(tx: Tx) {
   const [po] = (
     await tx.execute(
       sql`insert into purchase_order (internal_no, po_no, client_id, po_date)
-          values (${uniq("PO-")}, ${poNo}, ${c!.id}, current_date) returning id`,
+          values (${uniq("PO-")}, ${poNo}, ${c!.id}, today_ist()) returning id`,
     )
   ).rows as { id: string }[];
 

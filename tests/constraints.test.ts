@@ -36,14 +36,14 @@ async function scenario(tx: Tx) {
   const [po] = (
     await tx.execute(
       sql`insert into purchase_order (internal_no, client_id, po_date)
-          values (${uniq("PO-")}, ${a!.id}, current_date) returning id`,
+          values (${uniq("PO-")}, ${a!.id}, today_ist()) returning id`,
     )
   ).rows as { id: string }[];
 
   const [item] = (
     await tx.execute(
       sql`insert into po_item (item_code, purchase_order_id, item_name, ordered_qty, committed_date)
-          values (${uniq("ITM-")}, ${po!.id}, 'Test item', 1000, current_date) returning id`,
+          values (${uniq("ITM-")}, ${po!.id}, 'Test item', 1000, today_ist()) returning id`,
     )
   ).rows as { id: string }[];
 
@@ -51,7 +51,7 @@ async function scenario(tx: Tx) {
     const [d] = (
       await tx.execute(
         sql`insert into dispatch (challan_no, client_id, dispatch_date, status)
-            values (${uniq("CH-")}, ${clientId}, current_date, 'Dispatched') returning id`,
+            values (${uniq("CH-")}, ${clientId}, today_ist(), 'Dispatched') returning id`,
       )
     ).rows as { id: string }[];
     return d!.id;
@@ -218,7 +218,7 @@ describe("column constraints", () => {
                 (enquiry_no, client_id, enquiry_date, status, item_description,
                  source_id, owner_user_id)
               values (
-                ${uniq("ENQ-")}, ${s.clientA}, current_date, 'Lost', 'Test enquiry',
+                ${uniq("ENQ-")}, ${s.clientA}, today_ist(), 'Lost', 'Test enquiry',
                 (select id from enquiry_source where code = 'OTHER'),
                 (select id from app_user order by created_at limit 1)
               )`,

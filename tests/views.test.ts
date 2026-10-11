@@ -60,14 +60,14 @@ async function scenario(tx: Tx) {
   const [po] = (
     await tx.execute(
       sql`insert into purchase_order (internal_no, client_id, po_date)
-          values (${uniq("PO-")}, ${c!.id}, current_date) returning id`,
+          values (${uniq("PO-")}, ${c!.id}, today_ist()) returning id`,
     )
   ).rows as { id: string }[];
 
   const [item] = (
     await tx.execute(
       sql`insert into po_item (item_code, purchase_order_id, item_name, ordered_qty, committed_date)
-          values (${uniq("ITM-")}, ${po!.id}, 'View item', 1000, current_date + 10) returning id`,
+          values (${uniq("ITM-")}, ${po!.id}, 'View item', 1000, today_ist() + 10) returning id`,
     )
   ).rows as { id: string }[];
 
@@ -81,7 +81,7 @@ async function scenario(tx: Tx) {
   const [d] = (
     await tx.execute(
       sql`insert into dispatch (challan_no, client_id, dispatch_date, status)
-          values (${uniq("CH-")}, ${c!.id}, current_date, 'Dispatched') returning id`,
+          values (${uniq("CH-")}, ${c!.id}, today_ist(), 'Dispatched') returning id`,
     )
   ).rows as { id: string }[];
 
