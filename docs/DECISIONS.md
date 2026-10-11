@@ -4192,3 +4192,225 @@ BACKLOG and waits on what this shows.
 group that merged two spellings says so rather than hiding it. Genuinely different wording
 is never folded — "Mono carton" and "Mono carton outer" stay apart, because this file must
 not decide what the factory calls its own products.
+
+## Q. Making the data true — the store reset, and the order book that was not touched
+
+5 Oct 2026. Utkarsh asked for three things in one instruction: keep purchase orders from
+28 September onwards, run the export and the drift check, and reset the store's quantities
+and paper, which he would refill from a physical count. Two of the three were done. The
+first was not, and this records why.
+
+## Q1 — the drift had one cause, and the production numbers name it
+
+The store was mismatched because **not one material issue has ever been entered by a
+person.** Every one of the 1,469 issues in production was written by the section-P ledger
+replay, and they stop in September:
+
+```
+2026-07  System  114     2026-08  System   90     2026-09  System   80
+```
+
+So stock only ever moved when the importer said so. O3 chose deliberately that stock moves
+when a person records it, and this is the bill for that choice arriving: the figures were
+right on 19 Sep 2026 and have been drifting every day since, exactly as the backlog's
+three-month refusal of an IMS predicted ("a stock count that nothing decrements is right
+on the day it is typed and wrong every day after, and it looks exactly as authoritative on
+both").
+
+**The consequence for the reset: a count alone would not have fixed anything.** Whatever
+is counted onto the shelf next will drift the same way unless the issue gets recorded when
+paper leaves. The job card page already offers the issue pre-filled; pressing it has to
+become part of releasing a card.
+
+## Q2 — the store was zeroed through the ledger, not deleted
+
+The instruction was to remove Materials and Paper. It was done as `scripts/reset-store-stock.ts`
+instead, which writes ONE `material_adjustment` of minus its remaining against each batch
+that held stock — 304 rows, reason "Count correction", each remark naming the pre-reset
+figure and the export file it can be read from.
+
+**Deleting was refused on three grounds, and the first is the real one.** The material
+master is not what was wrong. 426 SKUs, nine categories, the types, and the factory's own
+SKU scheme are correct; the quantities were not. Deleting the master would have discarded
+the right half to fix the wrong half, and then required re-importing it from the same sheet
+through the one importer known to retire a person's adjustments without naming them.
+Second, the database would have refused: `design.material_id` and `job_card.material_id`
+reference `material.id` and foreign keys are enforced (non-negotiable 4). Third,
+non-negotiable 7 is soft delete only.
+
+Zeroing through the ledger also keeps the store's own design intact (P1, non-negotiable 2):
+nothing here stores a stock figure, so the honest way to change stock is to write the rows
+it is computed from. Every other correction in this system is a row with a reason and a
+name on it; so is this one.
+
+**Verified after applying:** 426 materials, 9 categories, 1,009 batches, 57 GRNs and all
+1,469 issues still present; adjustments 141 → 445; batches holding stock 0; closing stock
+0.00. The pre-reset store is at `data/store-export-2026-10-05.xlsx`, written by
+`scripts/export-store.ts`, which refuses to finish if the stock it exports disagrees with
+the ledger it exports.
+
+**The store now reads zero everywhere** — every material reports "Order now" and the job
+card's paper picker has nothing to offer. That is correct rather than broken: at this
+moment the system genuinely does not know what is on the shelf. It stays that way until
+the counted stock is received.
+
+## Q3 — "keep POs from 28 September onwards" was NOT done
+
+A read-only report (`scripts/tmp/cutover-report.ts`) was run against production first, and
+it is the reason nothing was touched:
+
+| | Orders | Items | Ordered | Sent | Pending |
+|---|---|---|---|---|---|
+| Before 28 Sep | 32 | 125 | 14,09,800 | 7,05,585 | **7,04,215** |
+| On/after 28 Sep | 9 | 57 | 8,43,500 | 0 | 8,43,500 |
+
+Closing everything before the cutover would have discarded **94 open items owing 7,56,919
+pieces, with committed dates running from 17 Sep to 30 Oct 2026** — and 20 of those items
+are physically on the presses (6 READY, 9 PRINTING, 4 LAMINATION, 1 FOILING). It would
+also have orphaned 42 job cards, 264 stage events and 71 dispatch lines. That is not
+history; it is the order book, and most of it is work the factory still owes.
+
+**And the mess it was meant to clear is small, contained, and entirely outside the live
+order book.** Before the cutover there are 29 over-delivered items totalling −52,704
+pending, and all 29 sit inside the 31 items already **Closed**. The 94 Open items have no
+impossible figures at all — 94 owing, 94 still owing, not one negative.
+
+So the cheap fix is the opposite of a cutover: **leave every purchase order alone, and
+correct or exclude 29 closed items.** Nothing is owed on them, nobody is chasing them, and
+they distort only historical totals and OTD. 29 rows against 125, with the order book left
+standing and no item re-keyed.
+
+Deciding how those 29 are settled — corrected against the bills Utkarsh has issued, or
+excluded from `v_otd` the way F8 excludes items with no committed date — is open and is in
+BACKLOG under "Making the order data true".
+
+## Q4 — "close all orders before 29 Sept": cancelled, not closed, and 44 left for a decision
+
+6 Oct 2026. Utkarsh reaffirmed the cutover after seeing Q3's numbers, moving the date to
+29 September and adding "rest be it there". Taken as his call and acted on. Two things
+about the shape of it are worth recording.
+
+**`Closed` cannot be set, and that is 0006 working rather than a limitation.** The rule is
+one line of `recompute_po_item_status`:
+
+```sql
+v_new := CASE WHEN v_dispatched >= v_ordered THEN 'Closed' ELSE 'Open' END;
+```
+
+A BEFORE UPDATE trigger refuses any writer without `jss.allow_status_write` (B5), and even
+holding that key open, the AFTER triggers and the nightly recompute at
+`/api/cron/recompute-po-status` would compute every item with pending left straight back to
+Open — writing an `audit_log` row per item as SYSTEM on the way. Closing 142 items that
+still owed would have been undone by morning, leaving 142 phantom status changes behind it.
+
+**`Cancelled` is the only verb that sticks.** 0006 returns early on it, `listItemsForIndex`
+excludes it from the reconciliation pass, and every screen that shows a cancelled item says
+so. It is also reversible: `setPoItemCancelledAction` with cancel false sets Open and then
+recomputes, so a fully-dispatched item lands at Closed rather than being guessed.
+
+**The cutover was split on whether work had started**, because the two halves carry
+completely different costs. `scripts/close-orders-before.ts`, dry-run by default:
+
+| | Items | Pending | Done |
+|---|---|---|---|
+| No work started — no job card, stage PO_RECEIVED or none | 98 | 10,19,979 | **Cancelled** |
+| Work started — a card raised, or past PO_RECEIVED | 44 | 4,52,940 | **Left open** |
+
+The 98 are paperwork: nothing was raised against them and nothing on the floor refers to
+them, so cancelling them costs nothing that is not in the export and the audit log.
+
+The 44 were held back for one reason that is operational rather than architectural. Twenty
+of them are at a production stage right now — 9 PRINTING, 6 READY, 4 LAMINATION, 1 FOILING
+— and a cancelled item leaves Stage Update, the planning board and Dispatch. The floor
+would go on running jobs the system says were cancelled, and Preeti would have no screen to
+move them on. That is a different kind of cost from losing a figure, and it is Utkarsh's
+call to pay it or not; `--mode=all` is the one flag.
+
+**Verified after applying:** pre-cutover items 142 open → 44 open, 98 Cancelled; the 31
+already-Closed items untouched; the 9 post-cutover items untouched.
+
+## Q5 — the boundary moved to 28 Sep, and 40 items came back
+
+6 Oct 2026, same day as Q4. Utkarsh corrected the cutover: "I hope on and after 28
+September none of them are touched. Before that close all orders."
+
+**Q4 had used 29 Sep and so cancelled 40 items dated 28 Sep.** 28 September is the day the
+bulk of the current order book was captured — 48 items on one date, 7,16,000 pieces — so
+one day of boundary was the difference between 9 live items and 57. The instruction at the
+time was "before 29 Sept", which is what ran; the fix is not an argument about who read
+what, it is that the boundary moved and 40 rows were on the wrong side of it.
+
+**`--reinstate` was added rather than clicking forty screens.** It reads the same cutover
+date the other direction — items ON OR AFTER it must be live — and puts back anything
+cancelled beyond it. It sets `Open` and then calls `recomputeForPoItem` on each, never
+assuming Open is the answer: an item fully dispatched before being cancelled belongs at
+Closed, and guessing would leave it saying Open with nothing left to deliver. That is
+`setPoItemCancelledAction`'s reasoning, reused rather than restated.
+
+This is the argument for Q4's choice of Cancelled over anything destructive, arriving one
+day later than the decision. A cutover date is exactly the kind of thing that moves after
+somebody looks at the result, and 40 items came back in one command with their job cards,
+stage events, dispatch lines and plan entries still attached, because nothing had been
+deleted.
+
+**Then everything before 28 Sep was cancelled, all of it**, including the 20 items at a
+production stage that Q4 had held back. Utkarsh reaffirmed the instruction a third time
+with the floor consequence already stated, so it was taken as his call: 36 items,
+3,67,940 pending — 14 PO_RECEIVED, 9 PRINTING, 6 READY, 4 LAMINATION, 2 DISPATCHED, 1
+FOILING. Those jobs are physically running and no longer appear on Stage Update, the
+planning board or Dispatch. **Reinstating any of them is one click on the item's page**,
+which is the answer if the floor turns out to need the screens.
+
+**Where production stands.** The live book is 9 orders, 57 items, 8,43,500 pending, every
+one dated 28 Sep or later, committed dates 10–20 Oct, and **zero impossible figures** — the
+lumped-challan problem is entirely behind the boundary now. All 57 sit at PO_RECEIVED.
+Whole system: 57 Open, 94 Cancelled, 31 Closed. The store is at 0.00 awaiting the count
+(Q2).
+
+**What this leaves outstanding**, and neither is done: the 20 running jobs have no screen
+until they are reinstated or re-entered, and the 31 Closed items still carry the 29
+over-delivered rows and −52,704 of impossible pending. They are Closed, so nothing is owed
+and nobody is chasing them, but they still feed `v_otd` and historical totals. BACKLOG's
+"Making the order data true" is where that is settled.
+
+
+---
+
+## R. The boundary with Busy
+
+## R1 — the money stays in Busy; Phase 5 is dropped from the plan
+
+Stated by Utkarsh on 6 Oct 2026, the day after he set the ERP scope: *"I don't wanna add
+Busy features to this now, the money is tracked on Busy."* This is not a new position — the
+spec header has said since day one that Busy is the book of record for accounts and that
+this system is a visibility layer, not a replacement. What is new is that it now overrides
+a phase.
+
+**Dropped.** Phase 5 (spec §8) — invoice, receipts, allocations, AR ledger, ageing — is no
+longer the next thing built, and is not scheduled. On the purchasing side the same line
+cuts out the vendor bill and the payables ledger. Those are postings, and postings belong
+where the accountant already makes them.
+
+**The tables stay.** `invoice`, `invoice_line`, `receipt`, `receipt_allocation` and
+`v_ar_ageing` are already migrated and are left exactly as they are, unused. Dropping them
+would cost a migration now and another one if he changes his mind, and an empty table costs
+nothing. `invoice.busy_synced` (spec §5) was always the admission that Busy is upstream.
+
+**What this does NOT drop**, because it is operations rather than accounting:
+
+- **Supplier master and the purchase order to a supplier.** A supplier PO answers "what is
+  on order and when is it due" — it is a commitment with a date, the mirror of a client PO,
+  and it is what makes a material shortage visible before the press stops. It becomes a
+  ledger entry only at the bill, and the bill is where this system stops.
+- **Goods receipt.** `grn` already exists and already records arrival.
+- **Outsourced work.** Lamination and foiling leaving the building is a committed-date
+  problem first and a cost problem second.
+- **BOM and material planning.** Quantities, not money.
+
+**The consequence, named rather than discovered later.** Job costing was gap 3 of the ERP
+list and its inputs are paper issued against the card, purchase prices, and invoice value.
+Two of those three now live in Busy. So costing in this system can only ever be *quantity*
+accurate — how much paper a job ate, how much it wasted — and becomes money only if a rate
+reaches it from somewhere. That is a separate decision when it is wanted: either a rate
+captured on the material or the supplier PO here, or a figure read out of Busy. It is not
+blocked, but it is not free, and nobody should assume costing falls out of BOM alone.

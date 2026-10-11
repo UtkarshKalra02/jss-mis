@@ -429,9 +429,11 @@ Migrate historical dispatch log.
 Job cards, job planning board, printable daily floor plan (EN + HI).
 *Done when:* the 6pm queue meeting runs off this screen.
 
-**Phase 5 — Accounts (week 9-11)**
-Invoice, receipts, allocations, AR ledger, ageing.
-*Done when:* Pradeep can answer "what's outstanding from X" without opening Busy.
+**Phase 5 — Accounts (week 9-11) — DROPPED 6 Oct 2026, see DECISIONS R1**
+~~Invoice, receipts, allocations, AR ledger, ageing.~~
+~~*Done when:* Pradeep can answer "what's outstanding from X" without opening Busy.~~
+Busy keeps the money and Pradeep keeps opening Busy. The tables are migrated and stay
+unused. Next build after Phase 4 is BOM and purchasing, which are not in this list.
 
 **Phase 6 — Reports and polish (week 12)**
 All reports, enquiry funnel, export to Excel, mobile polish.

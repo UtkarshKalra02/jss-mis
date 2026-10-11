@@ -434,3 +434,157 @@ the following is built:
   (P7) becomes the pending-by-item screen with no new code. Needs a backfill from the pass
   above, the design picker made required on PO capture, and probably relabelling "Designs"
   to "Items" or "Products" in the nav the way `tooling` is labelled "Job Kitting" (I10).
+
+
+## "I need it more like an ERP system" — SCOPE SET 6 Oct, order still open
+
+Stated by Utkarsh on 5 Oct 2026, verbatim: *"Also I need it more like an ERP system."*
+Recorded here undecided, because the word covers several different pieces of work and
+which of them he wants changes the build order for the next three months.
+
+### Amended 6 Oct 2026 — the scope is now a module map
+
+Utkarsh answered the first of the three questions below by handing over a module-by-module
+table of the whole system and saying *"this is the full ERP System we are trying to make."*
+So the answer is **everything the factory does in one place**, not just closing the money
+loop — with HR and payroll explicitly excluded ("nothing about OTD needs it"), and costing
+explicitly included rather than deferred. GST, e-way bills and HSN were not mentioned
+either way; Busy stays the book of record until he says otherwise.
+
+The table named two gaps this entry did not have: a **product master** (which `design`
+already half-is) and a **bill of materials** — the recipe per product, from which material
+planning, purchasing and costing all fall out. He called BOM the most important gap. That
+is consistent with what this entry already said about purchasing being the biggest hole;
+BOM is the thing one step upstream of it, and it is also the precondition for an MRP that
+can say what to buy for accepted orders rather than what is low on the shelf.
+
+**Four of the table's "missing" readings are out of date against the code**, and are
+recorded here so they are not rebuilt:
+
+- `po_item.design_id` is **no longer unused**. The job card reads it for tooling and for
+  the fabrication block (J24), the item detail screen links through it, and the PO capture
+  form has a design picker per row. What is still true is that the picker is *optional*, so
+  the link is sparse — which is the real work, and it is already written up under "Making
+  the order data true" above.
+- The job card **does** capture output and wastage — `job_card.final_qty` and
+  `wastage_qty`, entered on the execution form. **Rejection** is the part genuinely not
+  modelled.
+- The challan **does** carry transporter, vehicle number and e-way bill number, as free
+  text. What is missing is a transporter master and an LR number, not the capture.
+- `client.credit_limit` is captured and displayed on the client screen. Correct that
+  nothing *enforces* it; it is a number on a page, not a check.
+
+Everything else in the table matches what is here.
+
+### Still open, and these are what decide the next three months
+
+Setting the scope does not set the order, and the working agreement says phases ship
+strictly in order. Purchasing, BOM and MRP are in none of the six phases.
+
+- ~~Does **Phase 5 (invoice, receipt, AR)** still go first, or does **BOM → purchasing**
+  displace it?~~ **Answered 6 Oct by R1 — Phase 5 is out, so BOM → purchasing is the next
+  build, after the order data is true.** Phase 6 (reports) is now the only phase left in
+  the spec's sequence, and it is no longer blocked by Phase 5.
+- The order data is still wrong (see the entry above). Cost per job, profit per client and
+  outstanding are all computed off the same items. That makes fixing it the precondition
+  for all of this, not a parallel track — unchanged by the wider scope.
+
+
+What the system is today is **one of the three loops an ERP has**, most of the way done:
+
+| Loop | What it is | State |
+|---|---|---|
+| Order to cash | enquiry → PO → make → dispatch → invoice → money in | Built to dispatch. **Invoice, receipt and AR stop here by decision R1 — Busy keeps the money.** |
+| Procure to pay | need → supplier PO → goods in → vendor bill → money out | **Barely started.** `grn` records goods arriving and `grn.vendor` is free text. No supplier master, no purchase order to a supplier. The **bill and the payable are out of scope** (R1); everything up to goods in is not. |
+| Plan to produce | plan → job card → stages → output, at a known cost | Planned and tracked. Cost and efficiency are not measured at all. |
+
+### The gaps that would make it an ERP rather than an order tracker
+
+Ordered by how much each one adds against what it costs to build. None is built.
+
+1. ~~**Phase 5 — the money in.** Invoice, receipt, allocation, AR ledger, ageing. Tables
+   and `v_ar_ageing` already exist; only the screens are missing. This is the single
+   thing that turns a tracker into an ERP, and it is already specified and sequenced.~~
+   **Dropped 6 Oct 2026 — see R1.** "The money is tracked on Busy." The tables stay in
+   place, unused. The argument above was wrong about one thing and it is worth keeping
+   visible: closing the money loop turns a tracker into an ERP only if the money is not
+   already closed somewhere else. Here it is.
+2. **Purchasing — up to goods in, and no further.** A supplier master (replacing
+   `grn.vendor` as text), a purchase order to a supplier, and receipt against that PO. The
+   store already computes reorder levels (P2), so the trigger for "what to buy" exists;
+   nothing downstream of it does. **This is the biggest true ERP hole.** The vendor bill
+   and the payable are out of scope (R1) — a supplier PO is a dated commitment, which is an
+   operations question; the bill is a posting, which is Busy's.
+3. **Job costing.** Out of scope in v1 by decision — "Costing exists as a stage, not a
+   calculation" (spec §1). It was going to become cheap after 1 and 2, because the inputs
+   would all exist by then: paper issued against the card (O3), purchase prices from the
+   vendor bill, and invoice value. **R1 removes two of those three**, so costing here can
+   be quantity-accurate (paper eaten, paper wasted) and becomes money only if a rate is
+   captured on the material or the supplier PO, or read out of Busy. Decide that when
+   costing is wanted; do not assume it falls out of BOM.
+4. **Outsourced work.** Lamination, foiling and pasting go out of the building. They are
+   stages today, so the system knows a job is "at lamination" but not that it is at a
+   named vendor, when it has to come back, or what it cost. This is both a costing input
+   and the commonest cause of a missed committed date.
+5. **Rejections and rework.** Not modelled anywhere. A short delivery from a rejected lot
+   currently reads as the same thing as a short delivery from under-printing.
+6. **Approvals.** No approval step on a quotation, a price, or a client credit limit.
+
+### Named here so they are not assumed in
+
+- **Machine time, makeready and wastage.** Spec §1 excludes these and gives the reason:
+  no process timestamps are captured, so the system *cannot* produce utilisation or
+  wastage. Making it able to is not a screen — it is a device on the floor and an
+  operator entering data every run. Decide that as its own question, not as part of "ERP".
+- **GST returns, e-way bills, HSN.** Busy is the book of record for accounts (spec header)
+  and does this. Duplicating it buys reconciliation work, not capability.
+- **HR, attendance, payroll.** Real ERPs include them. Nothing in the stated purpose of
+  this system — OTD — needs them.
+
+### Open questions awaiting his call
+
+- ~~Does "ERP" mean **close the money loop** (1, then 2), or **know what each job costs**
+  (3), or **everything the factory does in one place** (which includes the three excluded
+  items above)?~~ **Answered 6 Oct: everything the factory does, less HR and payroll.** See
+  the amendment above.
+- Phase order is a non-negotiable of the working agreement — phases ship strictly in
+  order. Purchasing is not in the six phases at all. Does it go **after** Phase 5, or does
+  it displace it?
+- The order data is still wrong (see the entry above). Every figure an ERP would add —
+  cost per job, profit per client, outstanding — is computed off the same items. Fixing
+  that is the precondition for all of this, not a parallel track.
+
+
+## Undoing an import has no guard for work done since — NOT FIXED
+
+Found 5 Oct 2026 while costing the routes for correcting the imported delivery figures.
+
+`undoImportBatch` (`src/modules/imports/write.ts`) soft-deletes, in order, the dispatch
+lines, challans, PO items, orders and created clients that carry the batch's id. It is
+correct about what it owns — a purchase order the batch merely attached an item to has a
+null `import_batch_id` and survives (F32).
+
+**What it does not do is check whether anything was built on top of the items it is about
+to delete.** Job cards, stage events, plan entries, press run membership and material
+issues all reference `po_item.id` and none of them carry an import batch id, so none of
+them is touched and none of them is counted. `undoImportAction` guards only that the batch
+exists and has not already been undone.
+
+The day after an import that is harmless, because nothing has happened yet — which is the
+case the undo was written for, and it is honest for it. It is no longer that day. An
+imported item that has since been planned, released as a card, moved through stages or
+issued paper against would leave those rows pointing at a soft-deleted parent.
+
+So **"undo and re-import a corrected sheet" is not currently a safe route** for fixing the
+delivery figures, and it is the route somebody will reach for first because the button is
+right there. Before that button can be trusted again it needs:
+
+- a count, shown before the undo is confirmed, of the job cards, stage events, plan
+  entries, press runs and material issues that reference items in the batch; and
+- a refusal, or at minimum a second confirmation naming them, when that count is not zero.
+
+Related, and the reason this is filed rather than fixed in passing: the **material**
+importer has the same shape of problem in a different place — a re-run retires a person's
+hand-entered adjustments and only names the issues it retired, not the adjustments (see
+the IMS entry above). Both are the same lesson: an importer that can undo itself needs to
+know what other people have since built on its rows.
