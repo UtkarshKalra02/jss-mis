@@ -4414,3 +4414,51 @@ accurate — how much paper a job ate, how much it wasted — and becomes money 
 reaches it from somewhere. That is a separate decision when it is wanted: either a rate
 captured on the material or the supplier PO here, or a figure read out of Busy. It is not
 blocked, but it is not free, and nobody should assume costing falls out of BOM alone.
+
+
+---
+
+## S. The finishing stages
+
+## S1 — three stages added, and why 'UV' was not renamed
+
+Asked for by Utkarsh on 11 Oct 2026: *"Add embossing also to a stage and Hybrid UV and
+Spot UV are different processes, and add emboss+die cut as one as well. So create 3 more
+stages."* Migration `0041_three_finishing_stages.sql`.
+
+| code | name | sequence | optional |
+|---|---|---|---|
+| `HYBRID_UV` | Hybrid UV | 95 | yes |
+| `EMBOSSING` | Embossing | 105 | yes |
+| `EMBOSS_DIE_CUT` | Emboss + Die Cut | 115 | yes |
+
+**The existing `UV` stage is untouched, and that is what makes the count three.** Stage
+codes are immutable (C2) — `stage_event` references them by value, so renaming one
+rewrites the history of every item that passed through it. `UV` also already covers both
+kinds of coating: the fabrication vocabulary seeded in 0019 has option `UV` with values
+**Full** and **Spot**, and `HYBRID_UV` as a separate option, because the hybrid plate is a
+fact about the run rather than the design. So the distinction Utkarsh is drawing has
+existed on the job card since 0019; what was missing is that the *stage list* collapsed it.
+This migration brings the two vocabularies into line rather than inventing a new one —
+Hybrid UV becomes its own stage, and `UV` goes on meaning full-or-spot coating.
+
+**Sequencing used the gaps the tens left** (0003), so nothing was renumbered and no
+existing stage moved: UV 90 → HYBRID_UV 95 → FOILING 100 → EMBOSSING 105 → DIE_CUT 110 →
+EMBOSS_DIE_CUT 115 → PASTING 120. `EMBOSS_DIE_CUT` sits *after* `DIE_CUT` because it is an
+**alternative** to it, not a step following it — a job takes one route or the other. That
+is also why it is optional while `DIE_CUT` is not: every job is die cut, by one route or
+the other, and the schema comment on `is_optional` was corrected to say so.
+
+**Target hours are NULL, deliberately.** The fourteen original targets are placeholders
+from an example workbook, never measured on the floor (A2). Rather than invent three more,
+these are left null: `v_wip_ageing` already renders `is_over_target` as NULL when
+`target_hours` is null, which reads as *not known* instead of *fine* — the same handling
+READY and DISPATCHED get. A null target is more honest than a fabricated one, and
+Admin › Stages is where a human puts a real number in.
+
+**A stage can only be born in a migration.** `saveStagesAction` edits the existing rows and
+has no create path, by design — the realistic admin task is "somebody finally timed the
+floor, here are the numbers", not adding processes. So a new process is a migration, which
+is also what keeps dev and production holding the same stage list.
+
+Applied to dev and to production on 11 Oct 2026 before pushing; both read 17 stages.

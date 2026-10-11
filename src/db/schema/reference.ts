@@ -119,7 +119,11 @@ export const stage = pgTable(
 
     sequence: integer().notNull(),
 
-    /** True for LAMINATION, UV, FOILING, PASTING. */
+    /**
+     * True for the stages a job may skip: LAMINATION, UV, HYBRID_UV, FOILING,
+     * EMBOSSING, EMBOSS_DIE_CUT, PASTING. DIE_CUT is NOT optional while
+     * EMBOSS_DIE_CUT is — every job is die cut, by one route or the other.
+     */
     isOptional: boolean().notNull().default(false),
 
     /**

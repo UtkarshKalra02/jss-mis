@@ -288,6 +288,13 @@
       "when": 1789908097256,
       "tag": "0040_material_reorder_from_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791729241285,
+      "tag": "0041_three_finishing_stages",
+      "breakpoints": true
     }
   ]
 }
