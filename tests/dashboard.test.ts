@@ -1,13 +1,14 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { SYSTEM_ACTOR, auditedInsert, type Tx } from "@/db/audit";
-import { dispatch, dispatchLine, poItem, purchaseOrder } from "@/db/schema";
+import { SYSTEM_ACTOR, auditedAppend, auditedInsert, type Tx } from "@/db/audit";
+import { dispatch, dispatchLine, poItem, purchaseOrder, stageEvent } from "@/db/schema";
 import { allocateNumber } from "@/lib/numbering";
 import {
   MIN_FOR_TREND,
   dispatchedThisMonth,
   otdSummary,
+  stageMovesToday,
   todaysDispatch,
   wipByStage,
   workloadCounts,
@@ -420,6 +421,106 @@ describe("today's dispatch", () => {
       // 1000 ordered, 450 gone, still owed, committed today, no READY event.
       expect(today.dueToday).toBe(before.dueToday + 1);
       expect(today.dueTodayNotReady).toBe(before.dueTodayNotReady + 1);
+    });
+  });
+});
+
+
+/**
+ * Stage changes today (S2).
+ *
+ * The thing worth asserting is the DERIVATION, not the list: `stage_event`
+ * holds no `from` column, so "moved from A to B" is produced by `lag()` over
+ * each item's own history. Two properties of that derivation can break
+ * quietly, and both are tested here — the previous stage is found even when it
+ * was set on an earlier DAY, and a move to an earlier stage is flagged as
+ * rework rather than rendered as progress.
+ */
+describe("stage changes today", () => {
+  /** A timestamptz at `hour` IST, `offsetDays` from the database's today. */
+  async function istAt(tx: Tx, offsetDays: number, hour: number): Promise<Date> {
+    const rows = (
+      await tx.execute(sql`
+        select (
+          ((today_ist() + ${offsetDays}::integer)::timestamp + ${hour}::integer * interval '1 hour')
+          at time zone 'Asia/Kolkata'
+        ) as t
+      `)
+    ).rows as { t: string | Date }[];
+    return new Date(rows[0]!.t);
+  }
+
+  async function move(tx: Tx, itemId: string, code: string, at: Date) {
+    // auditedAppend, not auditedInsert: stage_event is append-only and carries
+    // none of the base columns the update-capable wrapper stamps.
+    await auditedAppend(
+      SYSTEM_ACTOR,
+      stageEvent,
+      { poItemId: itemId, stageCode: code, eventAt: at },
+      tx,
+    );
+  }
+
+  it("derives the previous stage across days, and flags a move backwards", async () => {
+    await inRollback(async (tx) => {
+      const before = await stageMovesToday(tx);
+
+      // A: moved yesterday, moved again today. The previous stage is not in
+      // today's events at all, which is exactly the case a narrower window
+      // would get wrong.
+      const a = await makeItem(tx);
+      await move(tx, a.itemId, "PO_RECEIVED", await istAt(tx, -1, 10));
+      await move(tx, a.itemId, "PRINTING", await istAt(tx, 0, 9));
+
+      // B: three moves today, the last one backwards — rework is real (F4).
+      const b = await makeItem(tx);
+      await move(tx, b.itemId, "PRINTING", await istAt(tx, 0, 10));
+      await move(tx, b.itemId, "LAMINATION", await istAt(tx, 0, 11));
+      await move(tx, b.itemId, "PRINTING", await istAt(tx, 0, 12));
+
+      const after = await stageMovesToday(tx);
+      expect(after.total).toBe(before.total + 4);
+
+      const mine = after.moves.filter((m) => [a.itemId, b.itemId].includes(m.poItemId));
+
+      // Yesterday's PO_RECEIVED is the `from`, and is itself not listed.
+      const aMove = mine.find((m) => m.poItemId === a.itemId);
+      expect(aMove).toMatchObject({ fromName: "PO Received", toName: "Printing" });
+      expect(mine.filter((m) => m.poItemId === a.itemId)).toHaveLength(1);
+
+      const bMoves = mine
+        .filter((m) => m.poItemId === b.itemId)
+        .sort((x, y) => x.eventAt.getTime() - y.eventAt.getTime());
+
+      // An item's FIRST event has nothing to have moved from.
+      expect(bMoves[0]).toMatchObject({ fromName: null, toName: "Printing", isBackward: false });
+      expect(bMoves[1]).toMatchObject({
+        fromName: "Printing",
+        toName: "Lamination",
+        isBackward: false,
+      });
+      expect(bMoves[2]).toMatchObject({
+        fromName: "Lamination",
+        toName: "Printing",
+        isBackward: true,
+      });
+
+      // Newest first, which is the order the panel renders.
+      const listed = after.moves.map((m) => m.eventAt.getTime());
+      expect([...listed].sort((x, y) => y - x)).toEqual(listed);
+    });
+  });
+
+  it("leaves out an item that has been removed", async () => {
+    await inRollback(async (tx) => {
+      const { itemId } = await makeItem(tx);
+      await move(tx, itemId, "PRINTING", await istAt(tx, 0, 9));
+      expect((await stageMovesToday(tx)).moves.some((m) => m.poItemId === itemId)).toBe(true);
+
+      // Soft delete only, never hard (non-negotiable 7) — the events survive
+      // and the feed must stop showing them anyway.
+      await tx.execute(sql`update po_item set deleted_at = now() where id = ${itemId}`);
+      expect((await stageMovesToday(tx)).moves.some((m) => m.poItemId === itemId)).toBe(false);
     });
   });
 });

@@ -6,13 +6,16 @@ import { can } from "@/auth/roles";
 import { openEnquiryCount } from "@/modules/enquiries/queries";
 import { MetricCard, type Trend } from "@/components/shell/metric-card";
 import { todayIST } from "@/lib/dates";
-import { formatDate, formatINR, formatPercent, formatQty } from "@/lib/format";
+import { formatDate, formatINR, formatPercent, formatQty, formatTime } from "@/lib/format";
+import { StagePill } from "@/components/stages/stage-pill";
 import {
   dispatchedThisMonth,
   otdSummary,
+  stageMovesToday,
   todaysDispatch,
   wipByStage,
   workloadCounts,
+  type StageMoves,
   type TodaysDispatch,
   type WipStage,
 } from "@/modules/dashboard/queries";
@@ -61,8 +64,18 @@ export default async function DashboardPage() {
   // One round of parallel reads. Each is a single aggregate query; running
   // them in sequence would put five Neon round trips end to end on the first
   // screen everybody opens.
-  const [otd, workload, dispatched, wip, today, plan, atRiskWindowDays, tasks, openEnquiries] =
-    await Promise.all([
+  const [
+    otd,
+    workload,
+    dispatched,
+    wip,
+    today,
+    plan,
+    atRiskWindowDays,
+    tasks,
+    openEnquiries,
+    stageMoves,
+  ] = await Promise.all([
     otdSummary(),
     workloadCounts(),
     showDispatchedMonth
@@ -74,6 +87,13 @@ export default async function DashboardPage() {
     getAtRiskWindowDays(),
     showTasks ? taskCountsFor(user.id) : Promise.resolve({ pending: 0, overdue: 0 }),
     showEnquiries ? openEnquiryCount() : Promise.resolve(0),
+    /*
+     * Gated on the tracker rather than on stage_update: the feed is a list of
+     * items and every row links to one, so the people who may read it are the
+     * people who may open what it points at. DATA_ENTRY has neither and is the
+     * only role this leaves out.
+     */
+    canSeeItems ? stageMovesToday() : Promise.resolve({ moves: [], total: 0 }),
   ]);
 
   /*
@@ -256,6 +276,87 @@ export default async function DashboardPage() {
           <WipBars stages={wip} />
         </div>
       </div>
+
+      {canSeeItems ? <StageChangesPanel moves={stageMoves} /> : null}
+    </div>
+  );
+}
+
+/**
+ * What moved stage today — "this was moved to this", as Utkarsh asked for it.
+ *
+ * FULL WIDTH AND LAST, deliberately. Every tile above is a NUMBER you act on;
+ * this is a log you read, and reading it is what tells you whether the numbers
+ * above moved because the floor moved or because nobody updated anything. It
+ * is the cheapest answer to "is this screen still true?".
+ *
+ * THE DAY IS event_at's DAY. A move entered this morning for yesterday
+ * afternoon belongs to yesterday and is not here, which is the same rule WIP
+ * ageing uses — see `stageMovesToday`.
+ *
+ * A BACKWARD MOVE IS LABELLED, NOT HIDDEN. Going back a stage is permitted
+ * (F4) because rework is real, and amber is the honest colour for it: it is
+ * not a failure, it is work being done twice. Rendering it as ordinary
+ * progress would be the actual error.
+ */
+function StageChangesPanel({ moves }: { moves: StageMoves }) {
+  const hidden = moves.total - moves.moves.length;
+
+  return (
+    <div className="mt-3 rounded-lg border px-4 py-3.5">
+      <div className="flex items-baseline justify-between">
+        <p className="text-muted-foreground text-[12px] font-medium">Stage changes today</p>
+        <p className="text-muted-foreground text-[12px] tabular-nums">{formatDate(todayIST())}</p>
+      </div>
+
+      <p className="mt-2 text-[22px] leading-none font-semibold tracking-tight tabular-nums">
+        {formatQty(moves.total)}
+        <span className="text-muted-foreground ml-1.5 text-[13px] font-normal">
+          move{moves.total === 1 ? "" : "s"}
+          {hidden > 0 ? ` · ${formatQty(hidden)} not shown` : ""}
+        </span>
+      </p>
+
+      {moves.moves.length === 0 ? (
+        /* Not an error state. Nothing moving by mid-morning is itself worth
+           knowing, so it says so plainly rather than hiding the panel. */
+        <p className="text-muted-foreground mt-3 border-t pt-3 text-[13px]">
+          Nothing has moved stage today.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y border-t">
+          {moves.moves.map((m) => (
+            <li key={m.eventId} className="flex items-baseline gap-3 py-1.5 text-[13px]">
+              <span className="text-muted-foreground w-[72px] shrink-0 tabular-nums">
+                {formatTime(m.eventAt)}
+              </span>
+
+              <span className="min-w-0 flex-1 truncate">
+                <Link href={`/items/${m.poItemId}`} className="hover:underline">
+                  {m.itemName}
+                </Link>
+                <span className="text-muted-foreground"> · {m.clientName}</span>
+              </span>
+
+              <span className="flex shrink-0 items-center gap-1.5">
+                {/* The stage it LEFT is context, so it stays muted text; the
+                    stage it is in now is the news, so it gets the pill. An
+                    item's first event has no `from` at all. */}
+                <span className="text-muted-foreground">{m.fromName ?? "new"}</span>
+                <span className="text-muted-foreground">&rarr;</span>
+                <StagePill name={m.toName} colour={m.toColour} />
+                {m.isBackward ? (
+                  <span className="text-at-risk text-[11px] font-medium">rework</span>
+                ) : null}
+              </span>
+
+              <span className="text-muted-foreground w-[88px] shrink-0 truncate text-right">
+                {m.enteredByName ?? "—"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

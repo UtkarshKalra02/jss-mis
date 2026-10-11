@@ -380,3 +380,152 @@ export async function todaysDispatch(runner: Runner = db): Promise<TodaysDispatc
     dueTodayNotReady: due?.dueTodayNotReady ?? 0,
   };
 }
+
+export type StageMove = {
+  eventId: string;
+  poItemId: string;
+  itemCode: string;
+  itemName: string;
+  clientCode: string;
+  clientName: string;
+  /** Null for an item's very first event — there is nothing it moved FROM. */
+  fromName: string | null;
+  toName: string;
+  toColour: string;
+  eventAt: Date;
+  enteredByName: string | null;
+  remarks: string | null;
+  /** The new stage sits EARLIER in the sequence than the old one: rework. */
+  isBackward: boolean;
+};
+
+export type StageMoves = {
+  moves: StageMove[];
+  /** Everything today, including what `moves` was truncated past. */
+  total: number;
+};
+
+/** Rows rendered on the dashboard. The count line tells the truth about the rest. */
+const STAGE_MOVE_LIMIT = 15;
+
+/**
+ * What moved stage today, and what it moved FROM — the feed Utkarsh asked for.
+ *
+ * STAGE_EVENT ONLY RECORDS THE STAGE MOVED TO. There is no `from` column and
+ * there should not be one: it would be a second copy of the previous row,
+ * free to disagree with it. So the previous stage is derived with `lag()` over
+ * each item's own events, which is the same derivation `current_stage` uses
+ * and cannot drift from the history (non-negotiable 1).
+ *
+ * The window runs over EVERY event belonging to an item that moved today, not
+ * over today's events alone. Narrowing it first would make the day's first
+ * move look like an item's first event and render it with no `from` — wrong
+ * for every job that was already running yesterday.
+ *
+ * THE DAY IS event_at's DAY, NOT created_at's. Ajay updates in batches, so a
+ * move that happened yesterday and was typed this morning belongs to
+ * yesterday, and this panel will not show it. That is the same rule WIP ageing
+ * uses and the reason both columns exist.
+ *
+ * A BACKWARD MOVE IS NOT A BUG. Stage events are append-only and going
+ * backwards is permitted (F4) — rework is real on a shop floor, and a
+ * correction appears as a further row rather than replacing the wrong one. The
+ * flag exists so the screen can say so rather than render it as ordinary
+ * progress.
+ */
+export async function stageMovesToday(runner: Runner = db): Promise<StageMoves> {
+  const rows = await runner.execute<{
+    event_id: string;
+    po_item_id: string;
+    item_code: string;
+    item_name: string;
+    client_code: string;
+    client_name: string;
+    from_name: string | null;
+    to_name: string;
+    to_colour: string;
+    /**
+     * TEXT, not a Date. `execute` runs raw SQL, so nothing maps Postgres types
+     * back the way the query builder does — a timestamptz arrives as a string
+     * and `.getTime()` on it throws. It is emitted as explicit ISO-8601 UTC
+     * below and turned into a Date here, so the exported type stays honest.
+     */
+    event_at: string;
+    entered_by_name: string | null;
+    remarks: string | null;
+    is_backward: boolean;
+    total: number;
+  }>(sql`
+    with moved_today as (
+      select distinct po_item_id
+      from stage_event
+      where (event_at at time zone 'Asia/Kolkata')::date = today_ist()
+    ),
+    with_previous as (
+      select
+        e.id,
+        e.po_item_id,
+        e.stage_code,
+        e.event_at,
+        e.entered_by,
+        e.remarks,
+        lag(e.stage_code) over (
+          partition by e.po_item_id
+          order by e.event_at, e.created_at, e.id
+        ) as from_code
+      from stage_event e
+      join moved_today m on m.po_item_id = e.po_item_id
+    ),
+    todays_moves as (
+      select
+        w.id            as event_id,
+        w.po_item_id,
+        i.item_code,
+        i.item_name,
+        c.code          as client_code,
+        c.name          as client_name,
+        f.name          as from_name,
+        t.name          as to_name,
+        t.colour        as to_colour,
+        to_char(w.event_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as event_at,
+        u.name          as entered_by_name,
+        w.remarks,
+        coalesce(t.sequence < f.sequence, false) as is_backward
+      from with_previous w
+      join po_item i        on i.id = w.po_item_id and i.deleted_at is null
+      join purchase_order p on p.id = i.purchase_order_id and p.deleted_at is null
+      join client c         on c.id = p.client_id
+      join stage t          on t.code = w.stage_code
+      left join stage f     on f.code = w.from_code
+      left join app_user u  on u.id = w.entered_by
+      where (w.event_at at time zone 'Asia/Kolkata')::date = today_ist()
+    )
+    select *, count(*) over ()::int as total
+    from todays_moves
+    -- event_at is ISO-8601 UTC text by here, which sorts identically to the
+    -- timestamp it came from; event_id breaks ties so the order is total.
+    order by event_at desc, event_id desc
+    limit ${STAGE_MOVE_LIMIT}
+  `);
+
+  return {
+    moves: rows.rows.map((r) => ({
+      eventId: r.event_id,
+      poItemId: r.po_item_id,
+      itemCode: r.item_code,
+      itemName: r.item_name,
+      clientCode: r.client_code,
+      clientName: r.client_name,
+      fromName: r.from_name,
+      toName: r.to_name,
+      toColour: r.to_colour,
+      eventAt: new Date(r.event_at),
+      enteredByName: r.entered_by_name,
+      remarks: r.remarks,
+      isBackward: r.is_backward,
+    })),
+    // count(*) over () is the pre-limit total; with no rows there is no row to
+    // read it from, and zero is then the right answer anyway.
+    total: rows.rows[0]?.total ?? 0,
+  };
+}

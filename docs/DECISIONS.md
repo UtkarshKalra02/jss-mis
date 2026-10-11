@@ -4463,6 +4463,55 @@ is also what keeps dev and production holding the same stage list.
 
 Applied to dev and to production on 11 Oct 2026 before pushing; both read 17 stages.
 
+## S2 — stage changes on the dashboard, with the previous stage derived
+
+Asked for by Utkarsh on 12 Oct 2026: *"add stage change updates on the dashboard. That
+this was moved to this everyday changes."* A full-width panel below the existing two,
+listing what moved stage today and what it moved **from**.
+
+**`stage_event` has no `from` column, and must not get one.** It records only the stage
+moved TO. A `from_stage_code` would be a second copy of the previous row, free to disagree
+with it the first time an event is corrected — and corrections are routine, because the
+table is append-only and a mistake is fixed by appending, not by editing. So the previous
+stage is derived with `lag()` over each item's own events, ordered by
+`(event_at, created_at, id)`. That is the same derivation `current_stage` uses and it
+cannot drift from the history (non-negotiable 1).
+
+**The window runs over every event of an item that moved today, not over today's events.**
+Narrowing first would make the day's first move look like the item's first event and render
+it with no origin — wrong for every job already running yesterday. The test asserts exactly
+this: an item whose previous stage was set yesterday still shows "PO Received → Printing".
+
+**The day is `event_at`'s day, not `created_at`'s.** Ajay updates in batches, so a move that
+happened yesterday and was typed this morning belongs to yesterday and does not appear.
+Same rule as WIP ageing, and the reason both columns exist. A consequence worth stating:
+on a day when the floor worked and nobody typed, this panel is empty — which is the point
+of putting it there. It is the cheapest available answer to "are the numbers above still
+true, or has nobody updated anything?"
+
+**A backward move is labelled, not hidden.** Going back a stage is permitted (F4) because
+rework is real. The query flags it by comparing `stage.sequence`, and the panel marks it
+"rework" in amber. Rendering it as ordinary progress would be the actual error.
+
+**Gated on `item_tracker`, not `stage_update`.** Every row links to an item, so the people
+who may read the feed are the people who may open what it points at. DATA_ENTRY is the only
+role this leaves out, and it has no business in the order book (O5).
+
+**Two things fell out of building it, both found by the test rather than in review:**
+
+- `db.execute` runs raw SQL, so nothing maps Postgres types back the way the query builder
+  does — a `timestamptz` arrives as a **string**, and the declared `eventAt: Date` was a
+  lie that only showed up when something called `.getTime()` on it. The query now emits
+  explicit ISO-8601 UTC via `to_char` and the mapper constructs the Date, so the exported
+  type is true.
+- `auditedInsert` does not accept `stage_event`: the table is append-only and carries none
+  of the base columns that wrapper stamps. `auditedAppend` is the one for it. The type
+  system caught this, which is the whole reason the wrappers are separate.
+
+**`formatTime` was added** rather than slicing `formatDateTime` apart on `", "`. The
+separator between date and time is a locale's business and changes without notice; a split
+on it returns `undefined` the day it does.
+
 ## S3 — the test fixtures were on UTC, so the suite failed every night
 
 Found on 12 Oct 2026 while verifying S2, at 01:14 IST. Two tests failed —

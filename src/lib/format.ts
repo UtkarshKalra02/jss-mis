@@ -138,6 +138,26 @@ export function formatDateTime(value: Date | string | null | undefined): string 
   }).format(date);
 }
 
+/**
+ * 8:15 pm — the time alone, in IST.
+ *
+ * Exists so nothing has to slice a formatted date string apart to get at the
+ * time: the separator Intl puts between date and time is a locale's business
+ * and changes without notice, and a split on ", " returns undefined the day it
+ * changes. Used where the date is already established by a heading.
+ */
+export function formatTime(value: Date | string | null | undefined): string {
+  if (!value) return "—";
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: IST,
+  }).format(date);
+}
+
 /** "3 days left", "today", "2 days overdue" — from v_po_item_status. */
 export function formatDaysToCommitted(days: number | null | undefined): string {
   if (days === null || days === undefined || !Number.isFinite(days)) return "—";
