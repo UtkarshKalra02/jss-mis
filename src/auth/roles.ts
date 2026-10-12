@@ -40,6 +40,7 @@ export const ROLES = [
   "FLOOR",
   "OWNER",
   "DATA_ENTRY",
+  "DATA_ENTRY_FULL",
 ] as const;
 
 export type Role = (typeof ROLES)[number];
@@ -369,6 +370,55 @@ export const ACCESS: Matrix = {
     dashboard: "read",
     material: "write",
   },
+
+  /**
+   * "Admin but not admin" (S4), in Utkarsh's words. Everything ADMIN can
+   * ENTER, and nothing ADMIN can CONFIGURE.
+   *
+   * WHAT IS WITHHELD IS THE DEFINITION of the role, so it is listed rather
+   * than left to be inferred from an absence:
+   *   - `admin` — user accounts, stage configuration, app settings. The point.
+   *   - `delegation_scorecard` — a management view of who delivers, not entry.
+   *   - `invoice`, `receipt`, `ar_ledger` — those screens are not coming (R1),
+   *     so a grant would buy three permanently greyed "P5" sidebar entries and
+   *     nothing else. One line to restore if Phase 5 ever revives.
+   *
+   * FOUR MORE POWERS ARE WITHHELD WITHOUT A LINE BEING WRITTEN, because they
+   * are hard `role === "ADMIN"` checks outside this matrix: delegating to
+   * anyone, assigning who chases an enquiry, the dispatched-this-month rupee
+   * figure (M5), and the last-admin guard. That they fall out for free is the
+   * "not admin" half working as intended — but it also means a future power
+   * added as a role check rather than a resource will exclude this role
+   * silently. Prefer a resource.
+   *
+   * NOT TO BE CONFUSED WITH `DATA_ENTRY` above, which is the store's typist
+   * and reaches materials and the dashboard and nothing else (O5). The two
+   * names are meant to be read together.
+   *
+   * `item_tracker` is READ, not write, because every other non-admin role has
+   * it that way and correcting an item is already reachable through
+   * `purchase_order: "write"`.
+   */
+  DATA_ENTRY_FULL: {
+    dashboard: "read",
+    enquiry: "write",
+    quotation: "write",
+    purchase_order: "write",
+    design: "write",
+    client: "write",
+    tooling: "write",
+    item_tracker: "read",
+    job_planning: "write",
+    job_card: "write",
+    press_run: "write",
+    stage_update: "write",
+    dispatch: "write",
+    import: "write",
+    material: "write",
+    reports: "read",
+    /** Everyone owns tasks, so everyone gets the screen (G1). */
+    delegation: "write",
+  },
 };
 
 /** Human-readable role names, and what each one is for. */
@@ -379,7 +429,8 @@ export const ROLE_LABELS: Record<Role, string> = {
   ACCOUNTS: "Accounts",
   FLOOR: "Floor",
   OWNER: "Owner",
-  DATA_ENTRY: "Data Entry",
+  DATA_ENTRY: "Data Entry (store)",
+  DATA_ENTRY_FULL: "Data Entry (full)",
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
@@ -390,6 +441,7 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   FLOOR: "Stage updates only, on a phone.",
   OWNER: "Sees everything, edits nothing — delegates, records enquiries, adds clients.",
   DATA_ENTRY: "The store only: receipts, issues and adjustments of material.",
+  DATA_ENTRY_FULL: "Enters everything; configures nothing. No users, stages or settings.",
 };
 
 /** Where each role lands after logging in. */
@@ -401,6 +453,7 @@ export const LANDING_ROUTE: Record<Role, string> = {
   FLOOR: "/stage-update",
   OWNER: "/dashboard",
   DATA_ENTRY: "/materials",
+  DATA_ENTRY_FULL: "/dashboard",
 };
 
 export function can(role: Role, resource: Resource, access: Access = "read"): boolean {

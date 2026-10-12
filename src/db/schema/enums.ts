@@ -27,6 +27,12 @@ export const userRoleEnum = pgEnum("user_role", [
   "OWNER",
   /** Store entry — GRNs, issues, adjustments — and nothing else (O5). */
   "DATA_ENTRY",
+  /**
+   * "Admin but not admin" (S4): may enter anything the factory does, may
+   * configure nothing about the system. Read beside DATA_ENTRY above — the
+   * narrow one is the store's typist, this one is the whole order book.
+   */
+  "DATA_ENTRY_FULL",
 ]);
 
 /** Descriptive only — see jobTypeEnum for what actually drives stage flow. */

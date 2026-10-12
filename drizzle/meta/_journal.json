@@ -295,6 +295,13 @@
       "when": 1791729241285,
       "tag": "0041_three_finishing_stages",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791788186984,
+      "tag": "0042_data_entry_full_role",
+      "breakpoints": true
     }
   ]
 }

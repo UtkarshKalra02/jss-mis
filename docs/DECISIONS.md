@@ -4533,3 +4533,38 @@ warning against it. Only the fixtures still had it. All thirty are now `today_is
 Worth keeping visible because of what it implies about the suite: **a green run says
 nothing about the hours nobody runs it in.** Anything a test derives from a date has to go
 through `today_ist()` for the same reason the product does.
+
+## S4 — DATA_ENTRY_FULL: "admin but not admin"
+
+Asked for by Utkarsh on 12 Oct 2026 as *"an account with full data entry rights"*, and
+clarified when offered the existing narrow role: *"Admin but not admin you get it?"* So:
+a person who may enter anything the factory does and may configure nothing about the
+system. Migration `0042_data_entry_full_role.sql`; account `dataentry` / "Data Entry".
+
+**It is not `DATA_ENTRY`.** That role is the store's typist and reaches materials and the
+dashboard and nothing else (O5). It is unchanged. The two sit beside each other and the
+labels were rewritten so the difference is legible in the user dropdown — "Data Entry
+(store)" and "Data Entry (full)".
+
+| | |
+|---|---|
+| **write** | `enquiry` `quotation` `purchase_order` `design` `client` `tooling` `job_planning` `job_card` `press_run` `stage_update` `dispatch` `import` `material` `delegation` |
+| **read** | `dashboard` `item_tracker` `reports` |
+| **withheld** | `admin` — user accounts, stage configuration, app settings. The point of the role. |
+| | `delegation_scorecard` — a management view of who delivers, not an entry screen. |
+| | `invoice` `receipt` `ar_ledger` — not coming (R1). A grant would buy three permanently greyed "P5" sidebar entries and nothing else. |
+
+`item_tracker` is read rather than write because every other non-admin role has it that
+way, and correcting an item is already reachable through `purchase_order: "write"`.
+
+**Four further powers are withheld without a line being written**, because they are hard
+`role === "ADMIN"` checks outside the matrix: delegating to anyone, assigning who chases an
+enquiry, the dispatched-this-month rupee figure (M5), and the last-admin guard. That they
+fall out for free is the "not admin" half working. It also means **a future power added as
+a role check rather than a resource will exclude this role silently** — prefer a resource.
+
+**Adding an enum value is one-way.** Postgres cannot drop one, which is the friction
+`enums.ts` calls intentional. The name was confirmed before the migration was written.
+
+**The account is seeded with no usable password** (A4) and cannot authenticate until
+`npm run set-password -- dataentry` is run.

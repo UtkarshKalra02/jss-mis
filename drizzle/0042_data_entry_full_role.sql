@@ -1,0 +1,36 @@
+-- ===========================================================================
+-- DATA_ENTRY_FULL — "admin but not admin" (section S).
+--
+-- Asked for by Utkarsh on 12 Oct 2026: an account with full data entry rights,
+-- clarified as "Admin but not admin". A person who may enter anything the
+-- factory does and may configure nothing about the system itself.
+--
+-- It is NOT the existing DATA_ENTRY, which is the store's typist and reaches
+-- materials and the dashboard and nothing else (O5). That role stays exactly
+-- as it is; this one sits beside it, and the names are meant to be read
+-- together.
+--
+-- WHAT IT WITHHOLDS is the whole definition: `admin` (user accounts, stage
+-- configuration, app settings), `delegation_scorecard` (a management view of
+-- who delivers), and `invoice`/`receipt`/`ar_ledger` (screens that are not
+-- coming — R1 — so granting them would only put three permanently greyed
+-- "P5" entries in this person's sidebar). The grant list itself lives in
+-- src/auth/roles.ts, which is the single source both the sidebar and the
+-- server guards read.
+--
+-- Four further powers sit OUTSIDE the matrix as `role === "ADMIN"` checks —
+-- delegating to anyone, assigning an enquiry's owner, the dispatched-this-month
+-- rupee figure (M5), and the last-admin guard. This role misses all four
+-- without a line being written, which is the "not admin" half working.
+--
+-- ADDING AN ENUM VALUE IS ONE-WAY. Postgres cannot drop one, which is the
+-- friction enums.ts describes as intentional: a new role is a decision, not a
+-- typo. The name was confirmed before this was written for exactly that reason.
+--
+-- The VALUE only. No account is created here: users are seeded by
+-- scripts/seed-users.ts with no usable password (A4), and a value added by
+-- ALTER TYPE cannot be used by another statement in the same transaction
+-- anyway.
+-- ===========================================================================
+
+ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'DATA_ENTRY_FULL';
