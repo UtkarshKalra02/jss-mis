@@ -4568,3 +4568,31 @@ a role check rather than a resource will exclude this role silently** — prefer
 
 **The account is seeded with no usable password** (A4) and cannot authenticate until
 `npm run set-password -- dataentry` is run.
+
+## S5 — `seed:users` recreated an account somebody had deleted, on production
+
+Found on 12 Oct 2026 while creating the S4 account, and caused by running the seed. Two
+defects, both now fixed, and the second one matters more than the first.
+
+**The script ignored `DOTENV_CONFIG_PATH` and always loaded `.env.local`.** So
+`DOTENV_CONFIG_PATH=.env.production.local npm run seed:users` ran cheerfully against
+**dev**, reported "already exists, untouched" for everybody, and left production without
+the account it was asked to create. The same was true of `set-password`, which is worse:
+the command that makes somebody able to sign in would have silently set their password on
+the wrong database. Both now honour the variable, the way `export-store.ts` always did,
+and both print the database host they actually reached before doing anything. A run
+against the wrong database should be visible, not inferred.
+
+**Then the seed created a second `deepak`.** Its existence check matched only rows with
+`deleted_at is null`. The real `deepak` had been **soft-deleted on 5 Oct 2026**, so the
+lookup found nothing and inserted a fresh ADMIN row beside the dead one — production
+briefly held two. The new row had no password and could not authenticate, but it was an
+active ADMIN in the user list that nobody had asked for, and it overturned somebody's
+deliberate decision to remove that account. It was soft-deleted through the audit wrapper
+(non-negotiable 7) and production is back to its 5 Oct state.
+
+The script now looks at **every** row for a username, deleted ones included. A live row is
+skipped as before; a soft-deleted one makes it refuse, loudly, naming the account and
+pointing at Admin › Users. **Removing a user is a decision, and a seed re-running must not
+quietly overturn it** — which is the general form of the rule, and worth applying to any
+other idempotent-by-username script.

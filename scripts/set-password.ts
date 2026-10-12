@@ -17,7 +17,29 @@ import { Writable } from "node:stream";
 
 import { config } from "dotenv";
 
-config({ path: ".env.local" });
+/*
+ * DEV BY DEFAULT, PRODUCTION ONLY WHEN ASKED FOR BY NAME:
+ *
+ *   DOTENV_CONFIG_PATH=.env.production.local npm run set-password -- <username>
+ *
+ * This honoured nothing and always loaded .env.local, which meant the command
+ * above ran happily against DEV and reported success — the account was created
+ * on the wrong database and the right one still had nothing. Same switch as
+ * scripts/export-store.ts, so every script that can reach production reaches it
+ * the same way. The banner below names the host it actually connected to, so a
+ * run against the wrong database is visible rather than inferred.
+ */
+config({ path: process.env.DOTENV_CONFIG_PATH ?? ".env.local" });
+
+/*
+ * src/lib/env.ts insists on AUTH_SECRET before src/db will load, and
+ * .env.production.local deliberately holds only the two connection strings
+ * (DEPLOYMENT.md §2). A placeholder is honest here: this script writes one password hash and
+ * never signs a session, so the value is never used for anything. Same shim,
+ * and the same reason, as scripts/export-store.ts.
+ */
+process.env.AUTH_SECRET ??= "unused-by-set-password-script";
+
 
 // See the note in seed-users.ts: a static import of src/db would be hoisted
 // above config() and env validation would fail on an empty environment.
@@ -121,7 +143,24 @@ function closePrompt() {
   rl = null;
 }
 
+/**
+ * The database host this run actually connected to, with no credentials in it.
+ *
+ * Printed because the failure it guards against is silent: a command aimed at
+ * production that quietly loads the dev environment succeeds against dev, and
+ * the person still cannot sign in to the system they were told to use.
+ */
+function targetHost(): string {
+  const url = process.env.DATABASE_URL ?? "";
+  try {
+    return new URL(url).host;
+  } catch {
+    return "unknown host";
+  }
+}
+
 async function main() {
+  console.log(`Database: ${targetHost()}`);
   const args = process.argv.slice(2);
   const username = args.find((a) => !a.startsWith("--"))?.trim();
 

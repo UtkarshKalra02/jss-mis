@@ -20,7 +20,29 @@ import { config } from "dotenv";
 
 import type { Role } from "../src/auth/roles";
 
-config({ path: ".env.local" });
+/*
+ * DEV BY DEFAULT, PRODUCTION ONLY WHEN ASKED FOR BY NAME:
+ *
+ *   DOTENV_CONFIG_PATH=.env.production.local npm run seed:users
+ *
+ * This honoured nothing and always loaded .env.local, which meant the command
+ * above ran happily against DEV and reported success — the account was created
+ * on the wrong database and the right one still had nothing. Same switch as
+ * scripts/export-store.ts, so every script that can reach production reaches it
+ * the same way. The banner below names the host it actually connected to, so a
+ * run against the wrong database is visible rather than inferred.
+ */
+config({ path: process.env.DOTENV_CONFIG_PATH ?? ".env.local" });
+
+/*
+ * src/lib/env.ts insists on AUTH_SECRET before src/db will load, and
+ * .env.production.local deliberately holds only the two connection strings
+ * (DEPLOYMENT.md §2). A placeholder is honest here: this script inserts user rows and
+ * never signs a session, so the value is never used for anything. Same shim,
+ * and the same reason, as scripts/export-store.ts.
+ */
+process.env.AUTH_SECRET ??= "unused-by-seed-script";
+
 
 // Imported dynamically inside main(). A static import would be HOISTED above
 // the config() call, so src/lib/env.ts would validate an empty environment and
@@ -37,26 +59,70 @@ const USERS: { username: string; name: string; role: Role }[] = [
   { username: "pradeep", name: "Pradeep", role: "ACCOUNTS" },
   { username: "ajay", name: "Ajay", role: "FLOOR" },
   { username: "amit", name: "Amit Kalra", role: "OWNER" },
+  // S4. "Admin but not admin": enters everything, configures nothing. Seeded
+  // here rather than created by hand so the account is reproducible on a fresh
+  // database, and so what it is for is written down next to it.
+  { username: "dataentry", name: "Data Entry", role: "DATA_ENTRY_FULL" },
 ];
 
+/**
+ * The database host this run actually connected to, with no credentials in it.
+ *
+ * Printed because the failure it guards against is silent: a command aimed at
+ * production that quietly loads the dev environment reports every success it
+ * would have reported anyway, and the account ends up on the wrong database.
+ */
+function targetHost(): string {
+  const url = process.env.DATABASE_URL ?? "";
+  try {
+    return new URL(url).host;
+  } catch {
+    return "unknown host";
+  }
+}
+
 async function main() {
-  const { and, eq, isNull } = await import("drizzle-orm");
+  console.log(`Database: ${targetHost()}\n`);
+  const { eq } = await import("drizzle-orm");
   const { db }: DbModule = await import("../src/db");
   const { appUser }: SchemaModule = await import("../src/db/schema");
 
   let created = 0;
   let skipped = 0;
 
-  for (const u of USERS) {
-    const [existing] = await db
-      .select({ id: appUser.id })
-      .from(appUser)
-      .where(and(eq(appUser.username, u.username), isNull(appUser.deletedAt)))
-      .limit(1);
+  let withheld = 0;
 
-    if (existing) {
+  for (const u of USERS) {
+    /*
+     * EVERY row for this username, deleted ones included.
+     *
+     * Matching only live rows is what made this script recreate an account
+     * somebody had deliberately removed: `deepak` was soft-deleted on 5 Oct
+     * 2026, the live-rows-only lookup found nothing on 12 Oct, and a second
+     * active ADMIN row appeared on production beside the dead one. Removing a
+     * user is a decision, and a seed script re-running must not quietly
+     * overturn it.
+     */
+    const rows = await db
+      .select({ id: appUser.id, deletedAt: appUser.deletedAt })
+      .from(appUser)
+      .where(eq(appUser.username, u.username));
+
+    const live = rows.find((r) => r.deletedAt === null);
+
+    if (live) {
       console.log(`  = ${u.username.padEnd(10)} already exists, untouched`);
       skipped++;
+      continue;
+    }
+
+    if (rows.length > 0) {
+      // Says so loudly rather than creating one. Restoring it is a deliberate
+      // act on the Admin screen, by somebody who knows why it went.
+      console.log(
+        `  ! ${u.username.padEnd(10)} EXISTS BUT WAS REMOVED — not recreated. Restore it in Admin › Users if that was wrong.`,
+      );
+      withheld++;
       continue;
     }
 
@@ -72,7 +138,10 @@ async function main() {
     created++;
   }
 
-  console.log(`\n${created} created, ${skipped} already present.`);
+  console.log(
+    `\n${created} created, ${skipped} already present` +
+      (withheld > 0 ? `, ${withheld} withheld because they were removed.` : "."),
+  );
 
   if (created > 0) {
     console.log("\nNobody can sign in yet. For each user, run:");
