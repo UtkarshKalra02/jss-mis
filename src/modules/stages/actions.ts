@@ -11,8 +11,19 @@ import { appSetting, stage } from "@/db/schema";
 import { actionError } from "@/lib/action-error";
 
 import { computeStageChanges } from "./diff";
-import { AT_RISK_SETTING_KEY, getAtRiskWindowDays, listStages } from "./queries";
-import { atRiskWindowSchema, stageRowSchema, type StageRowInput } from "./validation";
+import {
+  AT_RISK_SETTING_KEY,
+  AUTO_CLOSE_SETTING_KEY,
+  getAtRiskWindowDays,
+  getAutoCloseBelow,
+  listStages,
+} from "./queries";
+import {
+  atRiskWindowSchema,
+  autoCloseBelowSchema,
+  stageRowSchema,
+  type StageRowInput,
+} from "./validation";
 
 export type FormState = { ok: boolean; error: string | null; message?: string };
 
@@ -123,6 +134,57 @@ export async function saveAtRiskWindowAction(
     revalidatePath("/admin/settings");
     revalidatePath("/dashboard");
     return ok(`At-risk window set to ${next} ${next === 1 ? "day" : "days"}.`);
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(actionError(error, "Could not save the setting."));
+  }
+}
+
+
+/**
+ * The residual below which a part-delivered item closes itself (T1).
+ *
+ * Saved here rather than baked into the function because 1500 is a judgement
+ * about what is worth re-printing, and that judgement belongs to the person
+ * running the factory. The recompute reads it through app_setting_int() on
+ * every call, so a change takes effect on the next dispatch or the next
+ * nightly run with no deploy.
+ *
+ * NOTHING IS RECOMPUTED HERE. Raising the threshold does not reach back and
+ * close yesterday's residuals on the spot — the nightly recompute does that,
+ * within a day. Closing a few hundred items inside a form submission, on a
+ * number somebody might be mid-way through typing, is the wrong place for it.
+ */
+export async function saveAutoCloseBelowAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireAdmin();
+
+    const parsed = autoCloseBelowSchema.safeParse(formData.get("autoCloseBelow"));
+    if (!parsed.success) return fail(parsed.error.issues[0]!.message);
+
+    const next = parsed.data;
+    if (next === (await getAutoCloseBelow())) return ok("No change.");
+
+    const [row] = await db
+      .select({ id: appSetting.id })
+      .from(appSetting)
+      .where(eq(appSetting.key, AUTO_CLOSE_SETTING_KEY))
+      .limit(1);
+
+    if (!row) return fail("The auto-close setting row is missing. Re-run the migrations.");
+
+    await auditedUpdate(actor, appSetting, row.id, { value: String(next) });
+
+    revalidatePath("/admin/settings");
+    revalidatePath("/dashboard");
+    return ok(
+      next === 0
+        ? "Auto-closing switched off. Nothing will close on a residual."
+        : `Residuals under ${next} will close once their committed month has passed.`,
+    );
   } catch (error) {
     unstable_rethrow(error);
     return fail(actionError(error, "Could not save the setting."));

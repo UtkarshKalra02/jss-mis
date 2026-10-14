@@ -302,6 +302,13 @@
       "when": 1791788186984,
       "tag": "0042_data_entry_full_role",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791987591572,
+      "tag": "0043_auto_close_small_residuals",
+      "breakpoints": true
     }
   ]
 }

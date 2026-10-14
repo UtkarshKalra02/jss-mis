@@ -48,3 +48,21 @@ export const atRiskWindowSchema = z.coerce
   .int("Must be a whole number of days.")
   .min(0, "Cannot be negative.")
   .max(60, "More than 60 days would flag almost everything as at risk.");
+
+/**
+ * The residual below which a part-delivered item closes itself once its
+ * committed month has passed (T1).
+ *
+ * ZERO IS MEANINGFUL and deliberately allowed: it switches the rule off, because
+ * no pending quantity is ever below zero. That is the escape hatch if the rule
+ * turns out to be retiring work the floor still intends to run.
+ *
+ * The ceiling is a guess about the factory rather than a technical limit —
+ * a threshold in the hundreds of thousands would close nearly every residual
+ * silently, which is the failure this number exists to bound.
+ */
+export const autoCloseBelowSchema = z.coerce
+  .number()
+  .int("Must be a whole number of pieces.")
+  .min(0, "Cannot be negative. Zero switches the rule off.")
+  .max(100000, "That would close almost every part-delivered order. Keep it to a residual.");

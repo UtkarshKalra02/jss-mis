@@ -47,6 +47,7 @@ export async function unverifiedStageCount(): Promise<number> {
 }
 
 export const AT_RISK_SETTING_KEY = "at_risk_window_days";
+export const AUTO_CLOSE_SETTING_KEY = "auto_close_pending_below";
 
 export async function getAtRiskWindowDays(): Promise<number> {
   const [row] = await db
@@ -60,3 +61,21 @@ export async function getAtRiskWindowDays(): Promise<number> {
   // so a missing row degrades the same way in SQL and in TypeScript.
   return Number.isFinite(parsed) ? parsed : 3;
 }
+/**
+ * The residual below which a part-delivered item closes itself (T1).
+ *
+ * Fallback matches the default baked into app_setting_int() in migration 0043,
+ * so a missing row degrades identically in SQL and in TypeScript — the same
+ * arrangement as the at-risk window above.
+ */
+export async function getAutoCloseBelow(): Promise<number> {
+  const [row] = await db
+    .select({ value: appSetting.value })
+    .from(appSetting)
+    .where(eq(appSetting.key, AUTO_CLOSE_SETTING_KEY))
+    .limit(1);
+
+  const parsed = Number(row?.value);
+  return Number.isFinite(parsed) ? parsed : 1500;
+}
+

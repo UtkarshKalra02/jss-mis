@@ -4596,3 +4596,58 @@ skipped as before; a soft-deleted one makes it refuse, loudly, naming the accoun
 pointing at Admin › Users. **Removing a user is a decision, and a seed re-running must not
 quietly overturn it** — which is the general form of the rule, and worth applying to any
 other idempotent-by-username script.
+
+
+---
+
+## T. Closing what will never be finished
+
+## T1 — a small residual closes itself once its committed month has passed
+
+Asked for by Utkarsh on 14 Oct 2026: *"if some quantity less than 1500 is pending, the
+order should close automatically the next month."* Anchored on the **committed date** and
+**counted in OTD**, both his call when the question was put. Migration
+`0043_auto_close_small_residuals.sql`.
+
+The case it is for: 10,000 ordered, 8,900 delivered, 1,100 owed. Nobody is going to set up
+a press for 1,100, and until now that line sat on the pending list for ever.
+
+**It never closes an order nobody printed.** The rule requires `dispatched > 0`, so it only
+retires a *residual*. Without that guard an order of 1,200 would close itself the month
+after it was placed having never been made — the opposite of the intent, and the quietest
+way available to lose a job. This was offered as a recommendation and not objected to; it
+is the single most important line in the rule and the test suite leads with it.
+
+**The month test** compares the committed date's month with today's, both in IST (C10). An
+item committed in October with 1,100 pending closes on 1 November. One committed this month
+stays open however small the residual, because the promise has not yet come due.
+
+**No new cron.** The nightly recompute and the dispatch triggers already call
+`recompute_po_item_status`, so the rule applies from both directions with no call site to
+forget — the same reasoning §4 of 0006 gives for the triggers in the first place.
+
+**OTD had to change, and this is the part that was not in the request.** `v_otd` required
+`pending_qty <= 0`. A short-closed item keeps a positive pending, so closing it would have
+removed it from the headline number *along with the delivery that really happened* —
+silently shrinking OTD by exactly the jobs the factory nearly finished. The view now admits
+anything `Closed` with at least one dispatch and judges it on its last dispatch date as
+before. An item with no committed date is still excluded entirely (F8), and Cancelled still
+never counts.
+
+**`Closed` now means two things** — "delivered in full" and "written off as too small to
+finish" — and the column cannot tell them apart. The audit row for a short close therefore
+carries `reason: 'short_closed'` and the quantity written off. No column was added for it,
+because the condition is already derivable as `status = 'Closed' AND pending_qty > 0`:
+non-negotiable 2 says pending is computed, and what follows from pending should be computed
+too.
+
+**1500 is a setting, not a constant** (`auto_close_pending_below`), on Admin › Settings
+beside the at-risk window — both are judgements about the committed date, one about when to
+worry and one about when to stop. **Zero switches the rule off**, since no pending quantity
+is below zero, and the form says so. Saving a new threshold does not reach back and close
+yesterday's residuals on the spot; the nightly recompute does that within a day.
+
+**Blast radius on the day it shipped: nothing.** A read-only preview against production
+found **0 items** that the rule would close, because every live item is committed inside the
+current month — a consequence of the 28 Sep cutover (Q5). The rule first bites on
+1 November, which is the right time to look at what it retires.

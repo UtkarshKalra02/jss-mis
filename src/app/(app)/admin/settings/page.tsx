@@ -4,17 +4,18 @@ import Link from "next/link";
 import { requireAccess } from "@/auth/guard";
 import { AdcWindowForm } from "@/components/materials/adc-window-form";
 import { GsmToleranceForm } from "@/components/materials/gsm-tolerance-form";
-import { AtRiskWindowForm } from "@/components/stages/settings-form";
+import { AtRiskWindowForm, AutoCloseBelowForm } from "@/components/stages/settings-form";
 import { getAdcWindowDays, getGsmTolerancePct } from "@/modules/materials/queries";
-import { getAtRiskWindowDays } from "@/modules/stages/queries";
+import { getAtRiskWindowDays, getAutoCloseBelow } from "@/modules/stages/queries";
 
 export const metadata: Metadata = { title: "Settings · JSS MIS" };
 
 export default async function AdminSettingsPage() {
   await requireAccess("admin", "write");
 
-  const [atRiskWindowDays, gsmTolerancePct, adcWindowDays] = await Promise.all([
+  const [atRiskWindowDays, autoCloseBelow, gsmTolerancePct, adcWindowDays] = await Promise.all([
     getAtRiskWindowDays(),
+    getAutoCloseBelow(),
     getGsmTolerancePct(),
     getAdcWindowDays(),
   ]);
@@ -32,6 +33,13 @@ export default async function AdminSettingsPage() {
 
       <section className="mt-6 rounded-lg border p-4">
         <AtRiskWindowForm current={atRiskWindowDays} />
+      </section>
+
+      {/* Next to the at-risk window deliberately: both are judgements about
+          the committed date, one about when to worry and one about when to
+          stop. */}
+      <section className="mt-4 rounded-lg border p-4">
+        <AutoCloseBelowForm current={autoCloseBelow} />
       </section>
 
       <section className="mt-4 rounded-lg border p-4">
