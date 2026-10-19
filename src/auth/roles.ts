@@ -239,6 +239,17 @@ export const ACCESS: Matrix = {
     dispatch: "write", // B1 — section 6.8 lists ACCOUNTS
 
     /**
+     * Pradeep may record an order and its items, at Utkarsh's direction (U1).
+     *
+     * "create", the same level P5 gave the PLANNER and for the same reason: he
+     * already raises job cards, and a card needs an item to hang off. Without
+     * this, a job whose PO has not arrived yet needed two people — him for the
+     * card, somebody else for the item it covers. What he still cannot do is
+     * edit, cancel or remove an order that exists; that stays the order desk's.
+     */
+    purchase_order: "create",
+
+    /**
      * Pradeep updates stages too, at Utkarsh's direction.
      *
      * Spec 6.7 names PLANNER and FLOOR, and this widens it. The reasoning is

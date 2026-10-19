@@ -18,12 +18,31 @@ export const metadata: Metadata = { title: "Add item · JSS MIS" };
  * job cards and challans like any other, and the number is recorded on the
  * order's page when the document turns up.
  *
- * Gated on purchase_order write, not item_tracker: whoever adds an item is
+ * Gated on purchase_order CREATE, not item_tracker: whoever adds an item is
  * doing the order desk's job, and the tracker's readers (FLOOR, OWNER) are not
  * given a way to create work from the screen that reports it.
+ *
+ * It asked for "write" until 19 Oct 2026, which was wrong in a way nothing
+ * caught (U1). This page only ever CREATES, it posts to the same action as
+ * /purchase-orders/new, and that action has required only "create" since P5 —
+ * so the page was stricter than both the action behind it and the sibling that
+ * does strictly more, capturing a real PO with a number and a scan. The effect
+ * was that the PLANNER could record a whole purchase order but not a single
+ * item awaiting one, which made a job card for an unarrived PO a two-person
+ * job. Guards belong at the level of what the screen does, not at the level
+ * that feels safest.
  */
-export default async function NewItemPage() {
-  await requireAccess("purchase_order", "write");
+export default async function NewItemPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>;
+}) {
+  await requireAccess("purchase_order", "create");
+
+  // Arrived from "New job card" (U1). One new item goes straight back there,
+  // selected, instead of making somebody search for what they just typed.
+  const { returnTo } = await searchParams;
+  const fromJobCard = returnTo === "job-card";
 
   const [clients, designs, repeatableItems] = await Promise.all([
     listClientOptions(),
@@ -33,8 +52,11 @@ export default async function NewItemPage() {
 
   return (
     <div>
-      <Link href="/items" className="text-muted-foreground text-[13px] hover:underline">
-        ← Item tracker
+      <Link
+        href={fromJobCard ? "/job-cards/new" : "/items"}
+        className="text-muted-foreground text-[13px] hover:underline"
+      >
+        {fromJobCard ? "← New job card" : "← Item tracker"}
       </Link>
       <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="page-title">Add item</h1>
@@ -60,7 +82,13 @@ export default async function NewItemPage() {
             </Button>
           </div>
         ) : (
-          <PoForm mode="item" clients={clients} designs={designs} repeatableItems={repeatableItems} />
+          <PoForm
+            mode="item"
+            clients={clients}
+            designs={designs}
+            repeatableItems={repeatableItems}
+            returnTo={fromJobCard ? "job-card" : undefined}
+          />
         )}
       </div>
     </div>

@@ -218,25 +218,48 @@ export async function createPurchaseOrderAction(
         tx,
       );
 
+      const createdItems: string[] = [];
+
       for (const item of v.items) {
-        await insertPoItem(actor, tx, {
+        const row = await insertPoItem(actor, tx, {
           purchaseOrderId: po.id,
           poDate: v.poDate,
           values: item,
         });
+        createdItems.push(row.id);
       }
 
-      return po;
+      return { po, createdItems };
     });
 
     revalidatePath("/purchase-orders");
     revalidatePath("/items");
     const count = `${v.items.length} item${v.items.length === 1 ? "" : "s"}`;
+
+    /*
+     * COMING FROM THE JOB CARD, GO BACK TO IT (U1).
+     *
+     * Raising a card for work whose PO has not arrived used to be two screens
+     * and a search: add the item, then go to Job Cards, then find what you
+     * just typed. With `returnTo=job-card` the single item lands straight back
+     * on the card form, selected.
+     *
+     * Only for a single item, deliberately. The card form takes one item at a
+     * time (several only as a gang, chosen by ticking), so sending somebody
+     * back with three new items would have to pick one for them, and the one
+     * it picked would be wrong a third of the time. More than one goes to the
+     * order, where all of them are visible.
+     */
+    const backToCard =
+      formData.get("returnTo") === "job-card" && created.createdItems.length === 1;
+
     return ok({
       message: withoutPo
-        ? `${count} added under ${created.internalNo}, PO awaited. Record the client's PO number here when it arrives.`
-        : `${created.internalNo} captured with ${count}.`,
-      redirectTo: `/purchase-orders/${created.id}`,
+        ? `${count} added under ${created.po.internalNo}, PO awaited. Record the client's PO number here when it arrives.`
+        : `${created.po.internalNo} captured with ${count}.`,
+      redirectTo: backToCard
+        ? `/job-cards/new?item=${created.createdItems[0]}`
+        : `/purchase-orders/${created.po.id}`,
     });
   } catch (error) {
     unstable_rethrow(error);

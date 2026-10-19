@@ -4651,3 +4651,86 @@ yesterday's residuals on the spot; the nightly recompute does that within a day.
 found **0 items** that the rule would close, because every live item is committed inside the
 current month — a consequence of the 28 Sep cutover (Q5). The rule first bites on
 1 November, which is the right time to look at what it retires.
+
+
+---
+
+## U. The manual job card
+
+## U1 — a card can be raised before the PO arrives, by the people who raise cards
+
+Asked for by Utkarsh on 19 Oct 2026: *"There should be an option to make manual entry job
+card as well, even without PO."* Clarified when asked whether such a job would ever get a
+PO: **"Not yet, PO comes later."**
+
+**Most of this already existed and nobody could reach it.** N1 made items-before-their-PO
+legal in September: `po_no` is nullable, `po_awaited` is derived on `v_po_item_status`, and
+the badge is wired through the item page, the order page, dispatch, the challan print and
+the job card print. `/items/new` creates exactly such an item.
+
+**The gap was a guard that was stricter than what it guarded.**
+
+| | required |
+|---|---|
+| `/purchase-orders/new` | `purchase_order: "create"` |
+| `createPurchaseOrderAction` (both pages post here) | `"create"` since P5 |
+| `/items/new` | **`"write"`** |
+
+So the page asking for *less* — one item, no PO number, no scan — demanded *more* than the
+page that captures a complete purchase order, and more than the action behind it would have
+enforced. The effect: **Preeti could record an entire PO but not a single item awaiting
+one**, so a job card for unarrived work needed two people — Punit for the item, Preeti for
+the card. The page now asks for `"create"`. This is a defect, not a widening: the action
+already permitted it and P5 already decided the planner may record orders and items.
+
+**ACCOUNTS gains `purchase_order: "create"`**, at Utkarsh's direction. Pradeep raises job
+cards (amending J14) and a card needs an item to hang off; without this he was in the same
+trap. Same level as the planner, and the same limit — he may record an order and its items,
+and may not edit, cancel or remove one that exists.
+
+**The flow closes.** "New job card" now offers *"No PO yet? Add the item here"*, which
+carries `returnTo=job-card`; a single new item redirects straight back to the card form
+with itself selected, rather than sending somebody to search for what they just typed. Only
+for ONE item — the card form takes one item at a time, so choosing among three on
+somebody's behalf would be wrong two thirds of the time; more than one lands on the order
+as before. The picker's empty state no longer says "Capture a purchase order first", which
+stopped being the only answer in September.
+
+**Deliberately unchanged:** the order desk still cannot raise a job card (J14), and the
+manual path creates an ordinary item under an ordinary order — so stages, planning,
+dispatch and kitting all work with no second code path. Such an item has no committed date,
+which F8 already excludes from OTD, so work whose promise has not been recorded cannot
+flatter the headline number.
+
+## U2 — "did you mean" on a typed item name
+
+Asked for in the same message as *"an automatic spell checker"*, and confirmed as the
+"did you mean" reading rather than browser squiggles.
+
+**The risk is near-duplicates, not misspelt English.** The client is chosen from a list, so
+only the item name is typed — and on the manual path it always is. "Urea Foot Cream Carton"
+entered twice with different spacing is two items to every rollup: the design order book
+splits, `/items/by-name` shows two rows, and one product's pending figure sits in two
+places. Nobody notices until somebody counts. This is the same failure F32 was written for,
+arriving through a different door.
+
+So the form now shows near matches **among that client's existing items**, closest first,
+and clicking one adopts its exact spelling. An exact match after normalising is said
+differently and more firmly — the item already exists, so this is probably a repeat, and
+the form has a Repeat control that carries the rate and design across.
+
+**It warns and never blocks.** A new size or variant is a perfectly good reason to type
+something resembling an existing name; a form that refused would be wrong more often than
+right. Browser `spellCheck` is also on now, on the one field that holds prose.
+
+**It reuses `similarity` from the importer** rather than growing a second measure — one
+definition of "alike" across the system, already calibrated and tested.
+
+**The threshold is 0.6, higher than the importer's 0.45, and the asymmetry runs the other
+way.** The importer decides whether to create a CUSTOMER, where a wrong answer splits a
+client's whole history, so it errs low and sends plenty to review. Here a false positive
+lands on somebody mid-sentence, and item names within one client share far more words than
+client names do — "Carton 50g", "Carton 100g" and "Carton Insert" are genuinely different
+products that score high against each other. Erring low would put a warning under the field
+almost every time and train people straight past it, which is worse than no warning at all.
+Names under four characters are ignored for the same reason.

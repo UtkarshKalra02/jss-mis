@@ -16,6 +16,7 @@ import { createPurchaseOrderAction, type FormState } from "@/modules/purchase-or
 import type { ClientOption } from "@/modules/designs/queries";
 import type { DesignOption, RepeatItemOption } from "@/modules/purchase-orders/queries";
 import { matchesQuery, queryWords } from "@/lib/search";
+import { nearbyItemNames } from "@/modules/items/near-name";
 
 import { PoAwaited } from "./po-awaited";
 
@@ -109,12 +110,19 @@ export function PoForm({
   clients,
   designs,
   repeatableItems,
+  returnTo,
 }: {
   mode?: "po" | "item";
   clients: ClientOption[];
   designs: DesignOption[];
   /** Every item ever made, every client — the repeat list (N3). */
   repeatableItems: RepeatItemOption[];
+  /**
+   * "job-card" sends a single new item straight back to the card form with
+   * it selected (U1). Anything else, including nothing, lands on the order
+   * as before.
+   */
+  returnTo?: "job-card";
 }) {
   const withoutPo = mode === "item";
   const router = useRouter();
@@ -183,6 +191,7 @@ export function PoForm({
 
   return (
     <form action={formAction} className="space-y-8">
+      {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
       {withoutPo ? <input type="hidden" name="withoutPo" value="true" /> : null}
 
       <section className="space-y-4">
@@ -412,6 +421,14 @@ export function PoForm({
                       className={inputClass}
                       placeholder="250ml carton — outer"
                       aria-label={`Item name, row ${index + 1}`}
+                      /* The browser's own spell-check, on the one field here
+                         that holds prose rather than a code or a number. */
+                      spellCheck
+                    />
+                    <NearNames
+                      typed={row.itemName}
+                      existing={repeatsForClient}
+                      onUse={(name) => patch(row.key, "itemName", name)}
                     />
                   </td>
 
@@ -610,5 +627,59 @@ export function PoForm({
 
       <Submit label={withoutPo ? "Add items" : "Capture purchase order"} />
     </form>
+  );
+}
+
+
+/**
+ * "Did you mean" under a typed item name (U2).
+ *
+ * WARNS, NEVER BLOCKS. A new size or variant is a perfectly good reason to
+ * type something that resembles an existing name, so this offers the near
+ * matches and leaves the decision where it belongs. Clicking one adopts that
+ * exact spelling, which is the whole point: the duplicate this prevents is
+ * almost always a spelling, not an intention.
+ *
+ * An EXACT match is said differently and more firmly, because it means
+ * something different — the item already exists for this client, so this is
+ * probably a repeat, and the form has a Repeat control that carries the rate
+ * and the design across.
+ *
+ * Renders nothing when there is nothing to say, so the row does not jump
+ * about as somebody types.
+ */
+function NearNames({
+  typed,
+  existing,
+  onUse,
+}: {
+  typed: string;
+  existing: RepeatItemOption[];
+  onUse: (name: string) => void;
+}) {
+  const hits = nearbyItemNames(typed, existing);
+  if (hits.length === 0) return null;
+
+  const exact = hits[0]!.exact;
+
+  return (
+    <p className="text-muted-foreground mt-1 text-[11px] leading-snug">
+      <span className={exact ? "text-at-risk font-medium" : undefined}>
+        {exact ? "Already exists for this client:" : "Did you mean:"}
+      </span>{" "}
+      {hits.map((h, i) => (
+        <span key={h.item.poItemId}>
+          {i > 0 ? ", " : ""}
+          <button
+            type="button"
+            onClick={() => onUse(h.item.itemName)}
+            className="underline underline-offset-2 hover:no-underline"
+            title={`Use this spelling — ${h.item.itemCode}, ${h.item.poInternalNo}`}
+          >
+            {h.item.itemName}
+          </button>
+        </span>
+      ))}
+    </p>
   );
 }

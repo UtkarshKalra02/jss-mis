@@ -78,6 +78,25 @@ export default async function NewJobCardPage({
             soonest. Tick two or more to put them on one plate.
           </p>
 
+          {/*
+            The manual card (U1). Work often starts before the client's PO
+            arrives, and the item it needs can be made from here rather than on
+            the order desk's screen — N1 has allowed an item without a PO since
+            September, but reaching it meant leaving this page and the two
+            people who raise cards could not open it at all.
+          */}
+          <p className="text-muted-foreground mt-2 text-[13px]">
+            No PO yet?{" "}
+            <Link
+              href="/items/new?returnTo=job-card"
+              className="underline underline-offset-2 hover:no-underline"
+            >
+              Add the item here
+            </Link>{" "}
+            and it comes straight back, ready to release. Record the PO number on the
+            order when it arrives.
+          </p>
+
           <div className="mt-6">
             <Suspense fallback={<Skeleton className="h-9 w-full max-w-lg" />}>
               <JobCardSearch initialQuery={q} />
@@ -103,7 +122,7 @@ async function ItemPicker({ query }: { query: string }) {
       <p className="text-muted-foreground rounded-lg border border-dashed p-8 text-center text-[13px]">
         {query
           ? `Nothing matches "${query}".`
-          : "No open items with quantity still owed. Capture a purchase order first."}
+          : "No open items with quantity still owed. Capture a purchase order, or add an item above if the PO has not arrived."}
       </p>
     );
   }
