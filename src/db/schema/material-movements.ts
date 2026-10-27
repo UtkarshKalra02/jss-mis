@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { check, date, index, numeric, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  check,
+  date,
+  index,
+  integer,
+  numeric,
+  pgTable,
+  text,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import { baseColumns } from "./_shared";
 import { materialAdjustmentReasonEnum } from "./enums";
@@ -48,6 +58,15 @@ export const materialIssue = pgTable(
 
     issuedOn: date().notNull(),
     qty: numeric({ precision: 12, scale: 2 }).notNull(),
+    /**
+     * How it was COUNTED, when it went out in bundles (V1).
+     *
+     * THE LEDGER STAYS IN SHEETS, exactly as on the receipt side: `qty` is the
+     * atomic figure, and these record how it was arrived at.
+     */
+    bundles: integer(),
+    sheetsPerBundle: integer(),
+
 
     /** Offset Printing, Lamination, Binding … — free text, as the sheet had. */
     department: text(),
@@ -68,6 +87,25 @@ export const materialIssue = pgTable(
     index("material_issue_date_idx").on(t.issuedOn),
 
     check("material_issue_qty_positive", sql`${t.qty} > 0`),
+    /**
+     * V1. Where the bundle figures are present they must multiply out to the
+     * quantity. "5 bundles of 460" recorded against a total of 2,000 is a typo
+     * somebody would otherwise find by counting a shelf, months later.
+     *
+     * THE `is not null` TESTS ARE LOAD-BEARING. A check constraint passes when
+     * its expression is NULL, not only when it is true, so `bundles > 0 and
+     * sheets_per_bundle > 0` with a null size evaluates to NULL and the row is
+     * ACCEPTED — "5 bundles of nothing", the one state that makes the pair
+     * useless. Found by a test rather than by review; see 0046.
+     */
+    check(
+      "material_issue_bundles_agree",
+      sql`(${t.bundles} is null and ${t.sheetsPerBundle} is null)
+          or (${t.bundles} is not null and ${t.sheetsPerBundle} is not null
+              and ${t.bundles} > 0 and ${t.sheetsPerBundle} > 0
+              and ${t.qty} = ${t.bundles} * ${t.sheetsPerBundle})`,
+    ),
+
   ],
 );
 

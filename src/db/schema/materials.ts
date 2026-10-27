@@ -255,6 +255,21 @@ export const materialBatch = pgTable(
 
     receivedDate: date().notNull(),
     qtyReceived: numeric({ precision: 12, scale: 2 }).notNull(),
+    /**
+     * How it was COUNTED, when it came in bundles (V1): "5 bundles of 460".
+     *
+     * THE LEDGER STAYS IN SHEETS. qty_received is still the atomic figure every
+     * stock number, the reorder calculation and the Q2 reset depend on — 5
+     * bundles of 460 is 2,300, and 2,300 is what is stored. These two record
+     * how that total was arrived at, and `material_batch_bundles_agree` makes them unable
+     * to disagree with it.
+     *
+     * Both or neither. Loose stock leaves them null and types the quantity as
+     * it always did, which is why the pair is optional rather than required.
+     */
+    bundles: integer(),
+    sheetsPerBundle: integer(),
+
 
     /**
      * The job this paper was bought for, when it was bought for one (P3).
@@ -276,6 +291,25 @@ export const materialBatch = pgTable(
     index("material_batch_received_idx").on(t.receivedDate),
 
     check("material_batch_qty_positive", sql`${t.qtyReceived} > 0`),
+    /**
+     * V1. Where the bundle figures are present they must multiply out to the
+     * quantity. "5 bundles of 460" recorded against a total of 2,000 is a typo
+     * somebody would otherwise find by counting a shelf, months later.
+     *
+     * THE `is not null` TESTS ARE LOAD-BEARING. A check constraint passes when
+     * its expression is NULL, not only when it is true, so `bundles > 0 and
+     * sheets_per_bundle > 0` with a null size evaluates to NULL and the row is
+     * ACCEPTED — "5 bundles of nothing", the one state that makes the pair
+     * useless. Found by a test rather than by review; see 0046.
+     */
+    check(
+      "material_batch_bundles_agree",
+      sql`(${t.bundles} is null and ${t.sheetsPerBundle} is null)
+          or (${t.bundles} is not null and ${t.sheetsPerBundle} is not null
+              and ${t.bundles} > 0 and ${t.sheetsPerBundle} > 0
+              and ${t.qtyReceived} = ${t.bundles} * ${t.sheetsPerBundle})`,
+    ),
+
   ],
 );
 

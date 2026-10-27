@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 
 import { paperBundleValues } from "@/modules/job-cards/validation";
-import { SHEETS_PER_BUNDLE, type PaperBundle } from "@/modules/job-cards/paper";
+import { isManualBundle, SHEETS_PER_BUNDLE, type PaperBundle } from "@/modules/job-cards/paper";
 
 import { PaperSheetFigures } from "./paper-sheet-figures";
 
@@ -21,25 +21,31 @@ import { PaperSheetFigures } from "./paper-sheet-figures";
 export function PaperQuantity({
   qty,
   bundle,
+  sheetsPerBundle,
   parts,
   className,
 }: {
   qty?: number | null;
   bundle?: string | null;
+  /** Only ever set for the manual bundle (V1). */
+  sheetsPerBundle?: number | null;
   parts?: number | null;
   className?: string;
 }) {
   const ids = useId();
   const [q, setQ] = useState(qty?.toString() ?? "");
   const [b, setB] = useState((bundle as PaperBundle | null) ?? "");
+  const [spb, setSpb] = useState(sheetsPerBundle?.toString() ?? "");
   const [p, setP] = useState(parts?.toString() ?? "");
+
+  const manual = isManualBundle(b === "" ? null : (b as PaperBundle));
 
   const inputClass =
     "border-input bg-background h-9 w-full rounded-md border px-2 text-[13px] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none";
 
   return (
     <div className={className}>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className={`grid gap-4 ${manual ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
         <label className="space-y-1">
           <span className="text-muted-foreground text-xs">Quantity</span>
           <input
@@ -66,11 +72,31 @@ export function PaperQuantity({
             <option value="">Choose…</option>
             {paperBundleValues.map((v) => (
               <option key={v} value={v}>
-                {v} — {SHEETS_PER_BUNDLE[v]} sheets
+                {SHEETS_PER_BUNDLE[v] === null ? `${v} — type the size` : `${v} — ${SHEETS_PER_BUNDLE[v]} sheets`}
               </option>
             ))}
           </select>
         </label>
+
+        {/* Only the manual bundle carries a size. The database refuses to
+            store one against Packet, Ream or Gross, so the box does not
+            appear for them rather than appearing and being ignored. */}
+        {manual ? (
+          <label className="space-y-1">
+            <span className="text-muted-foreground text-xs">Sheets per bundle</span>
+            <input
+              id={`${ids}-spb`}
+              name="paperSheetsPerBundle"
+              type="number"
+              min={1}
+              inputMode="numeric"
+              placeholder="460"
+              value={spb}
+              onChange={(e) => setSpb(e.target.value)}
+              className={inputClass}
+            />
+          </label>
+        ) : null}
 
         <label className="space-y-1">
           <span className="text-muted-foreground text-xs">Parts</span>
@@ -93,7 +119,15 @@ export function PaperQuantity({
           save come back with it. */}
       {q !== "" && b === "" ? (
         <p className="text-at-risk mt-2 text-xs">
-          Choose packet, ream or gross — a quantity on its own does not say how much paper.
+          Choose a bundle — a quantity on its own does not say how much paper.
+        </p>
+      ) : null}
+
+      {/* The manual bundle's own version of the same gap: a count of bundles
+          whose size nobody has said is exactly as uninformative. */}
+      {manual && q !== "" && spb === "" ? (
+        <p className="text-at-risk mt-2 text-xs">
+          Say how many sheets are in a bundle — 5 bundles says nothing without it.
         </p>
       ) : null}
 
@@ -103,6 +137,7 @@ export function PaperQuantity({
         className="mt-3"
         qty={q === "" ? null : Number(q)}
         bundle={b === "" ? null : b}
+        sheetsPerBundle={spb === "" ? null : Number(spb)}
         parts={p === "" ? null : Number(p)}
       />
     </div>

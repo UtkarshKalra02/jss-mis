@@ -41,6 +41,7 @@ export type PressRunRow = {
   paperFinish: string | null;
   paperQty: number | null;
   paperBundle: PaperBundle | null;
+  paperSheetsPerBundle: number | null;
   paperParts: number | null;
   paperRemarks: string | null;
   plateJobId: string | null;
@@ -74,6 +75,7 @@ export async function getPressRun(
       paperFinish: pressRun.paperFinish,
       paperQty: pressRun.paperQty,
       paperBundle: pressRun.paperBundle,
+      paperSheetsPerBundle: pressRun.paperSheetsPerBundle,
       paperParts: pressRun.paperParts,
       paperRemarks: pressRun.paperRemarks,
       plateJobId: pressRun.plateJobId,

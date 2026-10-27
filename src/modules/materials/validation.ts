@@ -87,13 +87,68 @@ export const materialSchema = z.object({
   remarks: trimmed,
 });
 
-export const grnLineSchema = z.object({
-  materialId: z.uuid({ message: "Choose the material." }),
-  qty: requiredQty,
-  /** Paper bought for a particular job (P3). */
-  jobRef: trimmed,
-  remarks: trimmed,
+
+/**
+ * Bundles, and the sheets in one — how a quantity was counted (V1).
+ *
+ * BOTH OR NEITHER, and when both are given they must multiply out to the
+ * quantity. The ledger stays in sheets: 5 bundles of 460 is 2,300, and 2,300
+ * is what is stored. These say how that figure was arrived at, and the check
+ * constraints behind them refuse a total that disagrees — "5 bundles of 460"
+ * recorded against 2,000 is a typo somebody would otherwise find by counting a
+ * shelf, months later.
+ *
+ * Loose stock leaves both blank and types the quantity as it always did.
+ */
+const bundleCount = optionalInt.refine((v) => v === undefined || v > 0, {
+  message: "Bundles must be more than zero.",
 });
+
+const perBundle = optionalInt.refine((v) => v === undefined || v > 0, {
+  message: "Sheets per bundle must be more than zero.",
+});
+
+/** Says the same thing the check constraints do, in a sentence. */
+export function refineBundles(
+  v: { qty?: string | number; bundles?: number; sheetsPerBundle?: number },
+  ctx: z.RefinementCtx,
+) {
+  const hasB = v.bundles !== undefined;
+  const hasP = v.sheetsPerBundle !== undefined;
+
+  if (hasB !== hasP) {
+    ctx.addIssue({
+      code: "custom",
+      path: [hasB ? "sheetsPerBundle" : "bundles"],
+      message: "Give both the number of bundles and the sheets in one, or neither.",
+    });
+    return;
+  }
+
+  if (!hasB) return;
+
+  const total = Number(v.qty);
+  const product = v.bundles! * v.sheetsPerBundle!;
+  if (Number.isFinite(total) && total !== product) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["qty"],
+      message: `${v.bundles} × ${v.sheetsPerBundle} is ${product}, not ${total}.`,
+    });
+  }
+}
+
+export const grnLineSchema = z
+  .object({
+    materialId: z.uuid({ message: "Choose the material." }),
+    qty: requiredQty,
+    bundles: bundleCount,
+    sheetsPerBundle: perBundle,
+    /** Paper bought for a particular job (P3). */
+    jobRef: trimmed,
+    remarks: trimmed,
+  })
+  .superRefine(refineBundles);
 
 export const grnSchema = z.object({
   receivedDate: z.string().trim().regex(ISO_DATE, "Enter the date the goods arrived."),
@@ -104,16 +159,20 @@ export const grnSchema = z.object({
   lines: z.array(grnLineSchema).min(1, "A receipt needs at least one line."),
 });
 
-export const issueSchema = z.object({
-  batchId: z.uuid({ message: "Choose the batch it comes from." }),
-  issuedOn: z.string().trim().regex(ISO_DATE, "Enter the date it was issued."),
-  qty: requiredQty,
-  department: trimmed,
-  jobCardId: z.union([z.uuid(), z.literal("")]).optional(),
-  /** The job by name — for work with no card, as the ledger always had it. */
-  jobRef: trimmed,
-  remarks: trimmed,
-});
+export const issueSchema = z
+  .object({
+    batchId: z.uuid({ message: "Choose the batch it comes from." }),
+    issuedOn: z.string().trim().regex(ISO_DATE, "Enter the date it was issued."),
+    qty: requiredQty,
+    bundles: bundleCount,
+    sheetsPerBundle: perBundle,
+    department: trimmed,
+    jobCardId: z.union([z.uuid(), z.literal("")]).optional(),
+    /** The job by name — for work with no card, as the ledger always had it. */
+    jobRef: trimmed,
+    remarks: trimmed,
+  })
+  .superRefine(refineBundles);
 
 export const adjustmentSchema = z.object({
   batchId: z.uuid({ message: "Choose the batch to adjust." }),

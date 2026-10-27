@@ -267,6 +267,7 @@ export async function updateRunSheetAction(
       paperGsm: v.paperGsm ?? null,
       paperFinish: v.paperFinish ?? null,
       paperQty: v.paperQty ?? null,
+      paperSheetsPerBundle: v.paperSheetsPerBundle ?? null,
       paperBundle: v.paperBundle ?? null,
       paperParts: v.paperParts ?? null,
       paperRemarks: v.paperRemarks ?? null,

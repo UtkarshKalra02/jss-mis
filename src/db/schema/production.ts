@@ -141,6 +141,15 @@ export const pressRun = pgTable(
     paperFinish: text(),
     paperQty: integer(),
     paperBundle: paperBundleEnum(),
+    /**
+     * Sheets in one bundle, when the bundle is the manual kind (V1).
+     *
+     * NULL for Packet, Ream and Gross, whose sizes are fixed in paper.ts —
+     * enforced by `*_sheets_per_bundle_pairing`, so a Packet carrying a size
+     * of 460 is not a row this database will hold. That mutual exclusion is
+     * how J18's objection survives a typed size: still one source, never two.
+     */
+    paperSheetsPerBundle: integer(),
     paperParts: integer(),
     paperRemarks: text(),
 
@@ -181,6 +190,22 @@ export const pressRun = pgTable(
     check("press_run_paper_qty_positive", sql`${t.paperQty} is null or ${t.paperQty} > 0`),
     check("press_run_paper_parts_positive", sql`${t.paperParts} is null or ${t.paperParts} > 0`),
     // Same pairing rule as the card's — see job_card_paper_bundle_required.
+    /**
+     * V1. A manual bundle must say its size; a fixed one must not. Both halves
+     * matter — without the ELSE, a Packet could carry a 460 beside it and the
+     * screen would have to choose which to believe.
+     *
+     * Written against `paper_bundle::text` rather than the enum value, as the
+     * migration is: drizzle-kit applies pending migrations in one transaction,
+     * and Postgres will not let an enum value be used in the transaction that
+     * added it.
+     */
+    check(
+      "press_run_sheets_per_bundle_pairing",
+      sql`case when ${t.paperBundle}::text = 'Bundle'
+            then ${t.paperSheetsPerBundle} is not null and ${t.paperSheetsPerBundle} > 0
+            else ${t.paperSheetsPerBundle} is null end`,
+    ),
     check(
       "press_run_paper_bundle_required",
       sql`${t.paperQty} is null or ${t.paperBundle} is not null`,
@@ -312,6 +337,15 @@ export const jobCard = pgTable(
      */
     paperQty: integer(),
     paperBundle: paperBundleEnum(),
+    /**
+     * Sheets in one bundle, when the bundle is the manual kind (V1).
+     *
+     * NULL for Packet, Ream and Gross, whose sizes are fixed in paper.ts —
+     * enforced by `*_sheets_per_bundle_pairing`, so a Packet carrying a size
+     * of 460 is not a row this database will hold. That mutual exclusion is
+     * how J18's objection survives a typed size: still one source, never two.
+     */
+    paperSheetsPerBundle: integer(),
     paperParts: integer(),
 
     paperRemarks: text(),
@@ -397,6 +431,22 @@ export const jobCard = pgTable(
     // A quantity with no bundle is not a fact — 5 of what? The pair travels
     // together or not at all, and the database says so rather than trusting
     // every form that will ever write here.
+    /**
+     * V1. A manual bundle must say its size; a fixed one must not. Both halves
+     * matter — without the ELSE, a Packet could carry a 460 beside it and the
+     * screen would have to choose which to believe.
+     *
+     * Written against `paper_bundle::text` rather than the enum value, as the
+     * migration is: drizzle-kit applies pending migrations in one transaction,
+     * and Postgres will not let an enum value be used in the transaction that
+     * added it.
+     */
+    check(
+      "job_card_sheets_per_bundle_pairing",
+      sql`case when ${t.paperBundle}::text = 'Bundle'
+            then ${t.paperSheetsPerBundle} is not null and ${t.paperSheetsPerBundle} > 0
+            else ${t.paperSheetsPerBundle} is null end`,
+    ),
     check(
       "job_card_paper_bundle_required",
       sql`${t.paperQty} is null or ${t.paperBundle} is not null`,

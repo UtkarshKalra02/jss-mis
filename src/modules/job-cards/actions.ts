@@ -188,6 +188,7 @@ export async function releaseJobCardAction(
       // has no material column, and a card on a plate reads the run's sheet.
       materialId: v.materialId ?? null,
       paperQty: v.paperQty ?? null,
+      paperSheetsPerBundle: v.paperSheetsPerBundle ?? null,
       paperBundle: v.paperBundle ?? null,
       paperParts: v.paperParts ?? null,
       paperRemarks: v.paperRemarks ?? null,
@@ -387,6 +388,7 @@ export async function releaseGangAction(
           paperGsm: v.paperGsm ?? null,
           paperFinish: v.paperFinish ?? null,
           paperQty: v.paperQty ?? null,
+          paperSheetsPerBundle: v.paperSheetsPerBundle ?? null,
           paperBundle: v.paperBundle ?? null,
           paperParts: v.paperParts ?? null,
           paperRemarks: v.paperRemarks ?? null,
@@ -504,6 +506,7 @@ export async function updateJobCardPlanAction(
           paperFinish: v.paperFinish ?? null,
           materialId: v.materialId ?? null,
           paperQty: v.paperQty ?? null,
+          paperSheetsPerBundle: v.paperSheetsPerBundle ?? null,
           paperBundle: v.paperBundle ?? null,
           paperParts: v.paperParts ?? null,
           paperRemarks: v.paperRemarks ?? null,

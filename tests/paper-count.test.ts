@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isManualBundle,
   paperCount,
   paperQuantityLine,
   paperWorking,
   partsLine,
+  sheetsInBundle,
   SHEETS_PER_BUNDLE,
 } from "@/modules/job-cards/paper";
 
@@ -120,3 +122,72 @@ describe("partsLine", () => {
   });
 });
 
+
+/**
+ * The manual bundle (V1).
+ *
+ * J18's fixed table stays exactly as it was — a Packet is still 100 sheets,
+ * including on the fifty cards already entered — and a fourth bundle carries
+ * its size on the row. Most of what matters here is that the two models never
+ * mix: a fixed bundle ignores a typed size, and a manual one computes nothing
+ * until it has one, rather than falling back to a guess.
+ */
+describe("a bundle whose size is typed in", () => {
+  it("counts 5 bundles of 460", () => {
+    const c = paperCount({ qty: 5, bundle: "Bundle", sheetsPerBundle: 460, parts: null });
+    expect(c.sheetsPerBundle).toBe(460);
+    expect(c.parentSheets).toBe(2300);
+    expect(c.pressSheets).toBe(2300);
+  });
+
+  it("still cuts, like any other bundle", () => {
+    const c = paperCount({ qty: 5, bundle: "Bundle", sheetsPerBundle: 460, parts: 2 });
+    expect(c.parentSheets).toBe(2300);
+    expect(c.pressSheets).toBe(4600);
+  });
+
+  it("knows nothing until the size is typed, and does not guess one", () => {
+    for (const typed of [null, undefined, 0, -10]) {
+      const c = paperCount({ qty: 5, bundle: "Bundle", sheetsPerBundle: typed, parts: null });
+      expect(c.parentSheets).toBeNull();
+      expect(c.pressSheets).toBeNull();
+      expect(c.sheetsPerBundle).toBeNull();
+    }
+  });
+
+  it("leaves the fixed bundles exactly as J18 set them", () => {
+    expect(SHEETS_PER_BUNDLE.Packet).toBe(100);
+    expect(SHEETS_PER_BUNDLE.Ream).toBe(500);
+    expect(SHEETS_PER_BUNDLE.Gross).toBe(144);
+    expect(SHEETS_PER_BUNDLE.Bundle).toBeNull();
+  });
+
+  it("ignores a typed size on a fixed bundle rather than letting it win", () => {
+    // The database refuses to store this combination at all; if one ever
+    // reaches the arithmetic, the table is still the answer.
+    const c = paperCount({ qty: 5, bundle: "Packet", sheetsPerBundle: 460, parts: null });
+    expect(c.sheetsPerBundle).toBe(100);
+    expect(c.parentSheets).toBe(500);
+  });
+
+  it("shows its working with the typed size", () => {
+    expect(paperWorking({ qty: 5, bundle: "Bundle", sheetsPerBundle: 460 })).toBe("5 bundles × 460");
+    expect(paperWorking({ qty: 1, bundle: "Bundle", sheetsPerBundle: 460 })).toBe("1 bundle × 460");
+    expect(paperWorking({ qty: 5, bundle: "Bundle", sheetsPerBundle: null })).toBeNull();
+  });
+
+  it("resolves the size from one place, whichever kind it is", () => {
+    expect(sheetsInBundle("Ream", null)).toBe(500);
+    expect(sheetsInBundle("Ream", 460)).toBe(500);
+    expect(sheetsInBundle("Bundle", 460)).toBe(460);
+    expect(sheetsInBundle("Bundle", null)).toBeNull();
+    expect(sheetsInBundle(null, 460)).toBeNull();
+  });
+
+  it("knows which kind needs a typed size", () => {
+    expect(isManualBundle("Bundle")).toBe(true);
+    for (const b of ["Packet", "Ream", "Gross", null, undefined] as const) {
+      expect(isManualBundle(b)).toBe(false);
+    }
+  });
+});

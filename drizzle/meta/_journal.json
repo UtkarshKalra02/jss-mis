@@ -309,6 +309,27 @@
       "when": 1791987591572,
       "tag": "0043_auto_close_small_residuals",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793093351437,
+      "tag": "0044_manual_bundle_size",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1793093443109,
+      "tag": "0045_bundle_size_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793094299428,
+      "tag": "0046_bundles_pair_null_safe",
+      "breakpoints": true
     }
   ]
 }

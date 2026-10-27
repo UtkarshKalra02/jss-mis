@@ -48,12 +48,41 @@ export const paperBundleValues = paperBundleEnum.enumValues;
  */
 function withPaperPairing<T extends z.ZodObject>(schema: T) {
   return schema.superRefine((value, ctx) => {
-    const v = value as { paperQty?: number; paperBundle?: string };
+    const v = value as {
+      paperQty?: number;
+      paperBundle?: string;
+      paperSheetsPerBundle?: number;
+    };
     if (v.paperQty !== undefined && v.paperBundle === undefined) {
       ctx.addIssue({
         code: "custom",
         path: ["paperBundle"],
-        message: "Choose packet, ream or gross — a quantity on its own does not say how much paper.",
+        message: "Choose a bundle — a quantity on its own does not say how much paper.",
+      });
+    }
+
+    /*
+     * V1, and both halves matter. A manual bundle with no size counts nothing;
+     * a fixed bundle carrying a size has two numbers claiming to be the same
+     * fact, which is exactly what J18 removed `sheets_per_ream` to prevent.
+     * The database refuses both combinations; this is the sentence version.
+     */
+    const manual = v.paperBundle === "Bundle";
+
+    if (manual && v.paperSheetsPerBundle === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["paperSheetsPerBundle"],
+        message: "Say how many sheets are in a bundle — 5 bundles says nothing without it.",
+      });
+    }
+
+    if (!manual && v.paperSheetsPerBundle !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["paperSheetsPerBundle"],
+        message:
+          "A packet, ream or gross already has a fixed size. Choose Bundle to type your own.",
       });
     }
   });
@@ -111,6 +140,15 @@ export const releaseSchema = z.object({
       .max(9_999_999),
   ),
   paperBundle: absentOrBlank(z.enum(paperBundleValues)),
+
+  /** Sheets in one bundle — the manual bundle only (V1). */
+  paperSheetsPerBundle: absentOrBlank(
+    z.coerce
+      .number()
+      .int("Sheets per bundle must be a whole number.")
+      .positive("Sheets per bundle must be more than zero.")
+      .max(9_999_999),
+  ),
 
   /** How many pieces each parent sheet is cut into. Blank means uncut. */
   paperParts: absentOrBlank(
@@ -211,6 +249,7 @@ export function parsePlanForm(formData: FormData) {
         "materialId",
         "paperQty",
         "paperBundle",
+        "paperSheetsPerBundle",
         "paperParts",
         "paperRemarks",
         "execNoOfColours",
@@ -441,6 +480,15 @@ export const bulkReleaseSchema = z
         .max(9_999_999),
     ),
     paperBundle: absentOrBlank(z.enum(paperBundleValues)),
+
+    /** Sheets in one bundle — the manual bundle only (V1). */
+    paperSheetsPerBundle: absentOrBlank(
+      z.coerce
+        .number()
+        .int("Sheets per bundle must be a whole number.")
+        .positive("Sheets per bundle must be more than zero.")
+        .max(9_999_999),
+    ),
     paperParts: absentOrBlank(
       z.coerce
         .number()
@@ -486,7 +534,27 @@ export const bulkReleaseSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["paperBundle"],
-        message: "Choose packet, ream or gross — a quantity on its own does not say how much paper.",
+        message: "Choose a bundle — a quantity on its own does not say how much paper.",
+      });
+    }
+
+    // V1, the same rule the single release and the run sheet carry.
+    const manual = v.paperBundle === "Bundle";
+
+    if (manual && v.paperSheetsPerBundle === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["paperSheetsPerBundle"],
+        message: "Say how many sheets are in a bundle — 5 bundles says nothing without it.",
+      });
+    }
+
+    if (!manual && v.paperSheetsPerBundle !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["paperSheetsPerBundle"],
+        message:
+          "A packet, ream or gross already has a fixed size. Choose Bundle to type your own.",
       });
     }
   });
@@ -506,6 +574,7 @@ export function parseBulkReleaseForm(formData: FormData) {
         "paperFinish",
         "paperQty",
         "paperBundle",
+        "paperSheetsPerBundle",
         "paperParts",
         "paperRemarks",
         "plateJobId",

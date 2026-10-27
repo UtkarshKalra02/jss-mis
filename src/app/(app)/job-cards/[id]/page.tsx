@@ -289,6 +289,7 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
           <PaperSheetFigures
             qty={sheet.paperQty}
             bundle={sheet.paperBundle}
+            sheetsPerBundle={sheet.paperSheetsPerBundle}
             parts={sheet.paperParts}
             className="mt-3"
             emptyText="Paper quantity not recorded."

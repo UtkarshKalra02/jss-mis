@@ -15,26 +15,63 @@ export type PaperBundle = (typeof paperBundleEnum.enumValues)[number];
 /**
  * The trade's bundles, in sheets. Fixed numbers, not settings.
  *
- * TYPED AGAINST THE ENUM ON PURPOSE. `Record<PaperBundle, number>` means
- * adding a fourth bundle to `paperBundleEnum` without a multiplier here is a
- * compile error rather than a form that silently computes nothing — the same
- * guard the audit wrapper uses to keep its boundaries from being widened
- * quietly (F1).
+ * TYPED AGAINST THE ENUM ON PURPOSE. `Record<PaperBundle, number | null>`
+ * means adding a fifth bundle to `paperBundleEnum` without deciding its size
+ * here is a compile error rather than a form that silently computes nothing —
+ * the same guard the audit wrapper uses to keep its boundaries from being
+ * widened quietly (F1). It did its job when `Bundle` was added: the build
+ * broke until this table said what to do with it.
  *
- * A ream is 500 here. Mills that ship 480-sheet reams exist; when one turns up
- * it goes in Paper remarks until it is common enough to earn its own field,
- * which is the trade-off taken when `sheets_per_ream` was removed (J18).
+ * `Bundle` IS NULL, and null means "the size is written on the row" (V1).
+ * J18 took the trade-off of a fixed table and wrote down the cost — mills that
+ * ship 480-sheet reams exist, and until that was common it went in Paper
+ * remarks. It is common, so the manual bundle exists. The other three are
+ * unchanged and still mean exactly what they always did: a Packet is 100
+ * sheets, including on the fifty cards already entered.
  */
-export const SHEETS_PER_BUNDLE: Record<PaperBundle, number> = {
+export const SHEETS_PER_BUNDLE: Record<PaperBundle, number | null> = {
   Packet: 100,
   Ream: 500,
   Gross: 144,
+  /** Typed per row — see `sheetsPerBundle` on PaperInput. */
+  Bundle: null,
 };
+
+/** Whether this bundle's size is typed in rather than looked up. */
+export function isManualBundle(bundle: PaperBundle | null | undefined): boolean {
+  return bundle === "Bundle";
+}
+
+/**
+ * Sheets in one bundle: the table for a fixed bundle, the typed figure for a
+ * manual one.
+ *
+ * ONE PLACE RESOLVES THIS, so no screen has to remember which kind it is
+ * holding. Returns null when it cannot be known — no bundle chosen, or a
+ * manual bundle with nothing typed yet — and null then travels all the way to
+ * a blank rather than becoming a guessed multiplier.
+ */
+export function sheetsInBundle(
+  bundle: PaperBundle | null | undefined,
+  typed: number | null | undefined,
+): number | null {
+  if (!bundle) return null;
+  if (isManualBundle(bundle)) {
+    return typed !== null && typed !== undefined && typed > 0 ? typed : null;
+  }
+  return SHEETS_PER_BUNDLE[bundle];
+}
 
 export type PaperInput = {
   /** How many bundles. */
   qty: number | null | undefined;
   bundle: PaperBundle | null | undefined;
+  /**
+   * Sheets in one bundle, for the manual bundle only (V1). Ignored for the
+   * fixed three, whose size comes from the table — the database refuses to
+   * store it against them at all.
+   */
+  sheetsPerBundle?: number | null | undefined;
   /** How many pieces each parent sheet is cut into before it reaches the press. */
   parts: number | null | undefined;
 };
@@ -76,10 +113,14 @@ const EMPTY: PaperCount = { parentSheets: null, pressSheets: null, sheetsPerBund
  * Parts defaults to 1 — uncut is the ordinary case, and a blank parts box means
  * "not cut", never "unknown".
  */
-export function paperCount({ qty, bundle, parts }: PaperInput): PaperCount {
+export function paperCount({ qty, bundle, sheetsPerBundle: typed, parts }: PaperInput): PaperCount {
   if (!bundle) return EMPTY;
 
-  const sheetsPerBundle = SHEETS_PER_BUNDLE[bundle];
+  const sheetsPerBundle = sheetsInBundle(bundle, typed);
+
+  // A manual bundle with no size typed yet knows nothing, not even its
+  // multiplier — so it reports nothing rather than a half-answer.
+  if (sheetsPerBundle === null) return EMPTY;
 
   if (qty === null || qty === undefined || !Number.isFinite(qty) || qty <= 0) {
     return { ...EMPTY, sheetsPerBundle };
@@ -107,10 +148,17 @@ function bundleWords(qty: number, bundle: PaperBundle): string {
 }
 
 /** "5 packets × 100" — how the parent-sheet figure was arrived at. */
-export function paperWorking({ qty, bundle }: Pick<PaperInput, "qty" | "bundle">): string | null {
+export function paperWorking({
+  qty,
+  bundle,
+  sheetsPerBundle,
+}: Pick<PaperInput, "qty" | "bundle" | "sheetsPerBundle">): string | null {
   if (!bundle || qty === null || qty === undefined || qty <= 0) return null;
 
-  return `${bundleWords(qty, bundle)} × ${SHEETS_PER_BUNDLE[bundle]}`;
+  const size = sheetsInBundle(bundle, sheetsPerBundle);
+  if (size === null) return null;
+
+  return `${bundleWords(qty, bundle)} × ${size}`;
 }
 
 /** "5 packets" — the quantity as the godown says it, for a printed slot. */

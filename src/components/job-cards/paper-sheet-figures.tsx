@@ -19,12 +19,15 @@ import { paperCount, paperWorking, type PaperBundle } from "@/modules/job-cards/
 export function PaperSheetFigures({
   qty,
   bundle,
+  sheetsPerBundle,
   parts,
   className,
   emptyText = "Enter a quantity and a bundle to see the sheet count.",
 }: {
   qty: number | null | undefined;
   bundle: string | null | undefined;
+  /** Only ever set for the manual bundle (V1). */
+  sheetsPerBundle?: number | null | undefined;
   parts: number | null | undefined;
   className?: string;
   /**
@@ -35,8 +38,9 @@ export function PaperSheetFigures({
    */
   emptyText?: string;
 }) {
-  const count = paperCount({ qty, bundle: (bundle as PaperBundle | null) ?? null, parts });
-  const working = paperWorking({ qty, bundle: (bundle as PaperBundle | null) ?? null });
+  const b = (bundle as PaperBundle | null) ?? null;
+  const count = paperCount({ qty, bundle: b, sheetsPerBundle, parts });
+  const working = paperWorking({ qty, bundle: b, sheetsPerBundle });
 
   if (count.parentSheets === null) {
     return (

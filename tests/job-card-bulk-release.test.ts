@@ -341,7 +341,9 @@ describe("the bulk release form contract", () => {
 
     expect(parsed.success).toBe(false);
     if (parsed.success) return;
-    expect(parsed.error.issues[0]!.message).toContain("packet, ream or gross");
+    // Not "packet, ream or gross" any more: V1 added a fourth, so naming the
+    // three would be a message that is wrong about its own form.
+    expect(parsed.error.issues[0]!.message).toContain("Choose a bundle");
   });
 
   it("requires a date for the plate", () => {

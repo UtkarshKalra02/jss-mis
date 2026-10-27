@@ -62,6 +62,15 @@ export const runSheetSchema = z.object({
       .max(9_999_999),
   ),
   paperBundle: absentOrBlank(z.enum(paperBundleEnum.enumValues)),
+
+  /** Sheets in one bundle — the manual bundle only (V1). */
+  paperSheetsPerBundle: absentOrBlank(
+    z.coerce
+      .number()
+      .int("Sheets per bundle must be a whole number.")
+      .positive("Sheets per bundle must be more than zero.")
+      .max(9_999_999),
+  ),
   paperParts: absentOrBlank(
     z.coerce
       .number()
@@ -86,8 +95,28 @@ export function parseRunSheet(formData: FormData) {
         ctx.addIssue({
           code: "custom",
           path: ["paperBundle"],
+          message: "Choose a bundle — a quantity on its own does not say how much paper.",
+        });
+      }
+
+      // V1, kept identical to the card's rule — the plate and the cards on it
+      // must not be able to disagree about the arithmetic.
+      const manual = v.paperBundle === "Bundle";
+
+      if (manual && v.paperSheetsPerBundle === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["paperSheetsPerBundle"],
+          message: "Say how many sheets are in a bundle — 5 bundles says nothing without it.",
+        });
+      }
+
+      if (!manual && v.paperSheetsPerBundle !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["paperSheetsPerBundle"],
           message:
-            "Choose packet, ream or gross — a quantity on its own does not say how much paper.",
+            "A packet, ream or gross already has a fixed size. Choose Bundle to type your own.",
         });
       }
     })
@@ -101,6 +130,7 @@ export function parseRunSheet(formData: FormData) {
     paperFinish: formData.get("paperFinish"),
     paperQty: formData.get("paperQty"),
     paperBundle: formData.get("paperBundle"),
+    paperSheetsPerBundle: formData.get("paperSheetsPerBundle"),
     paperParts: formData.get("paperParts"),
     paperRemarks: formData.get("paperRemarks"),
     plateJobId: formData.get("plateJobId"),

@@ -9,6 +9,7 @@ const card = {
   materialId: "mat-1",
   paperQty: 5,
   paperBundle: "Packet",
+  paperSheetsPerBundle: null,
   paperParts: 4,
 };
 

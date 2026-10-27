@@ -81,6 +81,7 @@ export default async function JobCardPrintPage({
   const paper = paperCount({
     qty: sheet.paperQty,
     bundle: sheet.paperBundle,
+    sheetsPerBundle: sheet.paperSheetsPerBundle,
     parts: sheet.paperParts,
   });
 

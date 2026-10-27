@@ -4734,3 +4734,86 @@ client names do — "Carton 50g", "Carton 100g" and "Carton Insert" are genuinel
 products that score high against each other. Erring low would put a warning under the field
 almost every time and train people straight past it, which is worse than no warning at all.
 Names under four characters are ignored for the same reason.
+
+
+---
+
+## V. Bundles whose size is written down
+
+## V1 — a fourth bundle, whose size is typed per row
+
+Asked for by Utkarsh on 27 Oct 2026: *"paper can be added to the Job Card in Bundles also
+(it comes also in bundles so update Inventory Management accordingly). Where you can
+manually fill the no. of bundles which came and amount of paper in that bundles. Like 5
+bundles of 460 came."* Migrations `0044`, `0045`, `0046`.
+
+**This reverses half of J18, on J18's own terms.** That decision removed `sheets_per_ream`
+and replaced it with a fixed table — Packet 100, Ream 500, Gross 144 — because two fields
+each claiming to say how many sheets are in a bundle can disagree. It also wrote the cost
+down: *"mills that ship 480-sheet reams exist, and until that is common enough to earn a
+field it goes in Paper remarks."* It is common. So a fourth bundle exists whose size is
+typed.
+
+**The three fixed bundles are untouched**, confirmed before anything was written: a Packet
+is 100 sheets, and the 50 existing cards that say Packet mean 100. There is no backfill and
+nothing already entered changes meaning. The production figures at the time were 62 job
+cards (50 Packet, 9 Gross, 0 Ream) and 3 press runs.
+
+**J18's objection is answered rather than ignored.** What it feared was two sources for one
+number. There is still exactly one source, per row:
+
+| bundle | where the size comes from | `paper_sheets_per_bundle` |
+|---|---|---|
+| Packet / Ream / Gross | the table in `paper.ts` | must be **null** |
+| Bundle | the row | must be **present** |
+
+Both halves are check constraints, so neither contradictory state can be written at all. A
+Packet carrying a size of 460 is not a row this database will hold. Without the `ELSE` half
+it would be, and the screen would then have to choose which number to believe.
+
+`SHEETS_PER_BUNDLE` became `Record<PaperBundle, number | null>`. The compile-time guard
+J18 built did its job on the way in: adding `Bundle` to the enum broke the build until the
+table said what to do with it.
+
+**The store keeps its ledger in sheets.** `material_batch.qty_received` and
+`material_issue.qty` stay the atomic figure every stock number, the reorder calculation and
+the Q2 reset depend on — 5 bundles of 460 is 2,300, and 2,300 is what is stored. `bundles`
+and `sheets_per_bundle` record *how it was counted*, and a check makes them unable to
+disagree with the total. Both forms compute the quantity as the two boxes are typed and
+make it read-only, so the person is never asked for the same fact twice. Loose stock leaves
+both blank and types the quantity as before, which is why the pair is optional rather than
+required.
+
+**Issuing carries the same pair**, at Utkarsh's direction — paper goes out of the godown in
+bundles as surely as it comes in.
+
+## V2 — two failures worth keeping, both found by machines rather than review
+
+**drizzle-kit applies every pending migration in ONE transaction, and reports failure by
+exiting 1 and printing nothing.** The first version of this work put the new enum value and
+the check constraints that name it in one file. Postgres refuses to let an enum value be
+used in the transaction that added it, so the whole thing rolled back — silently. Splitting
+it into two files did not help, because both were still pending and therefore still one
+transaction. The fix is in 0045: the constraints compare `paper_bundle::text` rather than
+naming the enum value, which asks nothing of the enum catalogue and applies cleanly from a
+standing start. Verified by applying both to production from scratch.
+
+Worth remembering generally: **a migration that only works when someone has already run
+part of it by hand is not a migration.** Dev went green first only because the value had
+been added out-of-band while debugging, which made dev the misleading environment and
+production the honest one.
+
+**A CHECK constraint passes when its expression is NULL, not only when it is true.** The
+first store constraint was:
+
+```sql
+(bundles IS NULL AND sheets_per_bundle IS NULL)
+OR (bundles > 0 AND sheets_per_bundle > 0 AND qty_received = bundles * sheets_per_bundle)
+```
+
+With `bundles = 5` and `sheets_per_bundle = NULL` the second branch is `true AND NULL` →
+`NULL`, and `false OR NULL` → `NULL` → **accepted**. "5 bundles of nothing" was storable,
+and it is precisely the row that makes the pair useless. `tests/bundle-entry.test.ts` caught
+it the same day; no screen would ever have produced it. 0046 tests for presence explicitly
+instead. The job card and press run checks do not have the hole — their `CASE` sends a null
+bundle down the `ELSE` branch, where `IS NULL` is a true/false test.

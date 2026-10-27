@@ -255,7 +255,14 @@ export async function updateMaterialAction(
 /* GRN                                                                         */
 /* -------------------------------------------------------------------------- */
 
-const LINE_FIELDS = ["materialId", "qty", "lineJobRef", "lineRemarks"] as const;
+const LINE_FIELDS = [
+  "materialId",
+  "qty",
+  "bundles",
+  "sheetsPerBundle",
+  "lineJobRef",
+  "lineRemarks",
+] as const;
 
 function parseLines(formData: FormData) {
   const cols = Object.fromEntries(
@@ -264,6 +271,8 @@ function parseLines(formData: FormData) {
   return cols.materialId.map((_, i) => ({
     materialId: cols.materialId[i] ?? "",
     qty: cols.qty[i] ?? "",
+    bundles: cols.bundles[i] ?? "",
+    sheetsPerBundle: cols.sheetsPerBundle[i] ?? "",
     jobRef: cols.lineJobRef[i] ?? "",
     remarks: cols.lineRemarks[i] ?? "",
   }));
@@ -317,6 +326,10 @@ export async function createGrnAction(_prev: FormState, formData: FormData): Pro
             materialId: l.materialId,
             receivedDate: v.receivedDate,
             qtyReceived: l.qty,
+            // How it was counted, when it came in bundles (V1). The ledger
+            // figure above stays the atomic one.
+            bundles: l.bundles ?? null,
+            sheetsPerBundle: l.sheetsPerBundle ?? null,
             jobRef: orNull(l.jobRef),
             remarks: orNull(l.remarks),
           },
@@ -396,6 +409,9 @@ export async function createIssueAction(_prev: FormState, formData: FormData): P
           batchId: v.batchId,
           issuedOn: v.issuedOn,
           qty: v.qty,
+          // How it was counted, when it went out in bundles (V1).
+          bundles: v.bundles ?? null,
+          sheetsPerBundle: v.sheetsPerBundle ?? null,
           department: orNull(v.department),
           jobCardId: idOrNull(v.jobCardId),
           jobRef: orNull(v.jobRef),

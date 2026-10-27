@@ -202,7 +202,20 @@ export const fabricationScopeEnum = pgEnum("fabrication_scope", ["Design", "Run"
  * Two fields that each claimed to say how many sheets are in a ream could
  * disagree, and the wrong one would always be whichever nobody updated.
  */
-export const paperBundleEnum = pgEnum("paper_bundle", ["Packet", "Ream", "Gross"]);
+/**
+ * How paper is counted in the godown.
+ *
+ * The first three carry FIXED sheet counts, held beside the enum in
+ * `src/modules/job-cards/paper.ts` (J18): Packet 100, Ream 500, Gross 144.
+ *
+ * `Bundle` is the one whose size is TYPED PER ROW (V1), because mills ship
+ * whatever they ship — "5 bundles of 460" is the example that earned it. Its
+ * size lives in a column, and a check constraint makes the two models
+ * mutually exclusive: a Bundle must carry a size, and the other three must
+ * not. There is still exactly one source for the number, which is what J18
+ * was protecting.
+ */
+export const paperBundleEnum = pgEnum("paper_bundle", ["Packet", "Ream", "Gross", "Bundle"]);
 
 export const dispatchStatusEnum = pgEnum("dispatch_status", [
   "Draft",

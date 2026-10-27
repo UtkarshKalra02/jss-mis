@@ -18,6 +18,7 @@ export type IssueCard = {
   materialId: string | null;
   paperQty: number | null;
   paperBundle: string | null;
+  paperSheetsPerBundle: number | null;
   paperParts: number | null;
 };
 
@@ -32,6 +33,7 @@ export function issuePresetFromCard(card: IssueCard, fallbackMaterialId?: string
   const sheets = paperCount({
     qty: card.paperQty,
     bundle: card.paperBundle as PaperBundle | null,
+    sheetsPerBundle: card.paperSheetsPerBundle,
     parts: card.paperParts,
   });
   return {

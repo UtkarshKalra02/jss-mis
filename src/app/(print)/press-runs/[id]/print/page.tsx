@@ -68,7 +68,12 @@ export default async function PressRunPrintPage({
   ]);
 
   // Derived here, never stored (J18).
-  const paper = paperCount({ qty: run.paperQty, bundle: run.paperBundle, parts: run.paperParts });
+  const paper = paperCount({
+    qty: run.paperQty,
+    bundle: run.paperBundle,
+    sheetsPerBundle: run.paperSheetsPerBundle,
+    parts: run.paperParts,
+  });
 
   /*
    * One checklist per job on the plate. Design-scope answers come from that

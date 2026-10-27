@@ -162,6 +162,7 @@ export function RunSheetForm({
         className="mt-4"
         qty={run.paperQty}
         bundle={run.paperBundle}
+        sheetsPerBundle={run.paperSheetsPerBundle}
         parts={run.paperParts}
       />
 

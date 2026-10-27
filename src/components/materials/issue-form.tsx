@@ -53,6 +53,28 @@ export function IssueForm({
   const id = useId();
 
   const [materialId, setMaterialId] = useState(preset.materialId ?? "");
+
+  /*
+   * Issuing in bundles (V1), the same shape as the receipt: typing both fills
+   * the quantity, because the ledger stores sheets and the two must not be
+   * able to disagree. Blank for loose, and the quantity is typed as before.
+   */
+  const [bundles, setBundles] = useState("");
+  const [perBundle, setPerBundle] = useState("");
+  const [qty, setQty] = useState(preset.qty ?? "");
+
+  const bothBundles =
+    bundles !== "" && perBundle !== "" && Number(bundles) > 0 && Number(perBundle) > 0;
+
+  const setBundleField = (which: "b" | "p", value: string) => {
+    const b = which === "b" ? value : bundles;
+    const per = which === "p" ? value : perBundle;
+    if (which === "b") setBundles(value);
+    else setPerBundle(value);
+    if (b !== "" && per !== "" && Number(b) > 0 && Number(per) > 0) {
+      setQty(String(Number(b) * Number(per)));
+    }
+  };
   const [jobRef, setJobRef] = useState(preset.jobRef ?? "");
 
   /* The job's own paper first, then unreserved oldest-first, then other jobs'. */
@@ -141,6 +163,39 @@ export function IssueForm({
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor={`${id}-bundles`}>Bundles × sheets</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id={`${id}-bundles`}
+                name="bundles"
+                type="number"
+                min={1}
+                step="1"
+                inputMode="numeric"
+                placeholder="5"
+                value={bundles}
+                onChange={(e) => setBundleField("b", e.target.value)}
+                className="text-right tabular-nums"
+              />
+              <span className="text-muted-foreground text-xs">×</span>
+              <Input
+                name="sheetsPerBundle"
+                type="number"
+                min={1}
+                step="1"
+                inputMode="numeric"
+                placeholder="460"
+                value={perBundle}
+                onChange={(e) => setBundleField("p", e.target.value)}
+                className="text-right tabular-nums"
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Leave blank for loose stock and type the quantity instead.
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor={`${id}-qty`}>Quantity{chosen ? ` (${chosen.unit})` : ""}</Label>
             <Input
               id={`${id}-qty`}
@@ -149,8 +204,10 @@ export function IssueForm({
               min={0.01}
               step="0.01"
               required
-              defaultValue={preset.qty ?? ""}
-              className="text-right tabular-nums"
+              readOnly={bothBundles}
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              className={`text-right tabular-nums ${bothBundles ? "bg-muted/50" : ""}`}
             />
             {batch ? (
               <p className="text-muted-foreground text-xs">

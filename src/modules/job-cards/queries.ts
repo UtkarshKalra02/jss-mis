@@ -60,6 +60,7 @@ export type JobCardDetail = {
   materialSku: string | null;
   paperQty: number | null;
   paperBundle: PaperBundle | null;
+  paperSheetsPerBundle: number | null;
   paperParts: number | null;
   paperRemarks: string | null;
 
@@ -148,6 +149,7 @@ export async function getJobCard(
       materialSku: material.sku,
       paperQty: jobCard.paperQty,
       paperBundle: jobCard.paperBundle,
+      paperSheetsPerBundle: jobCard.paperSheetsPerBundle,
       paperParts: jobCard.paperParts,
       paperRemarks: jobCard.paperRemarks,
 

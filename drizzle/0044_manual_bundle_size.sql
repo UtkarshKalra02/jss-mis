@@ -1,0 +1,28 @@
+-- ===========================================================================
+-- A bundle whose size is typed in — the enum value only (section V).
+--
+-- Asked for by Utkarsh on 27 Oct 2026: "Like 5 bundles of 460 came." A fourth
+-- bundle whose size is filled in by hand, beside the three fixed ones.
+--
+-- WHAT THIS REVERSES, AND WHAT IT DOES NOT. J18 removed `sheets_per_ream` and
+-- replaced it with a fixed table — Packet 100, Ream 500, Gross 144 — because
+-- two fields each claiming to say how many sheets are in a bundle can
+-- disagree. It also wrote down the cost it was accepting: mills that ship
+-- 480-sheet reams exist, and until that was common it went in Paper remarks.
+-- It is common. The three fixed bundles STAY EXACTLY AS THEY ARE, confirmed by
+-- Utkarsh: a Packet is 100 sheets, and the 50 existing cards that say Packet
+-- mean 100. Nothing already entered changes meaning.
+--
+-- WHY THIS MIGRATION HOLDS NOTHING ELSE. Postgres will not let a new enum
+-- value be USED in the same transaction that adds it, and drizzle-kit runs
+-- each migration in one. The first attempt put the value and the check
+-- constraints that reference it together; it failed and rolled back without
+-- printing an error, which is a worse failure than a loud one — the command
+-- exited 0 and the database was untouched. The columns and constraints are in
+-- 0045, which is a separate transaction and can therefore see this value.
+--
+-- ONE-WAY. Postgres cannot drop an enum value. 'Bundle' is Utkarsh's own word
+-- for it, confirmed before this was written, for exactly that reason.
+-- ===========================================================================
+
+ALTER TYPE "public"."paper_bundle" ADD VALUE IF NOT EXISTS 'Bundle';

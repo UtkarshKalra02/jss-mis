@@ -42,6 +42,7 @@ export type JobCardPlanValues = {
   materialId?: string | null;
   paperQty?: number | null;
   paperBundle?: string | null;
+  paperSheetsPerBundle?: number | null;
   paperParts?: number | null;
   paperRemarks?: string | null;
   execNoOfColours?: string | null;
@@ -449,6 +450,7 @@ export function JobCardForm({
             className={sheetOnRun ? "hidden" : "mt-4"}
             qty={card?.paperQty}
             bundle={card?.paperBundle}
+            sheetsPerBundle={card?.paperSheetsPerBundle}
             parts={card?.paperParts}
           />
         </section>

@@ -28,6 +28,7 @@ export type SheetFields = {
   paperFinish: string | null;
   paperQty: number | null;
   paperBundle: PaperBundle | null;
+  paperSheetsPerBundle: number | null;
   paperParts: number | null;
   paperRemarks: string | null;
   plateJobId: string | null;
@@ -55,6 +56,7 @@ export function resolvedSheet(
       paperFinish: run.paperFinish,
       paperQty: run.paperQty,
       paperBundle: run.paperBundle,
+      paperSheetsPerBundle: run.paperSheetsPerBundle,
       paperParts: run.paperParts,
       paperRemarks: run.paperRemarks,
       plateJobId: run.plateJobId,
@@ -73,6 +75,7 @@ export function resolvedSheet(
     paperFinish: card.paperFinish,
     paperQty: card.paperQty,
     paperBundle: card.paperBundle,
+    paperSheetsPerBundle: card.paperSheetsPerBundle,
     paperParts: card.paperParts,
     paperRemarks: card.paperRemarks,
     plateJobId: card.plateJobId,
