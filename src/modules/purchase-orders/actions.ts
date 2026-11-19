@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
+import { JOB_CLOSE_ROLES } from "@/auth/roles";
 import { db } from "@/db";
 import {
   auditedAppend,
@@ -17,7 +18,7 @@ import {
 import { recomputeForPoItem, withStatusWrite } from "@/db/po-status";
 import { poItem, purchaseOrder, stageEvent } from "@/db/schema";
 import { actionError } from "@/lib/action-error";
-import { startOfDayIST } from "@/lib/dates";
+import { startOfDayIST, wallClockIST } from "@/lib/dates";
 import { allocateNumber } from "@/lib/numbering";
 
 import {
@@ -27,9 +28,16 @@ import {
   getPoItem,
   getPurchaseOrder,
   listPoItems,
+  manualCloseEligibility,
 } from "./queries";
 import { removalBlockers } from "./removal";
-import { createPoSchema, poHeaderSchema, poItemSchema } from "./validation";
+import {
+  closeReasonSchema,
+  createPoSchema,
+  poHeaderSchema,
+  poItemCreateSchema,
+  poItemSchema,
+} from "./validation";
 
 /**
  * `warning` is not an error. It carries the duplicate-PO-number question
@@ -85,7 +93,7 @@ async function insertPoItem(
   args: {
     purchaseOrderId: string;
     poDate: string;
-    values: ReturnType<typeof poItemSchema.parse>;
+    values: ReturnType<typeof poItemCreateSchema.parse>;
   },
 ) {
   const { purchaseOrderId, poDate, values: v } = args;
@@ -107,6 +115,16 @@ async function insertPoItem(
       jobType: v.jobType,
       priority: v.priority,
       remarks: orNull(v.remarks),
+
+      /*
+       * SOP Rule 1 (W). All three or none — po_item_confirmation_all_or_none
+       * says so in the database too. wallClockIST because the browser posts
+       * "2026-11-17T10:05" with no zone and the server runs on UTC; see the
+       * helper for what that costs if you forget.
+       */
+      confirmationSource: v.confirmationSource,
+      confirmedBy: v.confirmedBy,
+      confirmedAt: wallClockIST(v.confirmedAt),
     },
     tx,
   );
@@ -153,9 +171,26 @@ function parseItems(formData: FormData): Record<string, string>[] {
     ITEM_FIELDS.map((field) => [field, formData.getAll(field).map(String)]),
   ) as Record<(typeof ITEM_FIELDS)[number], string[]>;
 
-  return columns.itemName.map((_, i) =>
-    Object.fromEntries(ITEM_FIELDS.map((field) => [field, columns[field][i] ?? ""])),
-  );
+  /*
+   * The confirmation (W) is posted ONCE, not per row, and copied onto every
+   * item. A purchase order arrives as a single confirmation: one source, one
+   * person, one time. Rendering it per row would invite three different
+   * answers to the same question, and the parallel-array scheme above would
+   * then have to keep them straight for no gain.
+   *
+   * It is still stored per item, because an item added to this order next
+   * week was confirmed at a different moment and must be able to say so.
+   */
+  const confirmation = {
+    confirmationSource: String(formData.get("confirmationSource") ?? ""),
+    confirmedBy: String(formData.get("confirmedBy") ?? ""),
+    confirmedAt: String(formData.get("confirmedAt") ?? ""),
+  };
+
+  return columns.itemName.map((_, i) => ({
+    ...Object.fromEntries(ITEM_FIELDS.map((field) => [field, columns[field][i] ?? ""])),
+    ...confirmation,
+  }));
 }
 
 export async function createPurchaseOrderAction(
@@ -170,6 +205,7 @@ export async function createPurchaseOrderAction(
       poNo: formData.get("poNo"),
       poDate: formData.get("poDate"),
       fileUrl: formData.get("fileUrl"),
+      isJobWork: formData.get("isJobWork") ?? undefined,
       notes: formData.get("notes"),
       items: parseItems(formData),
     });
@@ -213,6 +249,9 @@ export async function createPurchaseOrderAction(
           clientId: v.clientId,
           poDate: v.poDate,
           fileUrl: orNull(v.fileUrl),
+          // A native checkbox posts "on" or nothing; absent is false, never
+          // null — the column is NOT NULL (section Z).
+          isJobWork: v.isJobWork === "on",
           notes: orNull(v.notes),
         },
         tx,
@@ -368,6 +407,7 @@ export async function updatePoHeaderAction(
       poNo: formData.get("poNo"),
       poDate: formData.get("poDate"),
       fileUrl: formData.get("fileUrl"),
+      isJobWork: formData.get("isJobWork") ?? undefined,
       notes: formData.get("notes"),
     });
     if (!parsed.success) return fail(parsed.error.issues[0]!.message);
@@ -387,6 +427,7 @@ export async function updatePoHeaderAction(
       poNo: orNull(v.poNo),
       poDate: v.poDate,
       fileUrl: orNull(v.fileUrl),
+      isJobWork: v.isJobWork === "on",
       notes: orNull(v.notes),
     });
 
@@ -403,8 +444,8 @@ export async function updatePoHeaderAction(
 /* Items                                                                       */
 /* -------------------------------------------------------------------------- */
 
-function parseOneItem(formData: FormData) {
-  return poItemSchema.safeParse({
+function itemFields(formData: FormData) {
+  return {
     itemName: formData.get("itemName"),
     orderedQty: formData.get("orderedQty"),
     rate: formData.get("rate"),
@@ -413,7 +454,29 @@ function parseOneItem(formData: FormData) {
     priority: formData.get("priority"),
     designId: formData.get("designId"),
     remarks: formData.get("remarks"),
+  };
+}
+
+/**
+ * ADDING an item asks how the order was confirmed (W); EDITING one does not.
+ *
+ * Two functions rather than a flag because the difference is not cosmetic:
+ * the confirmation is a fact about the moment the job was opened, and an edit
+ * that could restate it would let a correction to a quantity quietly reset
+ * the clock SOP Rule 1 is measured by. updatePoItemAction writes neither
+ * column, and now cannot be asked to.
+ */
+function parseNewItem(formData: FormData) {
+  return poItemCreateSchema.safeParse({
+    ...itemFields(formData),
+    confirmationSource: formData.get("confirmationSource"),
+    confirmedBy: formData.get("confirmedBy"),
+    confirmedAt: formData.get("confirmedAt"),
   });
+}
+
+function parseExistingItem(formData: FormData) {
+  return poItemSchema.safeParse(itemFields(formData));
 }
 
 export async function addPoItemAction(
@@ -430,7 +493,7 @@ export async function addPoItemAction(
       return fail("This PO is cancelled. Reinstate it before adding items.");
     }
 
-    const parsed = parseOneItem(formData);
+    const parsed = parseNewItem(formData);
     if (!parsed.success) return fail(parsed.error.issues[0]!.message);
 
     const created = await db.transaction((tx) =>
@@ -460,7 +523,7 @@ export async function updatePoItemAction(
     const existing = await getPoItem(id);
     if (!existing) return fail("That item no longer exists.");
 
-    const parsed = parseOneItem(formData);
+    const parsed = parseExistingItem(formData);
     if (!parsed.success) return fail(parsed.error.issues[0]!.message);
     const v = parsed.data;
 
@@ -635,6 +698,151 @@ export async function setPoItemCancelledAction(
   } catch (error) {
     unstable_rethrow(error);
     return fail(actionError(error, "Could not change the item."));
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Manual job close — section X                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Who may close a job by hand: "the DEO and admin and owner" (Utkarsh, 18 Nov
+ * 2026).
+ *
+ * WHY THIS IS A ROLE LIST AND NOT `requireAccess("purchase_order", "write")`.
+ * Two of the three already have that grant. OWNER has `purchase_order: "read"`
+ * and always will — B2 makes him read-only everywhere, and widening the matrix
+ * to let him reach one button would hand him the whole order book. So the gate
+ * is the role list here plus the fourth B2 exception in src/db/audit.ts, which
+ * is where the actual refusal lives. `requireAccess(..., "read")` still runs
+ * first, so an unauthenticated or stale session is turned away before the role
+ * is even considered.
+ *
+ * DEO IS `DATA_ENTRY_FULL`, not `DATA_ENTRY`. The latter is the store's typist
+ * — materials and the dashboard, no purchase_order access of any kind (O5) — so
+ * a close granted to it would be a button on a screen the role cannot open.
+ *
+ * roles.ts warns that a power expressed as a role check rather than a resource
+ * excludes future roles silently. That is accepted here and noted in that file:
+ * this grant is deliberately not a resource, because its whole point is to
+ * admit one role that must stay read-only on the resource.
+ */
+async function requireJobCloser(): Promise<Actor> {
+  const user = await requireAccess("purchase_order", "read");
+  if (!JOB_CLOSE_ROLES.has(user.role)) redirect("/forbidden");
+  return { id: user.id, role: user.role };
+}
+
+/**
+ * Closing a job that will never be completed, and reopening one.
+ *
+ * CLOSED IS NOT CANCELLED. Cancel says the order went away — it never
+ * happened. This says we delivered what we were going to deliver and the
+ * remainder is written off. Both exist; they are not alternatives to each
+ * other, and the screen says so.
+ *
+ * HOW THE STATUS ACTUALLY CHANGES, and why there is no withStatusWrite here
+ * unlike the Cancel action above. This writes the three manual-close columns
+ * and NOTHING ELSE. po_item_manual_close_recompute_trg then fires and runs the
+ * recompute, which opens the status lock inside the SQL function and derives
+ * 'Closed' from the fact it has just been told. Status therefore stays derived
+ * (B5) and this action never touches it, directly or by asking.
+ *
+ * THERE IS DELIBERATELY NO recomputeForPoItem() CALL HERE. An earlier draft had
+ * one, and it masked a missing trigger: the columns changed, the status did not,
+ * and only this screen happened to paper over it. po-status.ts is explicit that
+ * the recompute "needs no help from here at all... there is no call site to
+ * forget" — so the trigger is the mechanism and a second entry point gets the
+ * same behaviour for free. tests/manual-close.test.ts asserts the status rather
+ * than the columns, which is what found it.
+ *
+ * Reopening is the same move in reverse: clear the three columns and the same
+ * trigger lets the dispatched quantity settle where the item belongs, rather
+ * than assuming Open — an item fully delivered before it was closed returns as
+ * Closed.
+ *
+ * THE WAITING PERIOD IS CHECKED TWICE, on purpose. Here, so the person is told
+ * which date to come back on; and by po_item_manual_close_guard_trg in 0048,
+ * which is what actually stops a script. Both read
+ * manual_close_min_days_after_po, so they cannot drift apart.
+ */
+export async function setPoItemManuallyClosedAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireJobCloser();
+    const id = String(formData.get("id") ?? "");
+    const close = String(formData.get("close")) === "true";
+
+    const existing = await getPoItem(id);
+    if (!existing) return fail("That item no longer exists.");
+
+    if (!close) {
+      await db.transaction(async (tx) => {
+        await auditedUpdate(
+          actor,
+          poItem,
+          id,
+          { closedManuallyAt: null, closedBy: null, closeReason: null },
+          tx,
+        );
+      });
+
+      revalidatePath(`/purchase-orders/${existing.purchaseOrderId}`);
+      return ok({ message: `${existing.itemCode} reopened.` });
+    }
+
+    if (existing.closedManuallyAt) {
+      return fail(`${existing.itemCode} is already closed.`);
+    }
+
+    /*
+     * A cancelled order was never delivered at all, so there is no shortfall to
+     * accept — and the recompute returns early on 'Cancelled', so a close
+     * written here would store the columns and change nothing visible. Refusing
+     * it says which of the two decisions is being asked for.
+     */
+    if (existing.status === "Cancelled") {
+      return fail(
+        `${existing.itemCode} is cancelled, so there is nothing to close. Reinstate it first if the order was real after all.`,
+      );
+    }
+
+    const parsed = closeReasonSchema.safeParse({ reason: formData.get("reason") });
+    if (!parsed.success) {
+      return fail(parsed.error.issues[0]?.message ?? "That reason was not accepted.");
+    }
+
+    const fence = await manualCloseEligibility(id);
+    if (!fence) return fail("That item no longer exists.");
+    if (!fence.eligible) {
+      return fail(
+        `${existing.itemCode} cannot be closed by hand yet. Its PO is dated ${fence.poDate}, ` +
+          `so the earliest is ${fence.earliest} — ${fence.minDays} days after. ` +
+          `If the order went away rather than fell short, cancel it instead.`,
+      );
+    }
+
+    await db.transaction(async (tx) => {
+      await auditedUpdate(
+        actor,
+        poItem,
+        id,
+        {
+          closedManuallyAt: new Date(),
+          closedBy: actor.id,
+          closeReason: parsed.data.reason,
+        },
+        tx,
+      );
+    });
+
+    revalidatePath(`/purchase-orders/${existing.purchaseOrderId}`);
+    return ok({ message: `${existing.itemCode} closed.` });
+  } catch (error) {
+    unstable_rethrow(error);
+    return fail(actionError(error, "Could not close the job."));
   }
 }
 

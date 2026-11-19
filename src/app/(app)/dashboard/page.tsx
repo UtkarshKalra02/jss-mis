@@ -10,6 +10,8 @@ import { formatDate, formatINR, formatPercent, formatQty, formatTime } from "@/l
 import { StagePill } from "@/components/stages/stage-pill";
 import {
   dispatchedThisMonth,
+  jobOpening,
+  OPENING_WINDOW_DAYS,
   otdSummary,
   stageMovesToday,
   todaysDispatch,
@@ -75,6 +77,7 @@ export default async function DashboardPage() {
     tasks,
     openEnquiries,
     stageMoves,
+    opening,
   ] = await Promise.all([
     otdSummary(),
     workloadCounts(),
@@ -94,6 +97,20 @@ export default async function DashboardPage() {
      * only role this leaves out.
      */
     canSeeItems ? stageMovesToday() : Promise.resolve({ moves: [], total: 0 }),
+    /*
+     * SOP Rule 1 (W). Gated with the tracker for the same reason the feed is:
+     * it is a statement about items, and it links to them.
+     */
+    canSeeItems
+      ? jobOpening()
+      : Promise.resolve({
+          scored: 0,
+          onTime: 0,
+          late: 0,
+          onTimePct: null,
+          targetWorkingMinutes: 120,
+          unrecorded: 0,
+        }),
   ]);
 
   /*
@@ -217,6 +234,38 @@ export default async function DashboardPage() {
                   // that quietly omits revenue is worse than one that says so.
                   (dispatched.linesWithoutRate > 0
                     ? ` · ${dispatched.linesWithoutRate} line${dispatched.linesWithoutRate === 1 ? "" : "s"} with no rate, not valued`
+                    : "")
+            }
+          />
+        ) : null}
+
+        {/* SOP RULE 1 (W) — "no job number, no machine".
+
+            Three things this tile refuses to do. It does not show a
+            percentage when nothing is scored, because 0% of nothing reads as
+            total failure. It does not fold `unrecorded` into `late`: rows
+            with no confirmation are reported as unmeasured, which is what
+            they are, and every row created before 18 Nov 2026 is one. And it
+            names the target in working hours rather than hard-coding "2",
+            since the number is a setting.
+
+            The shift behind it is 09:30-18:00, Sunday off, and overtime is
+            not counted (W2) — so the figure is slightly generous rather than
+            harsh, which is the right way round. */}
+        {canSeeItems ? (
+          <MetricCard
+            label="Jobs opened on time"
+            tone={opening.late > 0 ? "at-risk" : undefined}
+            value={opening.onTimePct === null ? "—" : formatPercent(opening.onTimePct)}
+            href="/items"
+            sub={
+              opening.scored === 0
+                ? opening.unrecorded > 0
+                  ? `No confirmation recorded on ${formatQty(opening.unrecorded)} item${opening.unrecorded === 1 ? "" : "s"} opened in ${OPENING_WINDOW_DAYS} days`
+                  : "Nothing opened in the window yet."
+                : `${formatQty(opening.late)} of ${formatQty(opening.scored)} opened later than ${opening.targetWorkingMinutes / 60}h of working time` +
+                  (opening.unrecorded > 0
+                    ? ` · ${formatQty(opening.unrecorded)} with no confirmation recorded, not scored`
                     : "")
             }
           />

@@ -330,6 +330,41 @@
       "when": 1793094299428,
       "tag": "0046_bundles_pair_null_safe",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794926020043,
+      "tag": "0047_job_opening_discipline",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794992390451,
+      "tag": "0048_manual_job_close",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795068376956,
+      "tag": "0049_job_card_ups",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795070290252,
+      "tag": "0050_job_work",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1795074235095,
+      "tag": "0051_otd_sees_manual_close",
+      "breakpoints": true
     }
   ]
 }

@@ -191,3 +191,73 @@ describe("a bundle whose size is typed in", () => {
     }
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Ups — section Y                                                            */
+/* -------------------------------------------------------------------------- */
+
+describe("pieces off the run", () => {
+  /** 5 packets = 500 parent sheets; cut into 2 = 1,000 press sheets. */
+  const base = { qty: 5, bundle: "Packet" as const, parts: 2 };
+
+  it("multiplies press sheets by ups", () => {
+    const c = paperCount({ ...base, ups: 4 });
+    expect(c.parentSheets).toBe(500);
+    expect(c.pressSheets).toBe(1_000);
+    expect(c.pieces).toBe(4_000);
+  });
+
+  it("counts an uncut sheet the same way", () => {
+    const c = paperCount({ qty: 1, bundle: "Ream", parts: null, ups: 6 });
+    expect(c.pressSheets).toBe(500);
+    expect(c.pieces).toBe(3_000);
+  });
+
+  /**
+   * THE RULE THIS FEATURE TURNS ON. Absent ups is NOT single-up. Every card
+   * entered before section Y has no ups, and defaulting them to 1 would make
+   * the pieces figure a confident wrong answer on exactly the rows nobody has
+   * checked — the committed_date rule (F8), and the same reason v_job_opening
+   * reports NULL rather than false for an unrecorded confirmation (W1).
+   */
+  it("reports nothing when ups is unrecorded, rather than assuming one up", () => {
+    for (const ups of [undefined, null]) {
+      const c = paperCount({ ...base, ups });
+      expect(c.pieces).toBeNull();
+      // The two figures that never depended on ups are unaffected.
+      expect(c.parentSheets).toBe(500);
+      expect(c.pressSheets).toBe(1_000);
+    }
+  });
+
+  it("treats zero and negative ups as a typo, not as a piece count", () => {
+    for (const ups of [0, -3]) {
+      expect(paperCount({ ...base, ups }).pieces).toBeNull();
+    }
+  });
+
+  it("still reports nothing at all when the bundle is missing", () => {
+    const c = paperCount({ qty: 5, bundle: null, parts: 2, ups: 4 });
+    expect(c.parentSheets).toBeNull();
+    expect(c.pressSheets).toBeNull();
+    expect(c.pieces).toBeNull();
+  });
+
+  it("reports nothing for a manual bundle whose size nobody has typed (V1)", () => {
+    const c = paperCount({ qty: 5, bundle: "Bundle", sheetsPerBundle: null, parts: 2, ups: 4 });
+    expect(c.pieces).toBeNull();
+  });
+
+  it("works off a manual bundle's typed size", () => {
+    const c = paperCount({ qty: 2, bundle: "Bundle", sheetsPerBundle: 460, parts: 1, ups: 3 });
+    expect(c.parentSheets).toBe(920);
+    expect(c.pressSheets).toBe(920);
+    expect(c.pieces).toBe(2_760);
+  });
+
+  it("reports nothing when the quantity is missing, even with ups typed", () => {
+    const c = paperCount({ qty: null, bundle: "Packet", parts: 2, ups: 4 });
+    expect(c.pieces).toBeNull();
+    expect(c.sheetsPerBundle).toBe(100);
+  });
+});

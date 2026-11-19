@@ -5,18 +5,24 @@ import { requireAccess } from "@/auth/guard";
 import { PoForm } from "@/components/purchase-orders/po-form";
 import { Button } from "@/components/ui/button";
 import { listClientOptions } from "@/modules/designs/queries";
-import { listDesignOptions, listRepeatableItemOptions } from "@/modules/purchase-orders/queries";
+import {
+  listConfirmationTakers,
+  listDesignOptions,
+  listRepeatableItemOptions,
+} from "@/modules/purchase-orders/queries";
 
 export const metadata: Metadata = { title: "Capture PO · JSS MIS" };
 
 export default async function NewPurchaseOrderPage() {
   // "create", not "write": the PLANNER may capture a PO and nothing more (P5).
-  await requireAccess("purchase_order", "create");
+  // W: the signed-in person is the default answer to "who took the confirmation".
+  const actor = await requireAccess("purchase_order", "create");
 
-  const [clients, designs, repeatableItems] = await Promise.all([
+  const [clients, designs, repeatableItems, confirmationTakers] = await Promise.all([
     listClientOptions(),
     listDesignOptions(),
     listRepeatableItemOptions(),
+    listConfirmationTakers(),
   ]);
 
   return (
@@ -56,7 +62,13 @@ export default async function NewPurchaseOrderPage() {
             </Button>
           </div>
         ) : (
-          <PoForm clients={clients} designs={designs} repeatableItems={repeatableItems} />
+          <PoForm
+            clients={clients}
+            designs={designs}
+            repeatableItems={repeatableItems}
+            confirmationTakers={confirmationTakers}
+            defaultConfirmedBy={actor.id}
+          />
         )}
       </div>
     </div>

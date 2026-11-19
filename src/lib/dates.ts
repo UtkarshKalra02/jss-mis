@@ -30,6 +30,44 @@ export function startOfDayIST(isoDate: string): Date {
   return new Date(`${isoDate}T00:00:00+05:30`);
 }
 
+/**
+ * A `datetime-local` value, read as IST wall-clock time (W, migration 0047).
+ *
+ * The browser hands back "2026-11-17T10:05" with no zone on it. Passing that
+ * to `new Date()` resolves it against whatever clock the SERVER is on, and the
+ * server is Vercel, which is on UTC — so a confirmation typed as 10:05 in
+ * Okhla would be stored as 10:05Z and read back as 15:35 IST. Five and a half
+ * hours is more than twice the two-hour target the number is measured against,
+ * so every item would look opened late.
+ *
+ * Same fix as startOfDayIST: say the offset out loud rather than inheriting
+ * one. Seconds are optional because the input may or may not supply them.
+ */
+export function wallClockIST(value: string): Date {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(:\d{2})?$/.exec(value);
+  if (!m) {
+    throw new Error(`Expected a "YYYY-MM-DDTHH:MM" local time, got "${value}".`);
+  }
+  return new Date(`${m[1]}T${m[2]}${m[3] ?? ":00"}+05:30`);
+}
+
+/** Now as 'YYYY-MM-DDTHH:MM' in IST — the default for a datetime-local input. */
+export function nowISTLocalInput(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: IST,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)!.value;
+  // en-CA renders midnight as hour 24; the input needs 00.
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
+}
+
 /** Today as 'YYYY-MM-DD' in IST — the default for a date input. */
 export function todayIST(): string {
   return new Intl.DateTimeFormat("en-CA", {

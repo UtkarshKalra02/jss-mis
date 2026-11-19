@@ -4817,3 +4817,625 @@ and it is precisely the row that makes the pair useless. `tests/bundle-entry.tes
 it the same day; no screen would ever have produced it. 0046 tests for presence explicitly
 instead. The job card and press run checks do not have the hole — their `CASE` sends a null
 bundle down the `ELSE` branch, where `IS NULL` is a true/false test.
+
+# W — SOP Rule 1: job opening discipline (18 Nov 2026)
+
+The BMP SOP manual's first rule is **"no job number, no machine"**. Nothing runs on the
+floor until the job exists in this system, and the SOP's target is that a job is opened
+**within two working hours** of the customer confirming.
+
+The brief for this work originally asked for a separate worktree, a separate staging
+database and a separate deploy target. **Utkarsh's call on 17 Nov 2026 was to drop all
+three** and build the SOP work here, on `main`, as small additive changes — dev first,
+tested, then production, then pushed, the way everything from section A to section V was
+built. `docs/sop-v2/STAGING.md` is kept and marked superseded; the brief itself is saved as
+`docs/sop-v2/BRIEF.md`. This section is the first slice.
+
+## W1 — the clock has to start somewhere, and it was nowhere
+
+The rule could not be measured because the system never recorded **when the customer
+confirmed**. Three columns on `po_item` now do:
+
+| column | what it is |
+|---|---|
+| `confirmation_source` | `PO` / `WhatsApp` / `Verbal` — how the order arrived |
+| `confirmed_by` | who at JSS took the confirmation |
+| `confirmed_at` | when the customer confirmed |
+
+**Three values, because those are the three ways orders actually reach JSS.** A written PO
+is the clean case; the other two are the common ones, and a verbal confirmation with no
+paper behind it is a different kind of risk from a signed PO — which is the whole reason to
+record which.
+
+**Nullable, for exactly the reason `committed_date` is (F8).** Every row that already
+existed, and everything the importer writes, genuinely has no confirmation recorded. An
+invented one would be indistinguishable from a real one and would quietly become part of
+the metric. Those rows report **NULL, never false**, and are excluded from the measure —
+the same rule `v_otd` follows for items with no commitment. If they read `false`, "items
+opened late" would be the entire history of the company on day one and nobody would look at
+the screen twice.
+
+**All three or none**, enforced by `po_item_confirmation_all_or_none` — written with
+explicit `IS NOT NULL` on every term, because of V2: a CHECK that evaluates to NULL
+*passes*. The obvious spelling would have accepted one of three. `tests/job-opening.test.ts`
+has a case per missing column.
+
+**Entered once per order, stored once per item.** A purchase order arrives as a single
+confirmation — one source, one person, one moment — so the form asks once and copies it onto
+every item. It is stored per item because that is the grain everything else here is measured
+at, and because an item added to the same order next week was confirmed at a different time
+and must be able to say so. "Add an item" therefore asks again.
+
+**Editing an item cannot restate its confirmation.** `poItemSchema` is shared by add and
+edit; the three fields live in `poItemConfirmationSchema`, which only the create path
+extends. Had they been in the shared schema, every correction to a quantity would have
+rewritten when the customer confirmed, and the measure would have drifted towards zero as
+rows were touched.
+
+## W2 — "two working hours" is not 120 minutes
+
+An order confirmed at 18:00 and opened at 10:00 the next morning took **thirty working
+minutes**, not sixteen hours. `working_minutes_between(from, to)` does that arithmetic in
+Asia/Kolkata (C10), skipping nights and the weekly day off.
+
+It is here now rather than later because **every O2D step TAT in the SOP is expressed in
+working hours or days**, so phases 1.2 onwards all need exactly this. Building it once,
+behind settings, beats four screens each rolling their own.
+
+Four new `app_setting` rows drive it:
+
+| key | default | |
+|---|---|---|
+| `work_day_start_min` | `570` | 09:30, minutes after midnight IST |
+| `work_day_end_min` | `1080` | 18:00 |
+| `work_week_off_dow` | `0` | Sunday, Postgres DOW |
+| `job_open_target_working_minutes` | `120` | the SOP's two working hours |
+
+**The shift is 09:30–18:00, Sunday off — confirmed by Utkarsh on 18 Nov 2026**, correcting
+the 18:30 this was first built with. They remain settings rather than constants because a
+shift is a thing that changes, and correcting it should cost an `UPDATE`.
+
+**Overtime is deliberately not counted.** Work does run past 18:00, but the window stops
+there, so the clock on an unopened job stops at 18:00 too. The effect is that this measure
+is slightly **generous**: a job confirmed at 17:30 and opened at 19:00 during overtime
+scores thirty working minutes, not ninety. That is the right direction to be wrong in — the
+number exists to catch jobs left sitting overnight, not to penalise somebody for working
+late.
+
+It returns **0, not NULL, when `to` is at or before `from`.** The confirmation and the row
+are written by the same form submit, milliseconds apart, and the two timestamps can land
+either side of each other; returning null there would silently drop the item out of the
+metric, which is worse than a slightly generous zero. A genuinely **future-dated**
+confirmation is refused at the form instead, where a person can see the typo — otherwise it
+would clamp to zero and score as perfect.
+
+It returns NULL for a span over a year, as a runaway guard: the loop is per day, so a
+mistyped year would otherwise walk thousands of iterations.
+
+## W3 — `wallClockIST()`, and the five and a half hours it saves
+
+A `datetime-local` input posts `"2026-11-17T10:05"` **with no timezone on it**. Passing that
+to `new Date()` resolves it against the server's clock, and the server is Vercel, which runs
+on UTC. A confirmation typed as 10:05 in Okhla would be stored as 10:05Z and read back as
+15:35 IST. **Five and a half hours is nearly three times the two-hour target, so every
+single item would have read as opened late.**
+
+Same fix as `startOfDayIST`: say the offset out loud rather than inheriting one. The helper
+and its paired `nowISTLocalInput()` are in `src/lib/dates.ts`, and the test for it exists
+only to pin this down.
+
+## W4 — two things the brief asked for that are not built, on purpose
+
+**`opened_at` is not a column.** It would hold the same instant as `created_at` — the row is
+created at the moment the job is opened, by the same action, in the same transaction. A
+second column holding the same fact is a column that can disagree with itself, which is what
+non-negotiables 1 and 2 exist to prevent. `v_job_opening` exposes `created_at AS opened_at`,
+so every reader gets the name it wants and there is still only one fact stored.
+
+**"Items that reached a production stage without being opened first" is not a report.** The
+brief asks for the list and expects it to be zero. It is **zero by construction and always
+will be**: `stage_event.po_item_id` is NOT NULL and references `po_item`, so a stage event
+cannot exist before the item it belongs to. A metric that cannot move is not a control. The
+honest version of that question is "was the job opened within target", which `v_job_opening`
+answers, and later "did it reach a machine before full kit was complete" (phase 1.3), which
+is a real gate with a real number behind it.
+
+## W5 — known gap: a confirmation cannot be corrected
+
+There is **no screen that edits a confirmation once saved**. A mistyped time is permanent
+for now. That is a real hole — one wrong entry is one permanently wrong row in the measure —
+and it is written down here rather than papered over. The fix, when it comes, is a separate
+audited action with a reason, not a field on the item edit form, for the drift reason in W1.
+
+## W6 — what did not change
+
+No existing view was redefined, no trigger touched, no row updated. `v_po_item_status`,
+`v_otd` and the other eight views are untouched, so **every number on every existing screen
+reads the same after 0047 as before it**. The only writes the migration performs are the
+four `app_setting` rows.
+
+`v_job_opening` is the eleventh view.
+
+---
+
+# X — closing a job by hand (migration 0048)
+
+Asked for by Utkarsh on 18 Nov 2026: *"There should be an option to manually close a job as
+well, if needed only by the DEO and admin and owner"*, and fenced the same day: *"only
+closable after a month of PO Date"*.
+
+## X1 — Closed is not Cancelled, and both have to exist
+
+| | meaning | counts as |
+|---|---|---|
+| **Cancelled** | the order went away — it never happened | nothing owed, nothing delivered |
+| **Closed by hand** | we delivered what we are going to deliver; the balance is written off | the job happened, short |
+
+Cancel already existed. The gap was the other case, which is the common one: a client
+takes 7,600 of 10,000 and the season ends. Cancelling it would say JSS never had the order;
+leaving it Open makes it chase itself on the overdue list forever. Three columns on
+`po_item` record the third answer:
+
+| column | what it is |
+|---|---|
+| `closed_manually_at` | when the decision was taken |
+| `closed_by` | who took it |
+| `close_reason` | why, in a sentence |
+
+**All three or none** (`po_item_manual_close_all_or_none`), with explicit `IS NULL` /
+`IS NOT NULL` on every term — the V2 lesson again, that a CHECK evaluating to NULL *passes*.
+Plus `po_item_close_reason_not_blank`, because a required field satisfied by the space bar is
+not required.
+
+## X2 — a manual close would have un-closed itself overnight
+
+This is the part that was not obvious and is the reason the feature is more than a column.
+
+`status` is derived (B5). `recompute_po_item_status()` runs from AFTER triggers on
+`dispatch_line`, `dispatch` and `po_item.ordered_qty`, and again in the nightly sweep. It
+returns early for `'Cancelled'` **and nothing else**. So an item set to `'Closed'` by hand
+while `pending_qty > 0` would be recomputed back to `'Open'` — overnight at the latest, with
+no audit row anybody would think to read, and the job would reappear on the overdue list as
+if nobody had decided anything.
+
+So the close is stored as a **fact**, and the recompute reads it. `status` stays derived; it
+is now derived from the dispatched quantity *and* this fact, which is exactly what
+`'Cancelled'` has always been. The two sanctioned writers are unchanged, and this action
+never touches `status` at all.
+
+`tests/manual-close.test.ts` pins it with *"does not flip the job back to Open when run
+again"* — the one assertion that would have failed silently in production.
+
+## X3 — the trigger the tests found
+
+A first draft had the server action call `recomputeForPoItem()` itself. All 22 tests that
+asserted on the three *columns* passed; six that asserted on the resulting **status** failed.
+Writing the columns triggered no recompute — the action was papering over a missing trigger,
+and any second entry point (a script, a correction at psql, an import) would have stored a
+close that changed nothing visible.
+
+`po_item_manual_close_recompute_trg` now does it, mirroring `po_item_qty_recompute` (0006)
+exactly, and the explicit call is gone. `src/db/po-status.ts` already said why: the recompute
+*"needs no help from here at all… there is no call site to forget"*. **Asserting on the
+derived answer rather than the stored input is what found this.**
+
+## X4 — the fence: 30 days after the PO date
+
+`manual_close_min_days_after_po`, default **30** — Utkarsh's "a month", as an `app_setting`
+so it is correctable without a deploy.
+
+Without a fence, "close" is a way to make a job that is going badly stop appearing on the
+overdue list on the day it starts going badly. A month means the job has had a real life
+first.
+
+**Enforced by a trigger, not by the form.** `po_item_manual_close_guard_trg` refuses the
+write whatever asks for it. The form checks the same rule first only so the person is told
+*which date to come back on* — a plpgsql `RAISE` arrives as SQLSTATE `P0001`, which
+`action-error.ts` has no sentence for, so the trigger alone would show a generic failure.
+Both read the same setting through `app_setting_int`, so they cannot drift apart. A second
+trigger refuses a job **created** already closed, which is how the fence would otherwise be
+sidestepped.
+
+Reopening is never fenced.
+
+## X5 — OWNER, and the fourth exception to B2
+
+"The DEO and admin and owner" maps to **ADMIN, DATA_ENTRY_FULL, OWNER**.
+
+**DEO is `DATA_ENTRY_FULL`, not `DATA_ENTRY`.** The latter is the store's typist — materials
+and the dashboard, no `purchase_order` access of any kind (O5). A close granted to it would
+be a button on a screen the role cannot open.
+
+**OWNER is the real change.** B2 makes him read-only *everywhere*, enforced at the audit
+wrapper rather than in the matrix, so a screen that forgets its guard still cannot let him
+write. This is the **fourth** documented exception, declared in `src/db/audit.ts` beside the
+other three for the reason that file gives: *a rule enforced in one file and excepted in
+another is a rule that quietly stops being true.* It is also the first to reach the order
+book.
+
+Defensible on the same reasoning as the other three: accepting a shortfall is a commercial
+write-off — we will not print the remainder and will not bill for it — and that is Amit Sir's
+decision more than anyone's.
+
+The boundary is narrow. Two shapes only: all three columns set with `closed_by` **being the
+actor himself**, or all three cleared. Any other key in the same update refuses the whole
+update, so it cannot carry a quantity, a rate or a committed date along with it. Insert, soft
+delete and restore still refuse him outright.
+
+**`purchase_order` stays `read` for OWNER.** The grant is a role list plus the wrapper
+exception, deliberately *not* a resource — widening the matrix to reach one button would hand
+him the whole order book. `JOB_CLOSE_ROLES` lives in `src/auth/roles.ts` and both the page and
+the action import it, so a button is never offered to somebody the wrapper will refuse.
+
+## X6 — the item page is now read-guarded
+
+`/purchase-orders/[id]/items/[itemId]` required `purchase_order: "write"`, so OWNER could see
+a PO and every item on it but not an item's own page — an inconsistency with J26, which gave
+him read on every operational screen. It is now `read`, with the edit form and the
+cancel/remove controls behind `canWrite`.
+
+**Nothing is newly exposed.** Every role that can read `purchase_order` already sees all of
+this on the PO page; this is the same data on a narrower screen.
+
+## X7 — the gap: OTD and a closed job — FIXED, AND THIS ENTRY WAS WRONG
+
+> **Superseded by section AA (19 Nov 2026), which also corrects it.** Kept rather than
+> rewritten, because what it got wrong is worth seeing.
+
+**What this entry claimed:** that `v_otd` admits only items with `pending_qty <= 0`, so a
+manually closed job with a shortfall is absent from on-time delivery altogether.
+
+**That was read off `v_otd` as migration 0002 defined it, and it is not true of the view as
+it stands.** 0043 — the T1 auto-close — had already added `OR status = 'Closed'` to the
+filter. I asserted the old definition twice before checking the current one.
+
+The real position was two narrower faults, and **both flattered OTD rather than hiding
+things from it**:
+
+1. the filter also demanded `dispatched_qty > 0`, so a job closed with **nothing** delivered
+   was absent — the one genuine exploit;
+2. `on_time` was `last_dispatch_date <= committed_date`, so a **short delivery could score
+   as on time** — send 9,000 of 10,000 before the promised date, short-close the rest, and
+   the order counted as delivered on time.
+
+A job that was merely **late** was never helped by closing it: `last_dispatch_date <=
+committed_date` is already false. The lesson is the plain one — a derived definition has to be
+read at its newest migration, not its first. Fixed in section AA.
+
+## X8 — what did not change
+
+No existing column, view, trigger or screen changed behaviour. `v_po_item_status`, `v_otd`
+and the other nine views are untouched. `recompute_po_item_status` gained a branch and is
+otherwise character for character what 0043 established — the Cancelled early return, the
+T1 residual rule, the audit row and the write lock all intact. The importer does not write
+these columns, so every imported row has them null, which is correct: nobody has closed
+those jobs.
+
+---
+
+# Y — ups on the job card (migration 0049)
+
+Asked for by Utkarsh on 19 Nov 2026: *"add an option to add Number of ups in the job card"*.
+
+## Y1 — the third link in a chain that stopped two short
+
+J18 gave the card two derived figures and stopped:
+
+```
+parent sheets = bundles × sheets-per-bundle    what leaves the godown
+press sheets  = parent sheets × parts          the run length
+```
+
+Nothing said how many **cartons** come off that run, because the pieces printed on one press
+sheet was never recorded. So the question planning actually asks — *will this run make
+enough?* — could not be answered from the card at all. It was done on a phone, against
+`ordered_qty`, by whoever remembered the layout.
+
+```
+pieces = press sheets × ups
+```
+
+With `ups` the chain runs from the godown shelf to the order. One integer column on
+`job_card`; `pieces` is **derived** by `paperCount()` wherever it is shown, like the other two
+totals, on non-negotiable 2's rule.
+
+The concept was already named in this file without being recordable: **H2** rules out cost
+splitting across a gang because *"the allocation rule — by ups, by area, by quantity — is
+genuinely unknown."* Ups was something the system talked about and could not state.
+
+## Y2 — null means not recorded, and specifically not 1
+
+Every card entered before this genuinely has no ups. Defaulting them to 1 would assert that
+every existing job was single-up, and the pieces figure would then be a confident wrong
+answer on exactly the rows nobody has checked. `pieces` reports **null** instead, and the
+screen says "enter ups to see this".
+
+This is F8's rule, and the same one `v_job_opening` follows in reporting NULL rather than
+false for an unrecorded confirmation (W1).
+
+Note the asymmetry with `parts`, which *does* default to 1: **uncut is a real and ordinary
+state of a sheet. There is no such thing as a sheet with no ups.** Zero and negative are
+treated as typos and report null rather than a piece count of zero, which would read like a
+finished answer. `job_card_ups_positive` refuses them at the database too.
+
+## Y3 — ups is not a property of the sheet, and that decided three things
+
+`resolvedSheet()` answers "what is this card printing **on**", and when a card is ganged the
+run wins — one way, no merging (J15/I7). Ups does not belong in it: **four cartons ganged onto
+one plate have four different ups.** Reading it off the run would print the same piece count
+on every card of a gang, and the wrong one.
+
+Three consequences, all of them the data model answering a design question:
+
+1. **Not on `press_run`.** `job_card.press_run_id` already points a card at its run, so the
+   run can read the card's ups rather than hold a second copy that can disagree. The shared
+   `PaperQuantity` control takes ups as an *optional* input; the run sheet omits it and is
+   unchanged — no empty box, no field with nowhere to store it.
+2. **Not on the bulk release form.** That form's paper band writes to the `press_run`, and one
+   shared ups box across the cards it raises would be wrong *in principle*, not merely
+   unwired. It was built, then reverted for this reason.
+3. **Asked for separately on a ganged card.** The card form hides the whole paper band when
+   the sheet is the run's — but it now shows a lone **Ups** field in that case, or a ganged
+   card could never record one.
+
+## Y4 — where it appears
+
+On the card form (in the paper band, or on its own when ganged), on the card detail screen as
+a third figure, and on the **printed card** — which already had a five-column grid with three
+slots filled, so Ups and Pieces went into the two that were standing empty. The operator reads
+them beside parent sheets, parts and press sheets.
+
+## Y5 — what was considered and not built
+
+**A "short of the order" warning beside the pieces figure.** Built, then removed before it
+shipped. `job_card_item.planned_qty` may legitimately be less than `ordered_qty` when a run is
+split, so comparing pieces against the order would have cried "short" on every deliberately
+split run — a false-alarm generator, and not something that was asked for.
+
+**`design.ups`**, which is the purist's home since ups is a property of the layout. `design`
+has no rows and is on the SOP brief's hide list, so putting it there would be putting it
+nowhere. If designs are ever revived, this is the decision to revisit.
+
+## Y6 — what did not change
+
+One nullable column and one CHECK. No view, no trigger, no existing column and no existing
+row. Every card entered so far reads exactly as it did, with the new figure blank. The press
+run and its sheet are untouched. `paperCount()` gained an optional input and a third output;
+its two existing outputs are unchanged, which `tests/paper-count.test.ts` asserts directly.
+
+---
+
+# Z — job work (migration 0050)
+
+Asked for by Utkarsh on 19 Nov 2026: *"add an option to create job card for job work as
+well"*. Asked what job work should be in the MIS, he chose **a job number marked as job
+work** over a card floating free.
+
+## Z1 — job work is an order, not the absence of one
+
+`job_card_item.po_item_id` is NOT NULL, and `po_item` is the spine: stages, status, pending
+quantity, the Item Tracker and OTD all hang off it. A card with no item would appear on no
+screen and be measured by nothing.
+
+SOP Rule 1 says the same thing in the factory's own words — *"every job — PO, verbal, **job
+work** — is opened in MIS before anything else."* So job work gets a client, a job number and
+a quantity like any order, and then an ordinary job card. Nothing about the card had to
+change.
+
+## Z2 — what was actually missing was not a label
+
+The system already let a job be raised before its PO arrived (U1). `po_awaited` means *"no PO
+number, and a person typed this rather than importing it"* (N1) — a **prompt to go and fetch
+the document**.
+
+**For job work there is no document and never will be.** Without a marker, a job-work order
+would sit in the Item Tracker asking for a PO for as long as it existed — and the only way to
+silence it would be to type a PO number that does not exist, which is worse than the nag.
+
+So the fix went into the `po_awaited` expression itself rather than into screens that
+remember to special-case it:
+
+```
+po_awaited = po_no IS NULL AND import_batch_id IS NULL AND is_job_work = false
+```
+
+That expression exists in two places — `v_po_item_status` and `poAwaitedSql` in the
+purchase-orders module — and the comment on the latter already said they change together.
+They did.
+
+## Z3 — on the order, and NOT NULL DEFAULT false
+
+**On `purchase_order`, not `po_item`.** Job work is a fact about the arrangement with the
+client — they sent material and asked for a process — not about one carton. `po_awaited` is
+computed from the same table, so both are decided by one row rather than by a join that could
+disagree.
+
+**`NOT NULL DEFAULT false`, which is the opposite call from `ups` (Y2) and the confirmation
+columns (W1), deliberately.** Those record something that was never observed about existing
+rows, where a default would invent data. Here the default is a *fact*: no order has ever been
+job work, because until now nobody could say so. So every existing row is correctly false and
+nothing is being asserted that was not checked.
+
+**It says nothing about money.** Busy remains the book of record (SOP brief rule 5). This
+column carries no rate, no process charge and no GST treatment — only "no PO is coming".
+
+## Z4 — CREATE OR REPLACE, so no view was dropped
+
+Changing `po_awaited` meant touching `v_po_item_status`, which `v_otd`, `v_wip_ageing` and
+`v_client_summary` all select from. Postgres permits changing a view's **expressions** and
+**appending** to its column list in place, so `CREATE OR REPLACE` with `is_job_work` added
+**last** did it without dropping anything — the same move 0038 made, for the same reason.
+All four views were queried after the migration and all four still resolve.
+
+`is_job_work` is exposed on the view so screens read one definition instead of joining back
+to `purchase_order` and re-deriving it.
+
+## Z5 — the badge replaces "PO awaited" rather than joining it
+
+`JobWork` sits beside `PoAwaited` in the same file, grey for the same reason: section 7
+reserves red and amber for late and at risk, and job work is an ordinary kind of order, not a
+problem.
+
+**The two can never show together** — `po_awaited` is false for job work by the definition
+above, which `tests/job-work.test.ts` asserts directly. That is what lets a screen render one
+or the other without deciding a precedence.
+
+## Z6 — where it can be set, and the trap that was caught
+
+A native checkbox posting `"on"`, parsed as `z.literal("on").optional()` — the convention the
+job card's three checklist ticks already use, so the action never guesses which shape it holds.
+An unticked box posts **nothing at all**, so absent is coerced to `false` at the write.
+
+It appears on the capture form in **both** modes: a client can send material with a PO as
+easily as without one, so it is a fact about the arrangement rather than a consequence of
+having no document. In item mode it also rewrites the PO block — "None — job work" instead of
+the PO-awaited pill and its "record the number when it arrives" note.
+
+**It had to go on the header EDIT form too, and this is the trap.** That form posts the whole
+header. Without the box carrying `po.isJobWork` as its default, saving any other field would
+have posted no `isJobWork` at all and quietly turned a job-work order back into one that gets
+chased for a PO. `getPurchaseOrder` now reads the column for exactly that reason.
+
+## Z7 — not built
+
+**No separate number series.** Job work takes an ordinary `ITM-` job number, which is the
+point of Z1: it is a job like any other.
+
+**The badge is on the PO detail page only.** `PoAwaited` renders on nine surfaces; `JobWork`
+renders on one. The important half is already everywhere, because it is the *absence* of the
+PO-awaited nag, which comes from the view and therefore holds on every screen. The remaining
+eight are presentation and need `is_job_work` plumbed into their queries.
+
+## Z9 — `paperSupplyBy` defaults to `Party` on job work
+
+Asked for by Utkarsh on 19 Nov 2026, after Z7 had left it out.
+
+`SupplySelect` carried a standing argument against defaulting this field at all:
+
+> Blank is the honest default. Neither is a safe guess, and whichever was picked would be
+> PRINTED on the sheet the floor works from as though somebody had decided it.
+
+That objection is about guessing **without information**. Here there is information: "job
+work" means the client sent the material in, so `Party` is carried by a fact somebody already
+entered on the order. The comment in that component now records the exception beside the rule
+rather than being quietly contradicted by it.
+
+**The rule is three-way, and it lives in `src/modules/job-cards/supply.ts` as a pure
+function** — extracted for the reason `paperCount()` was (F25/J18): a rule about when a
+default is honest is far easier to settle against a test than against a rendered dropdown.
+
+1. **A stored answer always wins.** Somebody decided it; nothing overrides it.
+2. **Releasing a card for job work offers `Party`**, with a hint saying why, changeable
+   before saving.
+3. **Everything else is blank.**
+
+**Why `mode` is part of it, and the whole reason the function exists rather than an inline
+`??`.** On an *existing* job-work card whose supply was never recorded, rule 1 finds nothing
+and rule 2 would fire — so opening that card and saving any other field would write `Party`
+into a column nobody had answered. **That is the backfill W1 and Y2 both refuse, arriving
+through a form instead of through a migration.** Restricting it to release is the fix, and
+`tests/job-work.test.ts` pins it in both directions, including the empty-string case.
+
+**`plateSupplyBy` is still blank on job work**, deliberately: a client who sends board has
+said nothing about who makes the plate.
+
+`is_job_work` is read by `getItemStatus` and the three `releasable*` queries — all of them
+release paths — and reaches the form as one prop.
+
+## Z8 — what did not change
+
+No existing row changed meaning: `po_awaited` is false for job work, and job work is false
+everywhere, so every number on every screen reads exactly as it did. OTD is untouched. No
+trigger, no function, no other view and no existing column changed. The job card, its forms
+and its printed sheet are untouched — job work needed nothing from them.
+
+---
+
+# AA — OTD sees a job closed by hand (migration 0051)
+
+Asked for by Utkarsh on 19 Nov 2026: *"fix the OTD thing too"*.
+
+## AA1 — first, what X7 got wrong
+
+X7 said a manually closed job disappears from OTD. **It does not.** That was read off
+`v_otd` as 0002 wrote it; 0043 had already added `OR status = 'Closed'`. The actual faults
+were narrower, and both **flattered** the number:
+
+| | fault | effect |
+|---|---|---|
+| 1 | the filter also demanded `dispatched_qty > 0` | a job closed with **nothing** delivered was absent from the measure entirely |
+| 2 | `on_time` was `last_dispatch_date <= committed_date` | a **short** delivery could score as **on time** |
+
+Fault 1 is the genuine exploit: close it before the first challan and OTD never knew it
+existed. Fault 2 is subtler and arguably worse — not a disappearance but a false success.
+
+And a job that is simply **late** was never helped by closing it, because
+`last_dispatch_date <= committed_date` is already false. The gap was never "late jobs
+vanish"; it was "undelivered jobs vanish, and short ones can pass".
+
+**The lesson:** a derived definition has to be read at its newest migration, not its first.
+`v_otd` is defined in 0002, redefined in 0006, redefined again in 0043.
+
+## AA2 — the rule now
+
+- A short-closed job is **admitted whether or not anything was dispatched.**
+- A short-closed job is **never on time.** The whole premise of `fulfilment_date` is *"the
+  date by which the whole ordered quantity had left"*, and for a short close it never did.
+- Its fulfilment date is **the day it was closed.**
+
+That last one needed a definition that covers both kinds of ending, and there is one: **the
+date the order stopped being owed.** For a completed item that is the day the last piece
+left — which is what `last_dispatch_date` already meant. For a short close nothing more was
+ever going to leave, so it is the day somebody said so. Converted at Asia/Kolkata (C10), or
+a close entered in the evening would land on the previous day.
+
+A `settled` CTE writes that date **once**, because it feeds `fulfilment_date`, `days_late`,
+`lead_time_days` and `fulfilment_month`, and four copies of a CASE is how one of them ends
+up different from the other three.
+
+## AA3 — T1 keeps its scoring, deliberately
+
+The auto-close (0043) is untouched. A residual under 1,500 whose committed month has passed
+still retires itself, and if the bulk went out on time that order **still counts on time**.
+
+Three reasons: it was Utkarsh's deliberate decision; it is tightly fenced where a manual
+close is not; and rescoring it here would rewrite history for orders already retired under a
+rule nobody has changed. The two are told apart by `closed_manually_at`, which only a
+person's close ever sets — `tests/manual-close.test.ts` pins both sides, including a T1
+residual that must still read on time.
+
+## AA4 — F8 is kept
+
+An item with no committed date is **still excluded**. There is nothing to be late against,
+and a short close must not invent a promise that was never made. Note this is not a loophole:
+such an item was never in OTD to begin with.
+
+## AA5 — the acceptance check holds by construction
+
+The SOP brief requires that *"OTD in `v_otd` is unchanged by the migration itself"*.
+
+Every new term is guarded by `closed_manually_at IS NOT NULL`, and **no row anywhere has
+that set** — nothing has ever been closed by hand, on dev or on production. So `v_otd`
+returns exactly the rows it returned before 0051. That is an argument from the shape of the
+change, not a measurement, and it is the stronger of the two.
+
+## AA6 — how it was done without dropping anything
+
+`v_po_item_status` gains `closed_manually_at`, appended **last**, so `CREATE OR REPLACE`
+works in place — the third time that move has been used (0038, 0050, here).
+
+`v_otd` changes only **expressions and its WHERE**; its column names, order and types are
+identical, which is what lets it be replaced in place too. Verified after applying: all
+fourteen columns in the same positions with the same types, and `v_otd`, `v_po_item_status`,
+`v_wip_ageing` and `v_client_summary` all still resolve.
+
+## AA7 — what this does not do
+
+It does not change any dashboard tile, query or screen. OTD is read from `v_otd` everywhere,
+so every consumer picked the change up with no code change at all — which is the point of
+the measure living in a view.
+
+It also does not weight the shortfall. A job short by 50 pieces and one short by 5,000 both
+score as not on time. A "substantially delivered" threshold would be a number nobody has
+measured, and H2's objection applies: an invented figure is indistinguishable from a measured
+one once it is in a column.

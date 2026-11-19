@@ -251,6 +251,7 @@ async function CardForm({ poItemId }: { poItemId: string }) {
           papers={papers}
           gsmTolerancePct={gsmTolerance}
           preferredMaterialId={detail?.designMaterialId}
+          isJobWork={item.isJobWork}
         />
       </div>
     </>

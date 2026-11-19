@@ -7,7 +7,9 @@ import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { jobTypeEnum, priorityEnum } from "@/db/schema/enums";
+import { Textarea } from "@/components/ui/textarea";
+import { confirmationSourceEnum, jobTypeEnum, priorityEnum } from "@/db/schema/enums";
+import { nowISTLocalInput } from "@/lib/dates";
 import type { ClientOption } from "@/modules/designs/queries";
 import {
   addPoItemAction,
@@ -15,12 +17,17 @@ import {
   removePoItemAction,
   removePurchaseOrderAction,
   setPoItemCancelledAction,
+  setPoItemManuallyClosedAction,
   setPurchaseOrderCancelledAction,
   updatePoHeaderAction,
   updatePoItemAction,
   type FormState,
 } from "@/modules/purchase-orders/actions";
-import type { DesignOption, LinkablePurchaseOrder } from "@/modules/purchase-orders/queries";
+import type {
+  ConfirmationTaker,
+  DesignOption,
+  LinkablePurchaseOrder,
+} from "@/modules/purchase-orders/queries";
 
 import { PoAwaited } from "./po-awaited";
 
@@ -92,6 +99,7 @@ export function PoHeaderForm({
     clientId: string;
     poNo: string | null;
     poAwaited: boolean;
+    isJobWork: boolean;
     poDate: string;
     fileUrl: string | null;
     notes: string | null;
@@ -162,6 +170,28 @@ export function PoHeaderForm({
           />
         </div>
 
+        {/*
+          JOB WORK (section Z). This form posts the whole header, so the box has
+          to be here AND carry the stored value: without it, saving any other
+          field would post no isJobWork at all and quietly turn a job-work order
+          back into one that gets chased for a PO.
+        */}
+        <div className="space-y-2 sm:col-span-2">
+          <label className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              name="isJobWork"
+              defaultChecked={po.isJobWork}
+              className="accent-primary mt-0.5 size-4"
+            />
+            <span className="text-[13px]">Job work — the client&rsquo;s own material</span>
+          </label>
+          <p className="text-muted-foreground text-xs">
+            Never chased for a PO, because none is coming. The job still runs through the
+            plan and the floor like any other.
+          </p>
+        </div>
+
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor={`${formId}-notes`}>Notes</Label>
           <Input id={`${formId}-notes`} name="notes" defaultValue={po.notes ?? ""} />
@@ -204,11 +234,16 @@ export function PoItemForm({
   purchaseOrderId,
   item,
   designs,
+  confirmationTakers = [],
+  defaultConfirmedBy = "",
 }: {
   mode: "add" | "edit";
   purchaseOrderId: string;
   item?: ItemValues;
   designs: DesignOption[];
+  /** Add mode only — W. Editing an item never restates its confirmation. */
+  confirmationTakers?: ConfirmationTaker[];
+  defaultConfirmedBy?: string;
 }) {
   const [state, formAction] = useActionState(
     mode === "add" ? addPoItemAction : updatePoItemAction,
@@ -334,6 +369,77 @@ export function PoItemForm({
           <Label htmlFor={`${formId}-remarks`}>Remarks</Label>
           <Input id={`${formId}-remarks`} name="remarks" defaultValue={item?.remarks ?? ""} />
         </div>
+
+        {/* W — SOP Rule 1. Add only. An item joining an order later was
+            confirmed at its own moment, not the order's, which is why the
+            columns live on the item and why this is asked again here.
+            Deliberately absent in edit mode: see parseExistingItem. */}
+        {mode === "add" ? (
+          <div className="space-y-2 sm:col-span-2">
+            <div className="bg-muted/40 grid gap-4 rounded-lg border p-4 sm:grid-cols-3">
+              <div className="space-y-1 sm:col-span-3">
+                <h3 className="text-sm font-medium">How this item was confirmed</h3>
+                <p className="text-muted-foreground text-xs">
+                  Required. Starts the two-working-hour clock on SOP Rule 1.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`${formId}-confirmationSource`}>Confirmed by</Label>
+                <select
+                  id={`${formId}-confirmationSource`}
+                  name="confirmationSource"
+                  required
+                  defaultValue=""
+                  className={inputClass}
+                >
+                  <option value="" disabled>
+                    Choose…
+                  </option>
+                  {confirmationSourceEnum.enumValues.map((v) => (
+                    <option key={v} value={v}>
+                      {v === "PO" ? "Written PO" : v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`${formId}-confirmedBy`}>Taken by</Label>
+                <select
+                  id={`${formId}-confirmedBy`}
+                  name="confirmedBy"
+                  required
+                  defaultValue={defaultConfirmedBy}
+                  className={inputClass}
+                >
+                  <option value="" disabled>
+                    Choose…
+                  </option>
+                  {confirmationTakers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`${formId}-confirmedAt`}>Confirmed at</Label>
+                <Input
+                  id={`${formId}-confirmedAt`}
+                  name="confirmedAt"
+                  type="datetime-local"
+                  required
+                  defaultValue={nowISTLocalInput()}
+                />
+                <p className="text-muted-foreground text-xs">
+                  Indian time. Change it if the order came in earlier.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-4">
@@ -553,6 +659,133 @@ export function ItemPoControls({
             </select>
           </div>
           <Submit label="Move item" variant="outline" />
+        </form>
+      )}
+      <Feedback state={state} />
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Manual job close — section X                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Closing a job by hand, and reopening one.
+ *
+ * Rendered only for ADMIN, DATA_ENTRY_FULL and OWNER — the page decides, from
+ * the same role list the action enforces, so a button is never offered to
+ * somebody the wrapper will refuse (the lesson of the J26 correction).
+ *
+ * THE CARD STATES THE WRITE-OFF IN PIECES. "Close this job" is abstract;
+ * "accepts that 2,400 pcs will never be delivered" is the actual decision, and
+ * it is the number a person should see before they type a reason. Where the
+ * fence has not passed yet the form is not rendered at all and the date is
+ * given instead — an input that will be refused on submit is worse than no
+ * input.
+ */
+export function PoItemCloseControl({
+  itemId,
+  itemCode,
+  pendingQty,
+  cancelled,
+  closedManuallyAt,
+  closeReason,
+  closedByName,
+  fence,
+}: {
+  itemId: string;
+  itemCode: string;
+  pendingQty: number;
+  cancelled: boolean;
+  closedManuallyAt: Date | null;
+  closeReason: string | null;
+  closedByName: string | null;
+  fence: { poDate: string; earliest: string; minDays: number; eligible: boolean } | null;
+}) {
+  const [state, formAction] = useActionState(setPoItemManuallyClosedAction, initialState);
+  const reasonId = useId();
+  const closed = closedManuallyAt !== null;
+
+  if (closed) {
+    return (
+      <section className="rounded-lg border p-4">
+        <h2 className="text-sm font-medium">Reopen job</h2>
+        <p className="text-muted-foreground mt-1 text-[13px]">
+          {itemCode} was closed by hand
+          {closedByName ? ` by ${closedByName}` : ""} on{" "}
+          {closedManuallyAt.toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            timeZone: "Asia/Kolkata",
+          })}
+          . Reopening puts it back to whatever the dispatched quantity says.
+        </p>
+        <p className="bg-muted/40 mt-2 rounded-md border p-2 text-[13px] italic">
+          “{closeReason}”
+        </p>
+
+        <form action={formAction} className="mt-3">
+          <input type="hidden" name="id" value={itemId} />
+          <input type="hidden" name="close" value="false" />
+          <Submit label="Reopen job" variant="outline" />
+        </form>
+        <Feedback state={state} />
+      </section>
+    );
+  }
+
+  if (cancelled) {
+    return (
+      <section className="rounded-lg border p-4">
+        <h2 className="text-sm font-medium">Close job</h2>
+        <p className="text-muted-foreground mt-1 text-[13px]">
+          {itemCode} is cancelled, so there is nothing to close — a cancelled order
+          was never delivered. Reinstate it first if the order was real after all.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-lg border p-4">
+      <h2 className="text-sm font-medium">Close job</h2>
+      <p className="text-muted-foreground mt-1 text-[13px]">
+        For a job that is over without being finished — the balance will never be
+        printed. {itemCode} stops counting as work owed and{" "}
+        <strong className="text-foreground">
+          {pendingQty.toLocaleString("en-IN")} pcs are written off
+        </strong>
+        . Its stage events and dispatches stay exactly as they are. This is not
+        the same as cancelling, which says the order never happened.
+      </p>
+
+      {fence && !fence.eligible ? (
+        <p className="border-at-risk/40 bg-at-risk-bg mt-3 rounded-lg border p-3 text-[13px]">
+          Not yet. A job can only be closed by hand {fence.minDays} days after its
+          PO date — this one is dated {fence.poDate}, so the earliest is{" "}
+          <strong>{fence.earliest}</strong>.
+        </p>
+      ) : (
+        <form action={formAction} className="mt-3 space-y-2">
+          <input type="hidden" name="id" value={itemId} />
+          <input type="hidden" name="close" value="true" />
+
+          <Label htmlFor={reasonId}>Why is this job being closed?</Label>
+          <Textarea
+            id={reasonId}
+            name="reason"
+            rows={3}
+            required
+            minLength={10}
+            maxLength={500}
+            placeholder="e.g. Client confirmed on call they do not want the balance 2,400 pcs — season over."
+          />
+          <p className="text-muted-foreground text-xs">
+            Read back at review. A reason is required and recorded against your name.
+          </p>
+          <Submit label="Close job" variant="outline" />
         </form>
       )}
       <Feedback state={state} />

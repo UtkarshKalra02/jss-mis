@@ -1,0 +1,67 @@
+-- ===========================================================================
+-- Ups on the job card (section Y) — the multiplier that turns sheets into
+-- pieces.
+--
+-- Asked for by Utkarsh on 19 Nov 2026: "add an option to add Number of ups in
+-- the job card".
+--
+-- The concept was already named in the schema's own reasoning without ever
+-- being recorded: H2 rules out cost splitting across a gang because "the
+-- allocation rule - by ups, by area, by quantity - is genuinely unknown". Ups
+-- was a thing the system talked about and could not state. Now it can.
+--
+-- WHAT UPS COMPLETES. The card already derives two figures from quantity,
+-- bundle and parts (J18):
+--
+--   parent sheets = bundles x sheets-per-bundle     -- what leaves the godown
+--   press sheets  = parent sheets x parts           -- the run length
+--
+-- and then stops. Nothing on the card says how many CARTONS come off that run,
+-- because the number of finished pieces printed on one press sheet was never
+-- recorded. So the one question planning actually asks — "will this run make
+-- enough?" — could not be answered from the card at all; it was done on a
+-- phone, against ordered_qty, by whoever remembered the layout.
+--
+--   pieces = press sheets x ups
+--
+-- is the third link, and with it the chain runs from the godown to the order.
+--
+-- NOT STORED, DERIVED — the figure, not the input. `ups` is a fact about the
+-- layout and is typed in. `pieces` is computed by paperCount() wherever it is
+-- shown, on non-negotiable 2's rule, exactly as the other two totals are: a
+-- stored total is right until somebody corrects the quantity and looks equally
+-- authoritative afterwards.
+--
+-- WHY IT IS ON job_card AND NOT ON design. Ups is genuinely a property of the
+-- layout, so `design` would be the purist's home. But `design` has no rows and
+-- is on the brief's hide list, so putting it there would be putting it nowhere.
+-- The card is where the floor reads it and where the sheet arithmetic already
+-- lives.
+--
+-- WHY NOT ON press_run, WHICH SHARES THE SAME PAPER BAND. job_card.press_run_id
+-- already points a card at its run, so the run can read the card's ups rather
+-- than hold a second copy that can disagree with it. The shared PaperQuantity
+-- component takes ups as an optional input for the same reason — one definition,
+-- the run sheet unchanged. If the run sheet is ever raised independently of a
+-- card, this is the decision to revisit.
+--
+-- NULLABLE, and null means "not recorded" rather than 1. This is the committed
+-- _date rule (F8) again: every one of the cards already entered genuinely has no
+-- ups, and defaulting them to 1 would quietly assert that every existing job was
+-- single-up — which would make the pieces figure wrong on exactly the rows
+-- nobody has checked. `parts` could default to 1 because uncut is a real and
+-- ordinary state; there is no such thing as a sheet with no ups.
+--
+-- NOTHING EXISTING CHANGES. One nullable column and one CHECK. No view, no
+-- trigger, no existing column or row is touched, and every card entered so far
+-- reads exactly as it did.
+-- ===========================================================================
+
+ALTER TABLE "job_card" ADD COLUMN "ups" integer;
+--> statement-breakpoint
+
+-- Zero ups is not "none per sheet", it is a typo — and it would make the
+-- pieces figure zero, which reads like a finished answer.
+ALTER TABLE "job_card" ADD CONSTRAINT "job_card_ups_positive" CHECK (
+  "ups" IS NULL OR "ups" > 0
+);

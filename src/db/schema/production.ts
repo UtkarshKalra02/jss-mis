@@ -348,6 +348,26 @@ export const jobCard = pgTable(
     paperSheetsPerBundle: integer(),
     paperParts: integer(),
 
+    /**
+     * How many finished pieces are printed on one press sheet (section Y).
+     *
+     * The third multiplier in the chain J18 started, and the one that makes the
+     * card answer "will this run make enough?":
+     *
+     *   parent sheets = bundles × sheets-per-bundle   — what leaves the godown
+     *   press sheets  = parent sheets × parts         — the run length
+     *   pieces        = press sheets × ups            — what the client gets
+     *
+     * NULL means NOT RECORDED, not 1. Every card entered before this genuinely
+     * has no ups, and defaulting them to single-up would assert something about
+     * them that nobody has checked — the committed_date rule (F8). `parts` can
+     * default to 1 because uncut is a real state; a sheet with no ups is not.
+     *
+     * The pieces figure itself is never stored. `paperCount()` derives it
+     * wherever it is shown, like the other two totals (non-negotiable 2).
+     */
+    ups: integer(),
+
     paperRemarks: text(),
 
     /**
@@ -427,6 +447,13 @@ export const jobCard = pgTable(
     ),
     check("job_card_paper_qty_positive", sql`${t.paperQty} is null or ${t.paperQty} > 0`),
     check("job_card_paper_parts_positive", sql`${t.paperParts} is null or ${t.paperParts} > 0`),
+
+    /**
+     * Zero ups is not "none per sheet", it is a typo — and it would make the
+     * pieces figure read zero, which looks like a finished answer rather than
+     * a missing one (section Y).
+     */
+    check("job_card_ups_positive", sql`${t.ups} is null or ${t.ups} > 0`),
 
     // A quantity with no bundle is not a fact — 5 of what? The pair travels
     // together or not at all, and the database says so rather than trusting

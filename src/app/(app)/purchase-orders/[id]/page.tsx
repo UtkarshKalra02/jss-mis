@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
 import { can } from "@/auth/roles";
-import { PoAwaited } from "@/components/purchase-orders/po-awaited";
+import { JobWork, PoAwaited } from "@/components/purchase-orders/po-awaited";
 import {
   PoHeaderForm,
   PoItemForm,
@@ -15,6 +15,7 @@ import { listClientOptions } from "@/modules/designs/queries";
 import { MergeSameName } from "@/components/purchase-orders/merge-same-name";
 import {
   getPurchaseOrder,
+  listConfirmationTakers,
   listDesignOptions,
   listPoItems,
   sameNameGroups,
@@ -42,10 +43,12 @@ export default async function PurchaseOrderPage({
   const po = await getPurchaseOrder(id);
   if (!po) notFound();
 
-  const [items, clients, designs] = await Promise.all([
+  const [items, clients, designs, confirmationTakers] = await Promise.all([
     listPoItems(id),
     listClientOptions(),
     listDesignOptions(),
+    // W: "Add an item" asks how it was confirmed. `user` is the default answer.
+    listConfirmationTakers(),
   ]);
 
   const designsForClient = designs.filter((d) => d.clientId === po.clientId);
@@ -66,6 +69,8 @@ export default async function PurchaseOrderPage({
           {po.poNo ? ` · their PO ${po.poNo}` : ""}
         </span>
         {po.poAwaited ? <PoAwaited /> : null}
+        {/* Mutually exclusive with PO awaited, by the definition in 0050. */}
+        {po.isJobWork ? <JobWork /> : null}
         <span
           className={cn(
             "text-[13px]",
@@ -168,7 +173,13 @@ export default async function PurchaseOrderPage({
       {canWrite ? (
         <div className="mt-8 max-w-3xl space-y-4">
           <PoHeaderForm po={po} clients={clients} />
-          <PoItemForm mode="add" purchaseOrderId={id} designs={designsForClient} />
+          <PoItemForm
+            mode="add"
+            purchaseOrderId={id}
+            designs={designsForClient}
+            confirmationTakers={confirmationTakers}
+            defaultConfirmedBy={user.id}
+          />
           <PurchaseOrderControls
             poId={po.id}
             internalNo={po.internalNo}

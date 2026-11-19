@@ -394,6 +394,7 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
                 papers={papers}
                 gsmTolerancePct={gsmTolerance}
                 preferredMaterialId={detail?.designMaterialId}
+                isJobWork={item.isJobWork}
               />
             ) : null}
           </Panel>

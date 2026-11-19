@@ -208,6 +208,8 @@ export async function searchItems(
       poInternalNo: vPoItemStatus.poInternalNo,
       clientPoNo: vPoItemStatus.clientPoNo,
       poAwaited: vPoItemStatus.poAwaited,
+      /** Section Z — defaults Paper supplied by to Party on release. */
+      isJobWork: vPoItemStatus.isJobWork,
       clientId: vPoItemStatus.clientId,
       poDate: vPoItemStatus.poDate,
       orderedQty: vPoItemStatus.orderedQty,

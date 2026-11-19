@@ -623,3 +623,74 @@ describe("the job card list search", () => {
     expect(Array.isArray(await searchJobCards("kbc carton hold"))).toBe(true);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Ups on the card — section Y                                                */
+/* -------------------------------------------------------------------------- */
+
+describe("ups on the job card", () => {
+  it("stores a positive ups and reads it back", async () => {
+    await inRollback(async (tx) => {
+      const { itemId } = await makeItem(tx);
+      const card = await release(tx, itemId, "2026-05-10", { ups: 4 });
+
+      const [row] = await tx.select({ ups: jobCard.ups }).from(jobCard).where(eq(jobCard.id, card.id));
+      expect(row!.ups).toBe(4);
+    });
+  });
+
+  it("accepts a card with no ups at all — null means not recorded", async () => {
+    await inRollback(async (tx) => {
+      const { itemId } = await makeItem(tx);
+      const card = await release(tx, itemId);
+
+      const [row] = await tx.select({ ups: jobCard.ups }).from(jobCard).where(eq(jobCard.id, card.id));
+      expect(row!.ups).toBeNull();
+    });
+  });
+
+  /**
+   * Zero would make the pieces figure read 0, which looks like a finished
+   * answer rather than a missing one.
+   */
+  it("refuses zero and negative ups", async () => {
+    await inRollback(async (tx) => {
+      const { itemId } = await makeItem(tx);
+
+      for (const ups of [0, -1]) {
+        const { threw, message } = await expectFailure(tx, (sp) =>
+          release(sp, itemId, "2026-05-10", { ups }),
+        );
+        expect(threw).toBe(true);
+        expect(message).toContain("job_card_ups_positive");
+      }
+    });
+  });
+
+  it("takes ups off the release form, and leaves a blank box as undefined", async () => {
+    const form = new FormData();
+    form.set("poItemId", ITEM_ID);
+    for (const k of [
+      "plannedQty", "plannedDate", "paperSupplyBy", "plateSupplyBy",
+      "plateJobId", "machineId", "notes",
+    ]) {
+      form.set(k, "");
+    }
+
+    form.set("ups", "");
+    const blank = parseReleaseForm(form);
+    expect(blank.success).toBe(true);
+    if (blank.success) expect(blank.data.ups).toBeUndefined();
+
+    form.set("ups", "6");
+    const typed = parseReleaseForm(form);
+    expect(typed.success).toBe(true);
+    if (typed.success) expect(typed.data.ups).toBe(6);
+
+    form.set("ups", "0");
+    expect(parseReleaseForm(form).success).toBe(false);
+
+    form.set("ups", "2.5");
+    expect(parseReleaseForm(form).success).toBe(false);
+  });
+});

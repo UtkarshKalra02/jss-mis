@@ -27,6 +27,14 @@
  * A grant is what lets him REACH a screen; what he may actually write is
  * decided by the audit wrapper and is narrower than the grant.
  *
+ * ONE OWNER POWER IS NOT VISIBLE IN THIS MATRIX AT ALL: closing a job by hand
+ * (section X). `purchase_order` stays "read" for OWNER — widening it to reach
+ * one button would hand him the whole order book — so that grant is a role list
+ * in the action plus the fourth B2 exception in src/db/audit.ts. It is the one
+ * deliberate exception to "prefer a resource" below, because the whole point of
+ * it is to admit a role that must remain read-only on the resource. Looking
+ * here alone will not tell you he can do it; this paragraph is why.
+ *
  * Enforcement is not here in any case. The hard check is inside the audit
  * wrapper, so a future screen that forgets to call assertCan() still cannot let
  * an OWNER write.
@@ -472,6 +480,29 @@ export function can(role: Role, resource: Resource, access: Access = "read"): bo
   if (!granted) return false;
   return RANK[granted] >= RANK[access];
 }
+
+/**
+ * Who may close a job by hand, or reopen one (section X).
+ *
+ * Utkarsh, 18 Nov 2026: "only by the DEO and admin and owner". DEO is
+ * DATA_ENTRY_FULL — the order book — and NOT DATA_ENTRY, which is the store's
+ * typist and has no purchase_order access at all (O5).
+ *
+ * This is a role list rather than a `Resource`, which is the one place in this
+ * file that departs from "prefer a resource", and deliberately: OWNER must keep
+ * `purchase_order: "read"`, so there is no grant that admits him without
+ * handing him the whole order book. The real refusal is the fourth B2 exception
+ * in src/db/audit.ts; this set is what the action checks and what the screen
+ * reads to decide whether to render the control at all.
+ *
+ * Both the page and the action import THIS set. A second copy is how a button
+ * ends up offered to somebody the wrapper will refuse.
+ */
+export const JOB_CLOSE_ROLES: ReadonlySet<Role> = new Set<Role>([
+  "ADMIN",
+  "DATA_ENTRY_FULL",
+  "OWNER",
+]);
 
 /** Thrown by assertCan. Caught at the route boundary and rendered as 403. */
 export class ForbiddenError extends Error {

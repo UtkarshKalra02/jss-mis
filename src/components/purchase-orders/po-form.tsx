@@ -9,12 +9,16 @@ import { QuickDesignDialog } from "@/components/designs/quick-design-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { jobTypeEnum, priorityEnum } from "@/db/schema/enums";
-import { todayIST } from "@/lib/dates";
+import { confirmationSourceEnum, jobTypeEnum, priorityEnum } from "@/db/schema/enums";
+import { nowISTLocalInput, todayIST } from "@/lib/dates";
 import { formatCommittedDate, formatQty } from "@/lib/format";
 import { createPurchaseOrderAction, type FormState } from "@/modules/purchase-orders/actions";
 import type { ClientOption } from "@/modules/designs/queries";
-import type { DesignOption, RepeatItemOption } from "@/modules/purchase-orders/queries";
+import type {
+  ConfirmationTaker,
+  DesignOption,
+  RepeatItemOption,
+} from "@/modules/purchase-orders/queries";
 import { matchesQuery, queryWords } from "@/lib/search";
 import { nearbyItemNames } from "@/modules/items/near-name";
 
@@ -110,11 +114,17 @@ export function PoForm({
   clients,
   designs,
   repeatableItems,
+  confirmationTakers,
+  defaultConfirmedBy,
   returnTo,
 }: {
   mode?: "po" | "item";
   clients: ClientOption[];
   designs: DesignOption[];
+  /** Who can be named as having taken the confirmation (W). */
+  confirmationTakers: ConfirmationTaker[];
+  /** The signed-in person, pre-selected — usually, not always, the right answer. */
+  defaultConfirmedBy: string;
   /** Every item ever made, every client — the repeat list (N3). */
   repeatableItems: RepeatItemOption[];
   /**
@@ -132,7 +142,24 @@ export function PoForm({
   const [clientId, setClientId] = useState("");
   const [repeatQuery, setRepeatQuery] = useState("");
   const [poNo, setPoNo] = useState("");
+  const [isJobWork, setIsJobWork] = useState(false);
   const [poDate, setPoDate] = useState(todayIST());
+
+  /*
+   * SOP Rule 1 (W). Defaults chosen so the common case is zero typing: the
+   * order was confirmed just now, by whoever is signed in and entering it.
+   * Both are editable, because the common case is not the only one — an order
+   * confirmed on WhatsApp yesterday evening and typed up this morning is
+   * exactly the case the two-hour measure exists to catch, and a default that
+   * could not be moved would quietly report it as instant.
+   */
+  const [confirmationSource, setConfirmationSource] = useState<string>(
+    // In item mode there IS no PO document, so "PO" would be a lie offered as
+    // a default. Blank and required makes somebody answer.
+    mode === "item" ? "" : "PO",
+  );
+  const [confirmedBy, setConfirmedBy] = useState(defaultConfirmedBy);
+  const [confirmedAt, setConfirmedAt] = useState(nowISTLocalInput());
   const [fileUrl, setFileUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<ItemDraft[]>([blankItem()]);
@@ -228,11 +255,18 @@ export function PoForm({
               <div className="space-y-2">
                 <Label>Client&rsquo;s PO</Label>
                 <div className="flex h-9 items-center">
-                  <PoAwaited />
+                  {isJobWork ? (
+                    <span className="text-muted-foreground text-[13px]">
+                      None — job work
+                    </span>
+                  ) : (
+                    <PoAwaited />
+                  )}
                 </div>
                 <p className="text-muted-foreground text-xs">
-                  Record the number on the order&rsquo;s page when it arrives — or move the
-                  item onto the PO if it was captured separately.
+                  {isJobWork
+                    ? "Job work is not chased for a PO, because none is coming."
+                    : "Record the number on the order\u2019s page when it arrives — or move the item onto the PO if it was captured separately."}
                 </p>
               </div>
             </>
@@ -282,6 +316,117 @@ export function PoForm({
               />
             </div>
           )}
+
+          {/*
+            JOB WORK (section Z). Offered in both modes: a client can send
+            material with a PO as easily as without one, so it is a fact about
+            the arrangement rather than a consequence of having no document.
+
+            A native checkbox posting "on", parsed as the job card's three
+            checklist ticks are — one convention for booleans on a form, so the
+            action never has to guess which shape it is holding.
+          */}
+          <div className="space-y-2 sm:col-span-2">
+            <label className="flex cursor-pointer items-start gap-2">
+              <input
+                type="checkbox"
+                name="isJobWork"
+                checked={isJobWork}
+                onChange={(e) => setIsJobWork(e.target.checked)}
+                className="accent-primary mt-0.5 size-4"
+              />
+              <span className="text-[13px]">
+                Job work — the client&rsquo;s own material
+              </span>
+            </label>
+            <p className="text-muted-foreground text-xs">
+              We do a process on material the client sent in. The job still gets a job
+              number and goes through the plan and the floor like any other — it is just
+              never chased for a PO, because none is coming.
+            </p>
+          </div>
+
+          {/* ------------------------------------------------------------
+              SOP RULE 1 (W) — "no job number, no machine".
+
+              Asked once for the whole order and written onto every item: a
+              purchase order arrives as a single confirmation. The point of
+              recording it is the two-working-hour target — v_job_opening
+              measures (opened − confirmed) against the shift calendar, so
+              an order confirmed at 18:00 and opened at 10:00 next morning
+              reads as thirty working minutes, not sixteen hours.
+              ------------------------------------------------------------ */}
+          <div className="space-y-2 sm:col-span-2">
+            <div className="bg-muted/40 grid gap-4 rounded-lg border p-4 sm:grid-cols-3">
+              <div className="space-y-2 sm:col-span-3">
+                <h3 className="text-sm font-medium">How the customer confirmed</h3>
+                <p className="text-muted-foreground text-xs">
+                  Required. The clock on SOP Rule 1 starts here — the target is to open the
+                  job within two working hours of this moment.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`${formId}-confirmationSource`}>Confirmed by</Label>
+                <select
+                  id={`${formId}-confirmationSource`}
+                  name="confirmationSource"
+                  required
+                  value={confirmationSource}
+                  onChange={(e) => setConfirmationSource(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="" disabled>
+                    Choose…
+                  </option>
+                  {confirmationSourceEnum.enumValues.map((v) => (
+                    <option key={v} value={v}>
+                      {v === "PO" ? "Written PO" : v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`${formId}-confirmedBy`}>Taken by</Label>
+                <select
+                  id={`${formId}-confirmedBy`}
+                  name="confirmedBy"
+                  required
+                  value={confirmedBy}
+                  onChange={(e) => setConfirmedBy(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="" disabled>
+                    Choose…
+                  </option>
+                  {confirmationTakers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-muted-foreground text-xs">
+                  Who took the order, not who is typing it.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`${formId}-confirmedAt`}>Confirmed at</Label>
+                <Input
+                  id={`${formId}-confirmedAt`}
+                  name="confirmedAt"
+                  type="datetime-local"
+                  required
+                  value={confirmedAt}
+                  onChange={(e) => setConfirmedAt(e.target.value)}
+                />
+                <p className="text-muted-foreground text-xs">
+                  Indian time. Change it if the order came in earlier.
+                </p>
+              </div>
+            </div>
+          </div>
 
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor={`${formId}-notes`}>Notes</Label>

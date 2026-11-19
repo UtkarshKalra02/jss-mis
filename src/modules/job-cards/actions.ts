@@ -191,6 +191,7 @@ export async function releaseJobCardAction(
       paperSheetsPerBundle: v.paperSheetsPerBundle ?? null,
       paperBundle: v.paperBundle ?? null,
       paperParts: v.paperParts ?? null,
+      ups: v.ups ?? null,
       paperRemarks: v.paperRemarks ?? null,
       plateJobId: v.plateJobId ?? null,
       paperSupplyBy: v.paperSupplyBy ?? null,
@@ -509,6 +510,7 @@ export async function updateJobCardPlanAction(
           paperSheetsPerBundle: v.paperSheetsPerBundle ?? null,
           paperBundle: v.paperBundle ?? null,
           paperParts: v.paperParts ?? null,
+          ups: v.ups ?? null,
           paperRemarks: v.paperRemarks ?? null,
 
           execNoOfColours: v.execNoOfColours ?? null,

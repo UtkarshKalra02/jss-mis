@@ -116,6 +116,24 @@ export const poItemStatusEnum = pgEnum("po_item_status", [
 export const priorityEnum = pgEnum("priority", ["Normal", "High", "Urgent"]);
 
 /**
+ * How an order arrived and was confirmed by the customer — SOP Rule 1.
+ *
+ * Three values because those are the three ways orders actually reach JSS. A
+ * written PO is the clean case; WhatsApp and verbal are the common ones, and
+ * the whole point of recording which is that a verbal confirmation with no
+ * paper behind it is a different kind of risk from a signed PO.
+ *
+ * NULL on the column means no confirmation was recorded, not "none of these".
+ * Every row that predates W, and every importer row, is null. See
+ * po_item.confirmation_source.
+ */
+export const confirmationSourceEnum = pgEnum("confirmation_source", [
+  "PO",
+  "WhatsApp",
+  "Verbal",
+]);
+
+/**
  * How committed_date was arrived at. 'Manual' is the only value used in v1;
  * 'Calculated' is reserved for when scheduling can derive it. Modelled as an
  * enum rather than the spec's free text so the v2 migration is a schema change

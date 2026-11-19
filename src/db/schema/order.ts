@@ -17,6 +17,7 @@ import { baseColumns, MONEY } from "./_shared";
 import {
   approvalStatusEnum,
   committedDateBasisEnum,
+  confirmationSourceEnum,
   jobTypeEnum,
   poItemStatusEnum,
   priorityEnum,
@@ -141,6 +142,31 @@ export const purchaseOrder = pgTable(
      */
     status: purchaseOrderStatusEnum().notNull().default("Open"),
 
+    /**
+     * Job work: the client sent their own material and asked for a process
+     * (section Z). No PO is coming, ever.
+     *
+     * WHY THIS EXISTS AND IS NOT JUST A LABEL. `po_awaited` means "no PO
+     * number, and a person typed this rather than importing it" (N1) — a
+     * prompt to go and get the document. For job work there is no document, so
+     * without this flag a job-work order would sit in the Item Tracker asking
+     * for one permanently. v_po_item_status reads it in the po_awaited
+     * expression itself, so no screen has to remember the special case.
+     *
+     * ON THE ORDER, NOT THE ITEM. Job work is a fact about the arrangement
+     * with the client, not about one carton — and po_awaited is computed from
+     * this table, so both are decided by one row.
+     *
+     * NOT NULL DEFAULT false, unlike `ups` (section Y) and the confirmation
+     * columns (W1) which are nullable. Those record something never observed
+     * about existing rows, where a default would invent data. This default is
+     * a fact: no order has ever been job work, because nobody could say so.
+     *
+     * It says nothing about money. Busy remains the book of record (SOP brief
+     * rule 5); this is only "no PO is coming".
+     */
+    isJobWork: boolean().notNull().default(false),
+
     notes: text(),
   },
   (t) => [
@@ -224,6 +250,76 @@ export const poItem = pgTable(
 
     /** See purchase_order.import_batch_id. */
     importBatchId: uuid().references(() => importBatch.id),
+
+    /* ---------------------------------------------------------------- */
+    /* Job opening discipline — SOP Rule 1 (section W, migration 0047)  */
+    /* ---------------------------------------------------------------- */
+
+    /**
+     * HOW the customer confirmed this order, WHO at JSS took the
+     * confirmation, and WHEN. Together they answer the only question SOP
+     * Rule 1 can actually be measured by: how long after a customer said
+     * yes did we open the job? v_job_opening does that arithmetic against
+     * created_at, in working minutes.
+     *
+     * ALL THREE OR NONE — enforced by po_item_confirmation_all_or_none,
+     * written with explicit IS NOT NULL on every term because a CHECK that
+     * evaluates to NULL passes (the 0046 lesson).
+     *
+     * NULLABLE FOR THE SAME REASON AS committed_date (F8): every row that
+     * predates this, and every row the importer writes, genuinely has no
+     * confirmation recorded. An invented one would be indistinguishable
+     * from a real one and would quietly become part of the metric.
+     * v_job_opening reports NULL — never false — for those rows, so a
+     * filter on "opened late" cannot sweep up the whole history.
+     *
+     * The PO capture form requires all three. The importer is the only path
+     * permitted to leave them null. If you add another entry point, it
+     * requires them.
+     *
+     * There is deliberately NO opened_at column: it would duplicate
+     * created_at exactly. v_job_opening exposes created_at AS opened_at.
+     */
+    confirmationSource: confirmationSourceEnum(),
+    confirmedBy: uuid().references(() => appUser.id),
+    confirmedAt: timestamp({ withTimezone: true }),
+
+    /* ---------------------------------------------------------------- */
+    /* Manual job close — section X, migration 0048                     */
+    /* ---------------------------------------------------------------- */
+
+    /**
+     * A person decided this job is over although it was never fully
+     * delivered: WHEN they decided, WHO decided, and WHY.
+     *
+     * CLOSED IS NOT CANCELLED. Cancelled means the order went away and
+     * never happened. This means we delivered what we were going to
+     * deliver and the shortfall is written off — the job happened, short.
+     *
+     * THESE COLUMNS ARE WHAT MAKES THE CLOSE SURVIVE.
+     * recompute_po_item_status() derives status from dispatch quantities on
+     * every dispatch edit and again nightly; it returns early for
+     * 'Cancelled' and for nothing else. A status set to 'Closed' by hand
+     * while pending_qty > 0 would be recomputed back to 'Open' overnight.
+     * So the close is stored as a FACT here and the recompute reads it —
+     * which keeps status derived (B5) rather than stored, exactly as
+     * 'Cancelled' always has.
+     *
+     * ALL THREE OR NONE, and the reason non-blank. Written with explicit
+     * IS NULL / IS NOT NULL on every term because a CHECK that evaluates
+     * to NULL passes (the 0046 lesson).
+     *
+     * WHO MAY SET THEM: ADMIN, DATA_ENTRY_FULL and OWNER. The OWNER grant
+     * is the FOURTH documented exception to B2 and lives in src/db/audit.ts
+     * with the other three — see the note there.
+     *
+     * WHEN THEY MAY: not until manual_close_min_days_after_po days after
+     * the PO date (default 30). Enforced by a trigger, so a script gets the
+     * same refusal a form does.
+     */
+    closedManuallyAt: timestamp({ withTimezone: true }),
+    closedBy: uuid().references(() => appUser.id),
+    closeReason: text(),
   },
   (t) => [
     uniqueIndex("po_item_code_key")
@@ -233,8 +329,36 @@ export const poItem = pgTable(
     index("po_item_design_idx").on(t.designId),
     index("po_item_committed_date_idx").on(t.committedDate),
     index("po_item_status_idx").on(t.status),
+    index("po_item_confirmed_at_idx").on(t.confirmedAt),
+    index("po_item_closed_manually_at_idx").on(t.closedManuallyAt),
 
     check("po_item_ordered_qty_positive", sql`${t.orderedQty} > 0`),
+
+    /**
+     * All three confirmation columns together, or none of them. Every term
+     * spelled out with IS NULL / IS NOT NULL: a bare AND chain would
+     * evaluate to NULL when one column was missing, and a CHECK that
+     * evaluates to NULL PASSES. That is exactly how 0045 shipped a
+     * constraint that accepted "5 bundles of nothing".
+     */
+    check(
+      "po_item_confirmation_all_or_none",
+      sql`(${t.confirmationSource} IS NULL AND ${t.confirmedBy} IS NULL AND ${t.confirmedAt} IS NULL)
+          OR (${t.confirmationSource} IS NOT NULL AND ${t.confirmedBy} IS NOT NULL AND ${t.confirmedAt} IS NOT NULL)`,
+    ),
+
+    /** The same all-or-none shape for the manual close (0048). */
+    check(
+      "po_item_manual_close_all_or_none",
+      sql`(${t.closedManuallyAt} IS NULL AND ${t.closedBy} IS NULL AND ${t.closeReason} IS NULL)
+          OR (${t.closedManuallyAt} IS NOT NULL AND ${t.closedBy} IS NOT NULL AND ${t.closeReason} IS NOT NULL)`,
+    ),
+
+    /** A required reason that accepts ' ' is not a required reason. */
+    check(
+      "po_item_close_reason_not_blank",
+      sql`${t.closeReason} IS NULL OR btrim(${t.closeReason}) <> ''`,
+    ),
   ],
 );
 

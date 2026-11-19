@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { jobTypeEnum, priorityEnum } from "@/db/schema/enums";
+import { confirmationSourceEnum, jobTypeEnum, priorityEnum } from "@/db/schema/enums";
 
 /**
  * PO capture validation.
@@ -17,6 +17,7 @@ import { jobTypeEnum, priorityEnum } from "@/db/schema/enums";
  */
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const LOCAL_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
 
 const trimmed = z
   .string()
@@ -56,6 +57,17 @@ export const poHeaderSchema = z.object({
 
   /** Scanned PO. A pasted Drive link until file storage lands (F5). */
   fileUrl: optionalUrl,
+
+  /**
+   * Job work — the client's own material, no PO coming (section Z).
+   *
+   * A native checkbox posts "on" or nothing at all, which is the convention
+   * the job card's checklist ticks already use. Optional here and coerced to a
+   * real boolean in the action, so an absent box means false rather than
+   * failing a parse.
+   */
+  isJobWork: z.literal("on").optional(),
+
   notes: trimmed,
 });
 
@@ -90,9 +102,99 @@ export const poItemSchema = z.object({
   remarks: trimmed,
 });
 
+
+
+/* -------------------------------------------------------------------------- */
+/* The confirmation (W) — asked only when an item is BORN                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * SOP Rule 1's three fields, kept OUT of poItemSchema on purpose.
+ *
+ * poItemSchema is shared by "add an item" and "edit an item". The
+ * confirmation is a fact about the moment the job was opened, so editing an
+ * item must not be able to restate it — an edit form that posted these would
+ * silently rewrite when the customer confirmed every time somebody corrected
+ * a quantity, and the two-hour measure would drift towards zero as rows were
+ * touched. Creation extends; editing does not.
+ *
+ * There is deliberately no screen that corrects a confirmation yet. A typo in
+ * the time is therefore permanent for now, which is a real gap and is written
+ * up in DECISIONS section W rather than papered over here.
+ */
+export const poItemConfirmationSchema = z.object({
+  /*
+   * SOP RULE 1 (W). All three required, on every human entry point, for the
+   * same reason committed_date is: the column is nullable so that history and
+   * the importer can honestly say nothing was recorded, and this schema is
+   * what makes sure nothing NEW is recorded as nothing.
+   *
+   * They are entered once per order on the form and posted onto every item,
+   * because a PO arrives as one confirmation. Stored per item because that is
+   * the grain everything else in this system is measured at, and because an
+   * item added to the order next week was confirmed at a different time.
+   */
+  confirmationSource: z.enum(confirmationSourceEnum.enumValues, {
+    message: "Say how this order was confirmed — PO, WhatsApp or verbal.",
+  }),
+
+  confirmedBy: z.uuid({
+    message: "Say who took the confirmation.",
+  }),
+
+  confirmedAt: z
+    .string()
+    .trim()
+    .regex(LOCAL_DATETIME, "Enter when the customer confirmed.")
+    .refine(
+      (v) => {
+        /*
+         * No confirmations from the future. The two-hour measure is
+         * (opened − confirmed), so a date ahead of now reads as the job
+         * having been opened before the customer asked for it — which the
+         * SQL clamps to zero and therefore scores as perfect. Catching it
+         * here means somebody sees the typo instead of the metric swallowing
+         * it. Five minutes of slack for a clock that is slightly out.
+         */
+        const t = new Date(`${v.length === 16 ? `${v}:00` : v}+05:30`).getTime();
+        return Number.isFinite(t) && t <= Date.now() + 5 * 60_000;
+      },
+      { message: "The confirmation time cannot be in the future." },
+    ),
+});
+
+/** Everything a NEW item needs: the item, plus how it was confirmed. */
+export const poItemCreateSchema = poItemSchema.extend(poItemConfirmationSchema.shape);
+
 export const createPoSchema = poHeaderSchema.extend({
-  items: z.array(poItemSchema).min(1, "A purchase order needs at least one item."),
+  items: z.array(poItemCreateSchema).min(1, "A purchase order needs at least one item."),
 });
 
 export type PoHeaderInput = z.infer<typeof poHeaderSchema>;
 export type PoItemInput = z.infer<typeof poItemSchema>;
+export type PoItemCreateInput = z.infer<typeof poItemCreateSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Manual job close (section X)                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The reason a job was closed by hand.
+ *
+ * REQUIRED, and trimmed before it is measured, so a space bar does not satisfy
+ * it — the database agrees via po_item_close_reason_not_blank, but a person
+ * should be told by the form rather than by a constraint violation.
+ *
+ * The minimum is 10 characters rather than 1 deliberately. This field is the
+ * entire defence against "close" becoming a way to tidy the overdue list: the
+ * only thing that makes a write-off reviewable later is a sentence somebody has
+ * to compose. "ok", "done" and "-" all pass a length of 1 and tell a reader
+ * nothing at all.
+ */
+export const closeReasonSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(10, "Say in a sentence why this job is being closed — it is read back at review.")
+    .max(500, "Keep the reason under 500 characters."),
+});

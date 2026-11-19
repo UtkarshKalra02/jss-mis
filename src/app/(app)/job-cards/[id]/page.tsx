@@ -285,12 +285,21 @@ export default async function JobCardPage({ params }: { params: Promise<{ id: st
             <Fact label="Pantone" value={card.execPantone} />
           </dl>
 
-          {/* Both figures, derived here rather than stored (J18). */}
+          {/*
+            All three figures, derived here rather than stored (J18, section Y).
+
+            `ups` comes from the CARD and not from `sheet`, even on a ganged
+            card. resolvedSheet() answers "what is this printing on", and ups is
+            not a property of the sheet — four cartons on one plate have four
+            different ups. Reading it off the run would show every ganged card
+            the same piece count, and the wrong one.
+          */}
           <PaperSheetFigures
             qty={sheet.paperQty}
             bundle={sheet.paperBundle}
             sheetsPerBundle={sheet.paperSheetsPerBundle}
             parts={sheet.paperParts}
+            ups={card.ups}
             className="mt-3"
             emptyText="Paper quantity not recorded."
           />

@@ -2,6 +2,7 @@ import { boolean, date, integer, numeric, pgView, text, timestamp, uuid } from "
 
 import {
   clientTypeEnum,
+  confirmationSourceEnum,
   delegationLevelEnum,
   delegationStatusEnum,
   invoiceStatusEnum,
@@ -115,6 +116,22 @@ export const vPoItemStatus = pgView("v_po_item_status", {
    * agrees on which items are still owed a document.
    */
   poAwaited: boolean("po_awaited").notNull(),
+
+  /**
+   * Job work — the client's own material, no PO coming (section Z). Exposed
+   * here so screens read the one definition instead of joining back to
+   * purchase_order and re-deriving it.
+   */
+  isJobWork: boolean("is_job_work").notNull(),
+
+  /**
+   * When a person closed this job by hand, if one did (section X).
+   *
+   * Nullable, and null is the ordinary case. v_otd reads it to tell a person's
+   * close from the T1 auto-close, because only the first is scored as a
+   * delivery failure (section AA).
+   */
+  closedManuallyAt: timestamp("closed_manually_at", { withTimezone: true }),
 }).existing();
 
 /* -------------------------------------------------------------------------- */
@@ -435,4 +452,56 @@ export const vMaterialStock = pgView("v_material_stock", {
   suggestedOrderQty: numeric("suggested_order_qty").notNull(),
   /** On demand · OK · Low · Order now · Critical – order now · No consumption data · Set interval · Retired */
   stockStatus: text("stock_status").notNull(),
+}).existing();
+
+
+/* -------------------------------------------------------------------------- */
+/* v_job_opening — SOP Rule 1, "no job number, no machine" (section W)         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How long after the customer confirmed did we open the job, in WORKING
+ * minutes — the only honest way to measure the SOP's two-hour target. An
+ * order confirmed at 18:00 and opened at 10:00 the next morning took thirty
+ * working minutes, not sixteen hours.
+ *
+ * `openedAt` is `po_item.created_at` under a clearer name. There is no
+ * opened_at column, on purpose: it would hold the same instant as created_at
+ * and could therefore disagree with it.
+ *
+ * `openWorkingMinutes` and `openedOnTime` are NULL — never false — for the
+ * rows that have no confirmation recorded, which is every row created before
+ * migration 0047 and everything the importer writes. Same rule as
+ * committed_date in v_otd: a job nobody recorded a confirmation for cannot be
+ * late to open.
+ *
+ * The working window and the target live in app_setting, so the shift can be
+ * corrected without a deploy. It is 09:30 to 18:00, Sunday off (confirmed
+ * 18 Nov 2026). Overtime past 18:00 is not counted, which makes the measure
+ * generous rather than harsh — it exists to catch jobs left overnight, not to
+ * penalise working late.
+ */
+export const vJobOpening = pgView("v_job_opening", {
+  poItemId: uuid("po_item_id").notNull(),
+  itemCode: text("item_code").notNull(),
+  itemName: text("item_name").notNull(),
+  purchaseOrderId: uuid("purchase_order_id").notNull(),
+  poInternalNo: text("po_internal_no").notNull(),
+  clientId: uuid("client_id").notNull(),
+  clientName: text("client_name").notNull(),
+
+  confirmationSource: confirmationSourceEnum("confirmation_source"),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  confirmedBy: uuid("confirmed_by"),
+  confirmedByName: text("confirmed_by_name"),
+
+  /** po_item.created_at. The moment the job was opened. */
+  openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+  importBatchId: uuid("import_batch_id"),
+
+  /** Null when no confirmation was recorded. 0 when opened in the same breath. */
+  openWorkingMinutes: integer("open_working_minutes"),
+  targetWorkingMinutes: integer("target_working_minutes").notNull(),
+  /** Null, never false, for rows with no confirmation. */
+  openedOnTime: boolean("opened_on_time"),
 }).existing();

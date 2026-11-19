@@ -74,6 +74,14 @@ export type PaperInput = {
   sheetsPerBundle?: number | null | undefined;
   /** How many pieces each parent sheet is cut into before it reaches the press. */
   parts: number | null | undefined;
+  /**
+   * How many finished pieces are printed on one press sheet (section Y).
+   *
+   * Optional, and absent is NOT 1. A card with no ups recorded reports null
+   * pieces rather than asserting it was single-up — see the column comment.
+   * The run sheet does not hold an ups of its own and simply omits this.
+   */
+  ups?: number | null | undefined;
 };
 
 export type PaperCount = {
@@ -94,9 +102,23 @@ export type PaperCount = {
   pressSheets: number | null;
   /** Sheets in one bundle, so a screen can show its working. */
   sheetsPerBundle: number | null;
+  /**
+   * Finished pieces off the run: press sheets x ups.
+   *
+   * The figure planning compares against ordered_qty. Null whenever ups is
+   * unrecorded, so "we do not know" never renders as a number somebody could
+   * plan against — the same rule v_job_opening follows for an unrecorded
+   * confirmation (W1).
+   */
+  pieces: number | null;
 };
 
-const EMPTY: PaperCount = { parentSheets: null, pressSheets: null, sheetsPerBundle: null };
+const EMPTY: PaperCount = {
+  parentSheets: null,
+  pressSheets: null,
+  sheetsPerBundle: null,
+  pieces: null,
+};
 
 /**
  * Both real quantities, from quantity × bundle × parts.
@@ -113,7 +135,13 @@ const EMPTY: PaperCount = { parentSheets: null, pressSheets: null, sheetsPerBund
  * Parts defaults to 1 — uncut is the ordinary case, and a blank parts box means
  * "not cut", never "unknown".
  */
-export function paperCount({ qty, bundle, sheetsPerBundle: typed, parts }: PaperInput): PaperCount {
+export function paperCount({
+  qty,
+  bundle,
+  sheetsPerBundle: typed,
+  parts,
+  ups,
+}: PaperInput): PaperCount {
   if (!bundle) return EMPTY;
 
   const sheetsPerBundle = sheetsInBundle(bundle, typed);
@@ -132,7 +160,22 @@ export function paperCount({ qty, bundle, sheetsPerBundle: typed, parts }: Paper
   // to uncut rather than reporting a press run of zero sheets.
   const divisions = parts !== null && parts !== undefined && parts > 0 ? parts : 1;
 
-  return { parentSheets, pressSheets: parentSheets * divisions, sheetsPerBundle };
+  const pressSheets = parentSheets * divisions;
+
+  /*
+   * Ups is the one multiplier with no sensible default. Zero or negative is a
+   * typo and absent means not recorded, and both report null pieces rather
+   * than falling back to 1 — a card that has not said its layout must not
+   * produce a piece count somebody could plan a dispatch against.
+   */
+  const perSheet = ups !== null && ups !== undefined && ups > 0 ? ups : null;
+
+  return {
+    parentSheets,
+    pressSheets,
+    sheetsPerBundle,
+    pieces: perSheet === null ? null : pressSheets * perSheet,
+  };
 }
 
 /**

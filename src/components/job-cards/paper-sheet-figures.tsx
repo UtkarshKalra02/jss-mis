@@ -21,6 +21,7 @@ export function PaperSheetFigures({
   bundle,
   sheetsPerBundle,
   parts,
+  ups,
   className,
   emptyText = "Enter a quantity and a bundle to see the sheet count.",
 }: {
@@ -29,6 +30,11 @@ export function PaperSheetFigures({
   /** Only ever set for the manual bundle (V1). */
   sheetsPerBundle?: number | null | undefined;
   parts: number | null | undefined;
+  /**
+   * Pieces per press sheet (section Y). Omitted by the run sheet, which holds
+   * no ups of its own — so the third figure simply does not appear there.
+   */
+  ups?: number | null | undefined;
   className?: string;
   /**
    * What to say when there is nothing to count. The default addresses somebody
@@ -39,7 +45,7 @@ export function PaperSheetFigures({
   emptyText?: string;
 }) {
   const b = (bundle as PaperBundle | null) ?? null;
-  const count = paperCount({ qty, bundle: b, sheetsPerBundle, parts });
+  const count = paperCount({ qty, bundle: b, sheetsPerBundle, parts, ups });
   const working = paperWorking({ qty, bundle: b, sheetsPerBundle });
 
   if (count.parentSheets === null) {
@@ -50,8 +56,21 @@ export function PaperSheetFigures({
 
   const cut = parts !== null && parts !== undefined && parts > 1;
 
+  /*
+   * The third figure appears only where ups is a field. The run sheet does not
+   * pass it, so that form keeps the two columns it has always had rather than
+   * growing an empty box.
+   */
+  const showPieces = ups !== undefined;
+
   return (
-    <dl className={cn("bg-muted/40 grid grid-cols-2 gap-4 rounded-md border p-3", className)}>
+    <dl
+      className={cn(
+        "bg-muted/40 grid gap-4 rounded-md border p-3",
+        showPieces ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2",
+        className,
+      )}
+    >
       <div>
         <dt className="text-muted-foreground text-xs">Parent sheets</dt>
         <dd className="text-[15px] tabular-nums">{formatQty(count.parentSheets)}</dd>
@@ -64,6 +83,15 @@ export function PaperSheetFigures({
           {cut ? `cut into ${parts} parts` : "uncut"}
         </p>
       </div>
+      {showPieces ? (
+        <div>
+          <dt className="text-muted-foreground text-xs">Pieces off the run</dt>
+          <dd className="text-[15px] tabular-nums">{formatQty(count.pieces)}</dd>
+          <p className="text-muted-foreground text-[11px]">
+            {count.pieces === null ? "enter ups to see this" : `${ups} up`}
+          </p>
+        </div>
+      ) : null}
     </dl>
   );
 }

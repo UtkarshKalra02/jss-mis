@@ -16,6 +16,11 @@ import { supplyByValues } from "@/modules/job-cards/validation";
 import type { FabricationOptionRow, Selection } from "@/modules/fabrication/queries";
 import type { PaperOption } from "@/modules/materials/queries";
 
+import {
+  defaultPaperSupplyBy,
+  paperSupplyWasDefaulted,
+} from "@/modules/job-cards/supply";
+
 import { PaperQuantity } from "./paper-quantity";
 
 const initialState: FormState = { ok: false, error: null };
@@ -44,6 +49,7 @@ export type JobCardPlanValues = {
   paperBundle?: string | null;
   paperSheetsPerBundle?: number | null;
   paperParts?: number | null;
+  ups?: number | null;
   paperRemarks?: string | null;
   execNoOfColours?: string | null;
   execPantone?: string | null;
@@ -67,6 +73,7 @@ function Field({
   type = "text",
   placeholder,
   defaultValue,
+  min,
 }: {
   name: string;
   label: string;
@@ -74,6 +81,8 @@ function Field({
   type?: string;
   placeholder?: string;
   defaultValue?: string | number | null;
+  /** Only meaningful for type="number"; keeps a typo out before zod sees it. */
+  min?: number;
 }) {
   return (
     <label className="block">
@@ -81,6 +90,8 @@ function Field({
       <input
         type={type}
         name={name}
+        min={min}
+        inputMode={type === "number" ? "numeric" : undefined}
         placeholder={placeholder}
         defaultValue={defaultValue ?? ""}
         className={inputClass}
@@ -94,18 +105,35 @@ function SupplySelect({
   name,
   label,
   defaultValue,
+  hint,
 }: {
   name: string;
   label: string;
   defaultValue?: string | null;
+  /** Why a value arrived pre-selected, when one did. */
+  hint?: string;
 }) {
   return (
     <label className="block">
       <span className="text-[13px] font-medium">{label}</span>
       <select name={name} defaultValue={defaultValue ?? ""} className={inputClass}>
-        {/* Blank is the honest default. Neither is a safe guess, and whichever
-            was picked would be PRINTED on the sheet the floor works from as
-            though somebody had decided it. */}
+        {/*
+          Blank is the honest default. Neither is a safe guess, and whichever
+          was picked would be PRINTED on the sheet the floor works from as
+          though somebody had decided it.
+
+          ONE EXCEPTION, SINCE SECTION Z: paper on a JOB WORK order arrives
+          pre-selected as Party. That is not a guess — "job work" means the
+          client sent the material in, so the answer is carried by a fact
+          somebody already entered on the order rather than invented here. The
+          caller passes a `hint` saying so, the person sees it in the dropdown
+          before saving, and it is applied only when a card is being released,
+          never written over an existing card's blank.
+
+          Any FURTHER default would be the thing this comment refuses. Plate
+          supply in particular is still blank on job work: a client who sends
+          board has said nothing about who makes the plate.
+        */}
         <option value="">Not decided yet</option>
         {supplyByValues.map((v) => (
           <option key={v} value={v}>
@@ -113,6 +141,7 @@ function SupplySelect({
           </option>
         ))}
       </select>
+      {hint ? <span className="text-muted-foreground mt-1 block text-[12px]">{hint}</span> : null}
     </label>
   );
 }
@@ -149,6 +178,7 @@ export function JobCardForm({
   papers,
   gsmTolerancePct,
   preferredMaterialId,
+  isJobWork,
 }: {
   mode: "release" | "edit";
   poItemId?: string;
@@ -178,6 +208,14 @@ export function JobCardForm({
   gsmTolerancePct: number;
   /** The design's usual paper (O6), offered first on a card with none. */
   preferredMaterialId?: string | null;
+  /**
+   * Whether this item's order is job work — the client's own material (Z).
+   *
+   * Pre-selects Party for "Paper supplied by" when a card is RELEASED, and
+   * never on an existing one. See the SupplySelect call below for why that
+   * distinction is the whole of it.
+   */
+  isJobWork?: boolean;
   /**
    * The run this card is ganged onto, when it is on one.
    *
@@ -353,10 +391,39 @@ export function JobCardForm({
 
           {!sheetOnRun ? (
             <>
+              {/*
+                JOB WORK PRE-SELECTS PARTY (section Z), and only when RELEASING.
+
+                Job work means the client sent the material in, so Party is the
+                answer almost every time — and the person raising the card sees
+                it in the dropdown and can change it before saving, which is
+                what makes a default honest rather than an assertion.
+
+                `card?.paperSupplyBy ?? …` reads "a stored answer always wins",
+                and `mode === "release"` is what stops this reaching an existing
+                card. Without that second test, opening an old job-work card
+                whose supply was never recorded and saving any other field would
+                write Party into a column nobody had answered — the backfill
+                that W1 and Y2 both refuse, arriving through a form instead of a
+                migration.
+              */}
               <SupplySelect
                 name="paperSupplyBy"
                 label="Paper supplied by"
-                defaultValue={card?.paperSupplyBy}
+                defaultValue={defaultPaperSupplyBy({
+                  stored: card?.paperSupplyBy,
+                  mode,
+                  isJobWork,
+                })}
+                hint={
+                  paperSupplyWasDefaulted({
+                    stored: card?.paperSupplyBy,
+                    mode,
+                    isJobWork,
+                  })
+                    ? "Job work — the client sent the material. Change it if that is wrong."
+                    : undefined
+                }
               />
               <SupplySelect
                 name="plateSupplyBy"
@@ -442,17 +509,40 @@ export function JobCardForm({
             </div>
           </div>
 
-          {/* How much paper, in the bundles the godown deals in, and how many
-              pieces each parent sheet is cut into before it reaches the press.
-              Both sheet counts are worked out from these three and neither is
-              stored (J18). */}
+          {/* How much paper, in the bundles the godown deals in; how many
+              pieces each parent sheet is cut into before the press; and how
+              many finished pieces are printed on one press sheet. All three
+              sheet counts are worked out from these and none is stored
+              (J18, section Y). */}
           <PaperQuantity
             className={sheetOnRun ? "hidden" : "mt-4"}
             qty={card?.paperQty}
             bundle={card?.paperBundle}
             sheetsPerBundle={card?.paperSheetsPerBundle}
             parts={card?.paperParts}
+            ups={sheetOnRun ? undefined : (card?.ups ?? null)}
           />
+
+          {/*
+            UPS SURVIVES THE GANG, because it is not a fact about the sheet.
+            When the sheet belongs to a shared plate the whole paper band above
+            is hidden — size, GSM, quantity and parts are the run's, not this
+            card's. Ups is different: four cartons ganged onto one sheet have
+            four different ups, so it stays per card and has to be asked for
+            here or a ganged card could never record it at all.
+          */}
+          {sheetOnRun ? (
+            <div className="mt-4 sm:max-w-3xs">
+              <Field
+                name="ups"
+                label="Ups"
+                type="number"
+                min={1}
+                defaultValue={card?.ups ?? undefined}
+                hint="Finished pieces of THIS job on one press sheet. Each job ganged onto the sheet has its own."
+              />
+            </div>
+          ) : null}
         </section>
 
         {/* ---------------------------------------------------------------- */}

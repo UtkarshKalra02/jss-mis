@@ -78,11 +78,17 @@ export default async function JobCardPrintPage({
   );
 
   // Derived here, never stored (J18) — see paperCount's comment.
+  //
+  // `ups` comes off the CARD, not off `sheet`. resolvedSheet() answers what
+  // this is printing ON, and ups is not a property of the sheet: cartons
+  // ganged onto one plate each have their own. Taking it from the run would
+  // print the same piece count on every card of a gang (section Y).
   const paper = paperCount({
     qty: sheet.paperQty,
     bundle: sheet.paperBundle,
     sheetsPerBundle: sheet.paperSheetsPerBundle,
     parts: sheet.paperParts,
+    ups: card.ups,
   });
 
   // The paper form runs its fabrication list in two columns. Split down the
@@ -249,12 +255,17 @@ export default async function JobCardPrintPage({
             <Slot label="Remarks" value={sheet.paperRemarks} />
           </div>
 
-          {/* Both figures on the sheet the floor works from: the godown reads
-              the parent count, the cutter and the press read the other (J18). */}
+          {/* Every figure on the sheet the floor works from: the godown reads
+              the parent count, the cutter and the press read press sheets, and
+              the operator reads ups and pieces (J18, section Y). The five
+              columns were already here; ups and pieces fill the two that were
+              standing empty. */}
           <div className="mt-1.5 grid grid-cols-5 gap-x-4 border-t border-neutral-400 pt-1.5">
             <Slot label="Parent sheets" value={formatQty(paper.parentSheets)} />
             <Slot label="Parts" value={partsLine(sheet.paperParts)} />
             <Slot label="Press sheets" value={formatQty(paper.pressSheets)} />
+            <Slot label="Ups" value={card.ups === null ? null : String(card.ups)} />
+            <Slot label="Pieces" value={formatQty(paper.pieces)} />
           </div>
         </section>
 

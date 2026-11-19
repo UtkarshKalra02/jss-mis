@@ -1,20 +1,24 @@
 import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import type { Tx } from "@/db/audit";
-import { client, design, poItem, purchaseOrder } from "@/db/schema";
+import { SYSTEM_USER_ID, type Tx } from "@/db/audit";
+import { appUser, client, design, poItem, purchaseOrder } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
 
 /**
  * "PO awaited" (N1), for queries that read purchase_order directly.
  *
- * The SAME expression migration 0038 put on v_po_item_status as `po_awaited`.
+ * The SAME expression v_po_item_status carries as `po_awaited` — 0038 as
+ * amended by 0050, which added the job-work term: no PO is ever coming for job
+ * work, so it must not be chased for one (section Z).
  * Item queries read the view's column; only reads that go to purchase_order
  * directly need it spelled out. Exported so they import it rather than write
  * a third copy. If the rule changes, it changes in the migration and here,
  * together.
  */
-export const poAwaitedSql = sql<boolean>`(${purchaseOrder.poNo} is null and ${purchaseOrder.importBatchId} is null)`;
+export const poAwaitedSql = sql<boolean>`(${purchaseOrder.poNo} is null
+  and ${purchaseOrder.importBatchId} is null
+  and ${purchaseOrder.isJobWork} = false)`;
 
 export type PurchaseOrderRow = {
   id: string;
@@ -85,6 +89,8 @@ export async function getPurchaseOrder(id: string) {
       internalNo: purchaseOrder.internalNo,
       poNo: purchaseOrder.poNo,
       poAwaited: poAwaitedSql,
+      /** Section Z — the header form posts it back, so it has to be read. */
+      isJobWork: purchaseOrder.isJobWork,
       clientId: purchaseOrder.clientId,
       clientCode: client.code,
       clientName: client.name,
@@ -445,4 +451,110 @@ export async function listItemsForIndex(): Promise<IndexItem[]> {
     .from(vPoItemStatus)
     .where(ne(vPoItemStatus.status, "Cancelled"))
     .orderBy(asc(vPoItemStatus.clientCode), asc(vPoItemStatus.itemName));
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Who took the confirmation (W)                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The people who can be named as having taken a customer's confirmation.
+ *
+ * OWNER IS INCLUDED HERE, unlike delegation's assignableUsers(). That
+ * exclusion is about who work can be pushed DOWN to; this is about who
+ * answered the phone, and in this factory that is often Amit Sir. He cannot
+ * write — the audit wrapper refuses it — but he is very much somebody a
+ * confirmation can be attributed to. Naming the person who took the order and
+ * the person who typed it as the same field would be the actual error.
+ *
+ * Deleted and deactivated accounts are left out of the PICKER but keep
+ * working as stored values: an item confirmed last month by somebody who has
+ * since left still says so, because the column is a plain reference with no
+ * is_active condition on it.
+ */
+export type ConfirmationTaker = { id: string; name: string; role: string };
+
+export async function listConfirmationTakers(): Promise<ConfirmationTaker[]> {
+  return db
+    .select({ id: appUser.id, name: appUser.name, role: appUser.role })
+    .from(appUser)
+    .where(
+      and(
+        ne(appUser.id, SYSTEM_USER_ID),
+        eq(appUser.isActive, true),
+        isNull(appUser.deletedAt),
+      ),
+    )
+    .orderBy(asc(appUser.name));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Manual job close — is this job old enough? (section X)                      */
+/* -------------------------------------------------------------------------- */
+
+export const MANUAL_CLOSE_MIN_DAYS_KEY = "manual_close_min_days_after_po";
+
+/** Mirrors the default in migration 0048 and in the trigger. */
+export const MANUAL_CLOSE_MIN_DAYS_DEFAULT = 30;
+
+export type ManualCloseEligibility = {
+  poDate: string;
+  minDays: number;
+  /** The first date on which this job may be closed by hand, ISO. */
+  earliest: string;
+  eligible: boolean;
+};
+
+/**
+ * Whether a job has existed long enough to be closed by hand, and from when.
+ *
+ * Utkarsh, 18 Nov 2026: "only closable after a month of PO Date". The waiting
+ * period is `manual_close_min_days_after_po` (default 30) so it is correctable
+ * in Admin without a deploy.
+ *
+ * THIS IS THE KEY, NOT THE LOCK. The real enforcement is the
+ * po_item_manual_close_guard_trg trigger in 0048, which refuses the write
+ * whatever asks for it — a script, psql, a future screen. This exists because
+ * a plpgsql RAISE arrives as SQLSTATE P0001, which action-error.ts has no
+ * sentence for, so the trigger alone would show the person a generic failure
+ * instead of telling them which date to come back on. Both read the same
+ * setting, so they cannot disagree.
+ *
+ * `earliest` is returned even when eligible, so the screen can say the date
+ * rather than only whether the button works.
+ */
+export async function manualCloseEligibility(
+  poItemId: string,
+): Promise<ManualCloseEligibility | null> {
+  const [row] = await db
+    .select({
+      poDate: purchaseOrder.poDate,
+      minDays: sql<number>`app_setting_int(${MANUAL_CLOSE_MIN_DAYS_KEY}, ${MANUAL_CLOSE_MIN_DAYS_DEFAULT})`,
+      earliest: sql<string>`(
+        ${purchaseOrder.poDate}
+        + app_setting_int(${MANUAL_CLOSE_MIN_DAYS_KEY}, ${MANUAL_CLOSE_MIN_DAYS_DEFAULT})
+      )::text`,
+      eligible: sql<boolean>`today_ist() >= (
+        ${purchaseOrder.poDate}
+        + app_setting_int(${MANUAL_CLOSE_MIN_DAYS_KEY}, ${MANUAL_CLOSE_MIN_DAYS_DEFAULT})
+      )`,
+    })
+    .from(poItem)
+    .innerJoin(purchaseOrder, eq(purchaseOrder.id, poItem.purchaseOrderId))
+    .where(and(eq(poItem.id, poItemId), isNull(poItem.deletedAt)))
+    .limit(1);
+
+  return row ?? null;
+}
+
+/** One user's display name, for showing who took a decision. */
+export async function userName(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ name: appUser.name })
+    .from(appUser)
+    .where(eq(appUser.id, userId))
+    .limit(1);
+
+  return row?.name ?? null;
 }

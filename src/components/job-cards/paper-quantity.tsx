@@ -23,6 +23,7 @@ export function PaperQuantity({
   bundle,
   sheetsPerBundle,
   parts,
+  ups,
   className,
 }: {
   qty?: number | null;
@@ -30,6 +31,12 @@ export function PaperQuantity({
   /** Only ever set for the manual bundle (V1). */
   sheetsPerBundle?: number | null;
   parts?: number | null;
+  /**
+   * Pieces per press sheet (section Y). Pass it on the job card form; the run
+   * sheet omits it, because a run holds no ups of its own — the card it belongs
+   * to does. Undefined therefore hides the field AND the third figure.
+   */
+  ups?: number | null;
   className?: string;
 }) {
   const ids = useId();
@@ -37,6 +44,8 @@ export function PaperQuantity({
   const [b, setB] = useState((bundle as PaperBundle | null) ?? "");
   const [spb, setSpb] = useState(sheetsPerBundle?.toString() ?? "");
   const [p, setP] = useState(parts?.toString() ?? "");
+  const [u, setU] = useState(ups?.toString() ?? "");
+  const showUps = ups !== undefined;
 
   const manual = isManualBundle(b === "" ? null : (b as PaperBundle));
 
@@ -45,7 +54,17 @@ export function PaperQuantity({
 
   return (
     <div className={className}>
-      <div className={`grid gap-4 ${manual ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+      <div
+        className={`grid gap-4 ${
+          manual
+            ? showUps
+              ? "sm:grid-cols-5"
+              : "sm:grid-cols-4"
+            : showUps
+              ? "sm:grid-cols-4"
+              : "sm:grid-cols-3"
+        }`}
+      >
         <label className="space-y-1">
           <span className="text-muted-foreground text-xs">Quantity</span>
           <input
@@ -112,6 +131,22 @@ export function PaperQuantity({
             className={inputClass}
           />
         </label>
+
+        {showUps ? (
+          <label className="space-y-1">
+            <span className="text-muted-foreground text-xs">Ups</span>
+            <input
+              id={`${ids}-ups`}
+              name="ups"
+              type="number"
+              min={1}
+              inputMode="numeric"
+              value={u}
+              onChange={(e) => setU(e.target.value)}
+              className={inputClass}
+            />
+          </label>
+        ) : null}
       </div>
 
       {/* A quantity with no bundle is refused by zod and by the database. Say
@@ -139,6 +174,7 @@ export function PaperQuantity({
         bundle={b === "" ? null : b}
         sheetsPerBundle={spb === "" ? null : Number(spb)}
         parts={p === "" ? null : Number(p)}
+        ups={showUps ? (u === "" ? null : Number(u)) : undefined}
       />
     </div>
   );

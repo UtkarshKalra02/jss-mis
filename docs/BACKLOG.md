@@ -588,3 +588,165 @@ importer has the same shape of problem in a different place — a re-run retires
 hand-entered adjustments and only names the issues it retired, not the adjustments (see
 the IMS entry above). Both are the same lesson: an importer that can undo itself needs to
 know what other people have since built on its rows.
+
+## The BMP SOPs — phase 1.1 BUILT, the rest open
+
+The SOP manual (`docs/sop/2026-11-17_JSS_SOP-Manual-v2.md`) and the brief for extending the
+MIS to support it (`docs/sop-v2/BRIEF.md`) describe three rollout phases. **Phase 1.1, job
+opening discipline, is built** — see DECISIONS section W and
+`drizzle/0047_job_opening_discipline.sql`. Everything below is not.
+
+The brief asked for a separate worktree, staging database and deploy target.
+**Utkarsh dropped all three on 17 Nov 2026**: the work happens here on `main`, in small
+additive changes, dev first. `docs/sop-v2/STAGING.md` is kept, marked superseded.
+
+### Blocking on Utkarsh, and cheap to answer
+
+- ~~**The shift calendar is a guess.**~~ ANSWERED 18 Nov 2026: 09:30–18:00, Sunday off,
+  overtime extra and deliberately not counted. `0047` corrected and re-applied to dev.
+- **Puneet has no role.** Phase 2.3 makes a first-sheet colour sign by Puneet a hard gate
+  before a print stage can be marked running. There is no role he can hold. That needs a
+  new `user_role` enum value (`PREPRESS` or similar), and **adding an enum value is
+  one-way** — so the name wants deciding once rather than renaming later.
+- **The delegation ladder does not match.** `delegationLevelEnum` is `L2, L3, L4` — three
+  levels. The SOP's BMP levels are 1–4, and the brief describes L2–L5. Phase 3.2 has to
+  reconcile three stored values with four described ones, which is a decision about
+  meaning, not a rename.
+
+### Known gaps in what IS built
+
+- **A confirmation cannot be corrected** (DECISIONS W5). No screen edits
+  `confirmed_at` / `confirmed_by` / `confirmation_source` once saved, so a mistyped time is
+  permanently wrong in the measure. The fix is a separate audited action with a reason, not
+  a field on the item edit form — putting it there would let any quantity correction
+  silently rewrite the confirmation and drift the whole measure towards zero.
+- **The 14-day promise is not wired to anything yet.** Phase 1.2 makes the artwork approval
+  date the start of a 14-day commitment and suggests `committed_date = approval + 14 days`.
+  `committed_date_basis` already carries a `Calculated` value, reserved in v1 for exactly
+  this and still unused. Note the tension with non-negotiable 6: a *suggested* committed
+  date is one step from a guessed one, and every override needs a logged reason.
+
+### Conflicts in the brief that are not yet resolved
+
+Raised when the plan was delivered, still open:
+
+- **Hard quality gates on a live floor are dangerous.** Phase 2.3 would stop a print stage
+  being marked running without Puneet's sign, and stop a challan being finalised without
+  Ajay's 5-point packing check. If the person is absent, the gate stops dispatch, not just
+  the record of it. Every gate needs a named override with a reason, or the floor will work
+  around the system instead of through it.
+- **Stale stage data undermines phase 1.** 68 of 99 open items had no stage event in 14
+  days when this was measured. Flow-step tracking layered over data that is already not
+  being kept current produces a more detailed wrong answer.
+- **OTD may be measuring promises, not the factory.** Worth answering before phase 3 scores
+  people on it: what is the distribution of (committed − PO date), and how many are under
+  14 days?
+- **Auto-close (T1) and SOP accountability pull against each other.** A residual under 1,500
+  retires itself the month after its commitment. That is deliberate and Utkarsh's call, but
+  phase 3's negative scores would be computed over a population that quietly shrinks.
+- **"Job number" in the SOP is `item_code`**, not the PO's internal number. Worth stating
+  plainly before screens start using the SOP's wording.
+- **There is no "running" state to block re-planning against.** Phase 1.4 says never allow
+  re-planning a job marked running. Nothing currently marks one.
+
+### What is missing for the SOP to actually run — reviewed 18 Nov 2026
+
+Asked directly: what else has to be added so the new SOP executes seamlessly. Answered by
+reading the schema, not from memory. In the order that matters.
+
+#### 1. There is no way to record *why* — and four separate SOP features need it
+
+`audit_log` stores `table_name`, `record_id`, `action`, `changed_by`, `changed_at`,
+`before`, `after`. It answers *what changed and who*. It does not answer *why*, and
+**no table in the schema has a `reason` column** (checked: zero matches). The free-text
+`notes` / `remarks` columns are content fields on business records, not override reasons.
+
+Four separate things the brief asks for all need the same missing primitive:
+
+| brief | what it asks for |
+|---|---|
+| 1.2 | suggested committed date, "log every override with a reason" |
+| 1.3 | full-kit gate, "allow override by Utkarsh / Amit Sir only, logged" |
+| 1.4 | urgent insertion log — who inserted, which job, which job was pushed |
+| 2.3 | quality gates (and every gate needs a named override, or the floor routes around it) |
+
+If each feature invents its own reason field there is no single answer to "what was
+overridden this week", which is exactly what the Monday meeting needs and exactly what
+phase 3's scores are computed against. **Build the override/reason primitive once, before
+1.2 — not during it.** Likely shape: an append-only `override_log` (gate, record, actor,
+reason required, what it displaced), on the same no-hard-delete rules as `stage_event`.
+
+#### 2. Nobody can be told anything
+
+`app_user.email` exists and is nullable — in practice NULL for all nine users. **There is
+no phone column.** The SOP's entire follow-up engine assumes somebody gets notified:
+Anushka's two rounds (11:00, 15:30), Help Ticket due dates, "stuck with (person)",
+delegated-task deadlines. Today a due date is a number on a screen nobody opens.
+
+The factory runs on WhatsApp — it is literally a `confirmation_source` value. Minimum
+viable is **not** an API integration: a `phone` column on `app_user` plus `wa.me` / `tel:`
+deep links, so a reminder from the PC screen is one tap. Cheap, and it is the difference
+between a system people use and a system Anushka reads out loud.
+
+#### 3. The data audit was never done, and phase 1.2 depends on it
+
+Brief §2 asks for `docs/sop-v2/DATA-AUDIT.md`. **It does not exist** — it was dropped
+along with the staging database on 17 Nov 2026 and never re-homed. It is still the single
+highest-value piece of work available, and it is blocked on Utkarsh: it needs a read-only
+query against production, which brief rule 1 forbids without his explicit say-so.
+
+Why it blocks 1.2 rather than merely informing it: 68 of 99 open items had no stage event
+in 14 days when last measured. **Layering ten O2D steps over stage data that is already
+two-thirds stale produces a more detailed wrong answer, not a better one.** Flow-step
+tracking is only worth building if the existing events are being kept current.
+
+Brief §2 also asks for a **one-page cleanup checklist for staff** and a cleanup script that
+does not run against production. Neither is written.
+
+#### 4. New floor screens would ship English-only
+
+Hindi appears in exactly two files in the whole codebase —
+`src/components/planning/floor-plan-bar.tsx` and `src/modules/planning/floor-plan.ts`
+(the printable floor plan). The brief's acceptance checks require "Hindi labels where floor
+staff use it (Ajay, operators)" and 360 px phone width.
+
+Every screen phase 1 and 2 add is floor-facing: the die-cut board, the 5-point full-kit
+check, the packing check sign, the first-sheet colour sign. **English-only means Ajay and
+the operators will not use them**, which is the seamlessness question itself and not a
+polish item. The floor plan is the precedent to copy.
+
+#### 5. Nothing exists that a member of staff could be handed
+
+`docs/sop/` and `docs/sop-v2/` are written for whoever is building this. Preeti, Ajay,
+Deepak and Anushka each need a half-page: which screen you open, what you type, when, and
+what happens if you cannot. Cheap to write, and it is the actual gap between *built* and
+*executed*.
+
+#### 6. The binding constraint is staff minutes, not features
+
+Phase 1.2 asks staff to record artwork sent, approval received, consumables ordered,
+consumables received, full-kit done, and packing check — roughly five new touches per item,
+on top of stage events that are already not being kept current on two-thirds of open items.
+
+The brief already says to map existing stage events to O2D steps and "only ask staff to
+record what is missing". That instruction should be treated as the hard constraint it is:
+**for every remaining new touch, the question is what would make it a by-product of
+something they already do, rather than a new form.** A step that is only reachable by
+opening a second screen will not be recorded, and an unrecorded step scores as late.
+
+#### Still open from earlier, unchanged
+
+- `PREPRESS` role for Puneet — one-way enum addition, name it once (phase 2.3 gates on him).
+- Delegation ladder: `L2, L3, L4` stored vs BMP 1–4 vs the brief's L2–L5 (phase 3.2).
+- No "running" state exists to block re-planning against (phase 1.4).
+- "Job number" in the SOP means `item_code`.
+- A confirmation cannot be corrected once saved (DECISIONS W5).
+- ~~**A manually closed job is invisible to OTD**~~ FIXED 19 Nov 2026, migration 0051 —
+  and the diagnosis in X7 was wrong. See DECISIONS AA1: the faults were that a job closed
+  with nothing dispatched was absent, and that a *short* delivery could score as **on time**.
+  Both flattered OTD. T1's auto-close keeps its own scoring deliberately (AA3).
+- **Wastage is captured but optional** on both `job_card.wastage_qty` and
+  `press_run.wastage_qty` — both nullable, both wrapped in `absentOrBlank(...)`. Utkarsh
+  expected it to be compulsory on 18 Nov 2026. Making it required needs zero to be a real
+  typed answer and an explicit reasoned "not counted" escape, or the floor will type a fake
+  zero — which is worse than a blank, because a blank is honest about not knowing.

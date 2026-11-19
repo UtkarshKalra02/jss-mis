@@ -5,7 +5,11 @@ import { requireAccess } from "@/auth/guard";
 import { PoForm } from "@/components/purchase-orders/po-form";
 import { Button } from "@/components/ui/button";
 import { listClientOptions } from "@/modules/designs/queries";
-import { listDesignOptions, listRepeatableItemOptions } from "@/modules/purchase-orders/queries";
+import {
+  listConfirmationTakers,
+  listDesignOptions,
+  listRepeatableItemOptions,
+} from "@/modules/purchase-orders/queries";
 
 export const metadata: Metadata = { title: "Add item · JSS MIS" };
 
@@ -37,17 +41,19 @@ export default async function NewItemPage({
 }: {
   searchParams: Promise<{ returnTo?: string }>;
 }) {
-  await requireAccess("purchase_order", "create");
+  // W: the signed-in person is the default answer to "who took the confirmation".
+  const actor = await requireAccess("purchase_order", "create");
 
   // Arrived from "New job card" (U1). One new item goes straight back there,
   // selected, instead of making somebody search for what they just typed.
   const { returnTo } = await searchParams;
   const fromJobCard = returnTo === "job-card";
 
-  const [clients, designs, repeatableItems] = await Promise.all([
+  const [clients, designs, repeatableItems, confirmationTakers] = await Promise.all([
     listClientOptions(),
     listDesignOptions(),
     listRepeatableItemOptions(),
+    listConfirmationTakers(),
   ]);
 
   return (
@@ -87,6 +93,8 @@ export default async function NewItemPage({
             clients={clients}
             designs={designs}
             repeatableItems={repeatableItems}
+            confirmationTakers={confirmationTakers}
+            defaultConfirmedBy={actor.id}
             returnTo={fromJobCard ? "job-card" : undefined}
           />
         )}

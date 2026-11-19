@@ -62,6 +62,7 @@ export type JobCardDetail = {
   paperBundle: PaperBundle | null;
   paperSheetsPerBundle: number | null;
   paperParts: number | null;
+  ups: number | null;
   paperRemarks: string | null;
 
   execNoOfColours: string | null;
@@ -151,6 +152,7 @@ export async function getJobCard(
       paperBundle: jobCard.paperBundle,
       paperSheetsPerBundle: jobCard.paperSheetsPerBundle,
       paperParts: jobCard.paperParts,
+      ups: jobCard.ups,
       paperRemarks: jobCard.paperRemarks,
 
       execNoOfColours: jobCard.execNoOfColours,
@@ -302,6 +304,8 @@ export async function releasableItem(
       poItemId: vPoItemStatus.poItemId,
       itemCode: vPoItemStatus.itemCode,
       itemName: vPoItemStatus.itemName,
+      /** Section Z — defaults Paper supplied by to Party on release. */
+      isJobWork: vPoItemStatus.isJobWork,
       clientCode: vPoItemStatus.clientCode,
       clientName: vPoItemStatus.clientName,
       pendingQty: vPoItemStatus.pendingQty,
@@ -461,6 +465,8 @@ export type ReleasableRow = {
   poItemId: string;
   itemCode: string;
   itemName: string;
+  /** Section Z — defaults Paper supplied by to Party on release. */
+  isJobWork: boolean;
   clientCode: string;
   clientName: string;
   poInternalNo: string;
@@ -495,6 +501,8 @@ export async function releasableItems(query = "", limit = 200): Promise<Releasab
       poItemId: vPoItemStatus.poItemId,
       itemCode: vPoItemStatus.itemCode,
       itemName: vPoItemStatus.itemName,
+      /** Section Z — defaults Paper supplied by to Party on release. */
+      isJobWork: vPoItemStatus.isJobWork,
       clientCode: vPoItemStatus.clientCode,
       clientName: vPoItemStatus.clientName,
       poInternalNo: vPoItemStatus.poInternalNo,
@@ -566,6 +574,8 @@ export async function releasableItemsByIds(
       poItemId: vPoItemStatus.poItemId,
       itemCode: vPoItemStatus.itemCode,
       itemName: vPoItemStatus.itemName,
+      /** Section Z — defaults Paper supplied by to Party on release. */
+      isJobWork: vPoItemStatus.isJobWork,
       clientCode: vPoItemStatus.clientCode,
       clientName: vPoItemStatus.clientName,
       pendingQty: vPoItemStatus.pendingQty,

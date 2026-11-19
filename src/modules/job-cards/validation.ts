@@ -159,6 +159,18 @@ export const releaseSchema = z.object({
       .max(1_000),
   ),
 
+  /**
+   * Pieces per press sheet (section Y). Blank means NOT RECORDED, never 1 —
+   * the pieces figure reports nothing rather than assuming single-up.
+   */
+  ups: absentOrBlank(
+    z.coerce
+      .number()
+      .int("Ups must be a whole number.")
+      .positive("Ups must be at least one.")
+      .max(10_000),
+  ),
+
   paperRemarks: absentOrBlank(z.string().trim().max(500)),
 
   execNoOfColours: absentOrBlank(z.string().trim().max(60)),
@@ -251,6 +263,7 @@ export function parsePlanForm(formData: FormData) {
         "paperBundle",
         "paperSheetsPerBundle",
         "paperParts",
+        "ups",
         "paperRemarks",
         "execNoOfColours",
         "execPantone",
@@ -283,6 +296,7 @@ export function parseReleaseForm(formData: FormData) {
     paperQty: formData.get("paperQty"),
     paperBundle: formData.get("paperBundle"),
     paperParts: formData.get("paperParts"),
+    ups: formData.get("ups"),
     paperRemarks: formData.get("paperRemarks"),
     execNoOfColours: formData.get("execNoOfColours"),
     execPantone: formData.get("execPantone"),

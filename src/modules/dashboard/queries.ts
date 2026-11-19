@@ -3,7 +3,7 @@ import { and, desc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import type { Tx } from "@/db/audit";
 import { client, dispatch, dispatchLine, poItem, stage } from "@/db/schema";
-import { vPoItemStatus, vOtd } from "@/db/views";
+import { vJobOpening, vPoItemStatus, vOtd } from "@/db/views";
 
 /**
  * The dashboard's numbers — spec 6.1.
@@ -529,3 +529,80 @@ export async function stageMovesToday(runner: Runner = db): Promise<StageMoves> 
     total: rows.rows[0]?.total ?? 0,
   };
 }
+
+
+/* -------------------------------------------------------------------------- */
+/* Job opening — SOP Rule 1 (W)                                               */
+/* -------------------------------------------------------------------------- */
+
+export type JobOpening = {
+  /** Items confirmed in the window that have a confirmation recorded. */
+  scored: number;
+  onTime: number;
+  late: number;
+  /** Percentage of `scored` opened within target. Null when nothing is scored. */
+  onTimePct: number | null;
+  targetWorkingMinutes: number;
+  /**
+   * Items created in the window with NO confirmation recorded — the importer's
+   * rows, and anything entered by a path that predates W. Reported separately
+   * and never counted as late, which is the whole point.
+   */
+  unrecorded: number;
+};
+
+/** The window the tile reports on. Thirty days, like the OTD tile. */
+const OPENING_WINDOW_DAYS = 30;
+
+/**
+ * How well SOP Rule 1 is being kept: of the jobs confirmed recently, how many
+ * were opened inside the target.
+ *
+ * THE WINDOW IS ON opened_at (created_at), not on confirmed_at. An item
+ * confirmed six weeks ago and opened yesterday is a failure that belongs to
+ * yesterday — it is exactly the case the rule exists to catch, and anchoring
+ * on the confirmation would hide it outside the window.
+ *
+ * `unrecorded` IS NOT `late`. v_job_opening reports null, not false, for rows
+ * with no confirmation (W1), and this keeps that separation all the way to the
+ * tile. Folding them together would have made "opened late" read as the
+ * company's entire history on day one.
+ *
+ * The target and the shift both come from app_setting (09:30-18:00, Sunday
+ * off). Overtime is not counted, so this reads slightly generous (W2).
+ */
+export async function jobOpening(runner: Runner = db): Promise<JobOpening> {
+  const [row] = await runner
+    .select({
+      scored: sql<number>`count(*) filter (where ${vJobOpening.openedOnTime} is not null)::int`,
+      onTime: sql<number>`count(*) filter (where ${vJobOpening.openedOnTime})::int`,
+      late: sql<number>`count(*) filter (where ${vJobOpening.openedOnTime} = false)::int`,
+      unrecorded: sql<number>`count(*) filter (where ${vJobOpening.confirmedAt} is null)::int`,
+      target: sql<number>`max(${vJobOpening.targetWorkingMinutes})::int`,
+    })
+    .from(vJobOpening)
+    /*
+     * The boundary is compared as an IST CALENDAR DATE, not by casting the
+     * date to a timestamptz. `date::timestamptz` resolves against the session
+     * TimeZone — UTC on Neon — which would put the edge of the window at
+     * 05:30 IST rather than midnight. Immaterial over thirty days, and
+     * exactly the habit C10 exists to stop.
+     */
+    .where(
+      sql`(${vJobOpening.openedAt} at time zone 'Asia/Kolkata')::date
+          >= today_ist() - ${OPENING_WINDOW_DAYS}::integer`,
+    );
+
+  const scored = row?.scored ?? 0;
+
+  return {
+    scored,
+    onTime: row?.onTime ?? 0,
+    late: row?.late ?? 0,
+    onTimePct: scored === 0 ? null : ((row?.onTime ?? 0) / scored) * 100,
+    targetWorkingMinutes: row?.target ?? 120,
+    unrecorded: row?.unrecorded ?? 0,
+  };
+}
+
+export { OPENING_WINDOW_DAYS };

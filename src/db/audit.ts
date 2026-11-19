@@ -23,11 +23,12 @@ import { auditLog } from "./schema";
  *
  *   B2. OWNER is read-only.     Checked here, at the choke point, rather than
  *      per screen — so a future page that forgets its guard still cannot let
- *      an OWNER write anything. There are exactly THREE documented exceptions
- *      — delegation (G2/J26), saying who chases an enquiry (K15), and adding
- *      an enquiry or a client (K20) — and all three are declared below rather
- *      than in the modules that benefit from them: a rule enforced in one
- *      file and excepted in another is a rule that quietly stops being true.
+ *      an OWNER write anything. There are exactly FOUR documented exceptions
+ *      — delegation (G2/J26), saying who chases an enquiry (K15), adding an
+ *      enquiry or a client (K20), and closing a job by hand (section X) — and
+ *      all four are declared below rather than in the modules that benefit
+ *      from them: a rule enforced in one file and excepted in another is a
+ *      rule that quietly stops being true.
  *
  * If you find yourself wanting to bypass this for a bulk operation, pass a
  * transaction in instead (every function takes an optional `tx`), so the whole
@@ -254,6 +255,82 @@ function isOwnerCreate(table: PgTable): boolean {
   return OWNER_CREATABLE_TABLES.has(getTableName(table));
 }
 
+/* -------------------------------------------------------------------------- */
+/* The FOURTH exception to B2 — closing a job by hand (section X)              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * AN OWNER MAY CLOSE A JOB BY HAND, AND REOPEN ONE, AND NOTHING ELSE ON
+ * `po_item`.
+ *
+ * Asked for by Utkarsh on 18 Nov 2026: the close belongs to "the DEO and admin
+ * and owner". ADMIN and DATA_ENTRY_FULL already hold `purchase_order: "write"`
+ * and need nothing here. OWNER is `read`, and B2 refuses an OWNER write at this
+ * choke point regardless of the matrix — so the grant has to be written here or
+ * it does not exist.
+ *
+ * WHY IT IS DEFENSIBLE. Accepting a shortfall is a commercial write-off: we are
+ * not going to print the remaining pieces and we are not going to bill for
+ * them. That is Amit's decision more than anybody's, and the three preceding
+ * exceptions all turn on the same reasoning — an owner may do the thing that is
+ * his to decide, through a field list narrow enough to be read in one breath.
+ *
+ * THE EXACT BOUNDARY. The table is `po_item` and nothing else. Two shapes are
+ * permitted:
+ *
+ *   1. CLOSING — all three of `closedManuallyAt`, `closedBy`, `closeReason`
+ *      present, and `closedBy` IS THE ACTOR. He may not record somebody else
+ *      as the person who took the decision.
+ *   2. REOPENING — all three set to null, which is the only way back.
+ *
+ * Any other key in the same update refuses the whole update. So this cannot
+ * carry a quantity, a committed date, a rate or a status along with it — and
+ * `status` in particular is refused twice over, here and by the database's own
+ * guard trigger, which only the two sanctioned writers can open.
+ *
+ * WHAT IT DOES NOT GRANT. `auditedInsert` is untouched, so he cannot create a
+ * job already closed (the database refuses that too, in 0048).
+ * `auditedSoftDelete` and `auditedRestore` still refuse an OWNER outright — a
+ * job is closed, never deleted.
+ *
+ * WHAT THIS COSTS. B2 now has four exceptions, and this is the first to reach
+ * the order book. tests/manual-close.test.ts pins both directions — that the
+ * close and the reopen work for an OWNER, and that nothing else on `po_item`
+ * comes with them. Adding a field below is a change that will look innocuous a
+ * year from now.
+ */
+const OWNER_CLOSABLE_TABLE = "po_item";
+
+const MANUAL_CLOSE_FIELDS = ["closedManuallyAt", "closedBy", "closeReason"] as const;
+
+function isOwnerManualClose(
+  actor: Actor,
+  table: PgTable,
+  values: Record<string, unknown>,
+): boolean {
+  if (getTableName(table) !== OWNER_CLOSABLE_TABLE) return false;
+
+  const keys = Object.keys(values);
+
+  // Exactly the three fields, no more and no fewer. A partial update would be
+  // refused by the all-or-none CHECK anyway; refusing it here makes the reason
+  // a sentence rather than a constraint violation.
+  if (keys.length !== MANUAL_CLOSE_FIELDS.length) return false;
+  if (!MANUAL_CLOSE_FIELDS.every((field) => keys.includes(field))) return false;
+
+  const allNull = MANUAL_CLOSE_FIELDS.every(
+    (field) => values[field] === null || values[field] === undefined,
+  );
+  if (allNull) return true; // reopening
+
+  const allSet = MANUAL_CLOSE_FIELDS.every(
+    (field) => values[field] !== null && values[field] !== undefined,
+  );
+
+  // Closing: he signs his own name to it, never anybody else's.
+  return allSet && values.closedBy === actor.id;
+}
+
 export class RecordNotFoundError extends Error {
   constructor(table: string, id: string) {
     super(`No ${table} with id ${id}.`);
@@ -460,7 +537,7 @@ export async function auditedUpdate<T extends AuditableTable>(
     if (!before) throw new RecordNotFoundError(getTableName(table), id);
 
     /*
-     * An OWNER gets exactly TWO things, and this is the whole list.
+     * An OWNER gets exactly THREE things on update, and this is the whole list.
      *
      *   1. Their own delegation task's status, completion date and blocker
      *      note, or — as the delegator — the task, date, level and cancel
@@ -470,12 +547,17 @@ export async function auditedUpdate<T extends AuditableTable>(
      *
      *   2. `enquiry.owner_user_id` — who chases an enquiry (K15).
      *
+     *   3. Closing a job by hand, or reopening one — the three manual-close
+     *      columns on `po_item` and nothing beside them (section X). Closing
+     *      requires `closedBy` to be the actor himself.
+     *
      * Everything else, on every table, still throws.
      */
     if (
       actor.role === "OWNER" &&
       !isOwnerDelegationUpdate(actor, table, values, before) &&
-      !isOwnerEnquiryAssignment(table, values)
+      !isOwnerEnquiryAssignment(table, values) &&
+      !isOwnerManualClose(actor, table, values)
     ) {
       throw new ReadOnlyRoleError(actor.role);
     }
