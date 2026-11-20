@@ -283,6 +283,90 @@ const SCHEMA_EXPECTATIONS: {
     sql: sql`select 1 from fabrication_option
              where code = 'BINDING' and deleted_at is null`,
   },
+
+  // ---------------------------------------------------------------------
+  // 0041 to 0051. The list stopped at 0040 while eleven more shipped — the
+  // exact failure the header above warns about, for the second time. Newest
+  // first from here down.
+  // ---------------------------------------------------------------------
+  {
+    what: "v_po_item_status.closed_manually_at (OTD can see a manual close)",
+    since: "0051_otd_sees_manual_close",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'v_po_item_status'
+               and column_name = 'closed_manually_at'`,
+  },
+  {
+    what: "purchase_order.is_job_work",
+    since: "0050_job_work",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'purchase_order' and column_name = 'is_job_work'`,
+  },
+  {
+    what: "job_card.ups",
+    since: "0049_job_card_ups",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'job_card' and column_name = 'ups'`,
+  },
+  {
+    // The trigger rather than the column: the columns without the trigger is
+    // the dangerous half-state, because the close would be writable with no
+    // fence on how old the PO has to be.
+    what: "manual job close, fence and recompute",
+    since: "0048_manual_job_close",
+    sql: sql`select 1 from pg_trigger
+             where tgname = 'po_item_manual_close_recompute_trg'`,
+  },
+  {
+    what: "v_job_opening and working_minutes_between()",
+    since: "0047_job_opening_discipline",
+    sql: sql`select 1 from pg_proc where proname = 'working_minutes_between'`,
+  },
+  {
+    // 0045 added this check; 0046 rewrote it to be null-safe. Checking that
+    // the constraint EXISTS cannot tell the two apart, and the difference is
+    // the whole of 0046 — so the check reads the constraint's own text.
+    what: "material_batch_bundles_agree is null-safe",
+    since: "0046_bundles_pair_null_safe",
+    sql: sql`select 1 from pg_constraint
+             where conname = 'material_batch_bundles_agree'
+               and pg_get_constraintdef(oid) like '%IS NULL%'`,
+  },
+  {
+    what: "job_card.paper_sheets_per_bundle",
+    since: "0045_bundle_size_columns",
+    sql: sql`select 1 from information_schema.columns
+             where table_name = 'job_card'
+               and column_name = 'paper_sheets_per_bundle'`,
+  },
+  {
+    what: "the 'Bundle' paper_bundle option",
+    since: "0044_manual_bundle_size",
+    sql: sql`select 1 from pg_enum e
+             join pg_type t on t.oid = e.enumtypid
+             where t.typname = 'paper_bundle' and e.enumlabel = 'Bundle'`,
+  },
+  {
+    what: "auto_close_pending_below",
+    since: "0043_auto_close_small_residuals",
+    sql: sql`select 1 from app_setting where key = 'auto_close_pending_below'`,
+  },
+  {
+    what: "the DATA_ENTRY_FULL role",
+    since: "0042_data_entry_full_role",
+    sql: sql`select 1 from pg_enum e
+             join pg_type t on t.oid = e.enumtypid
+             where t.typname = 'user_role' and e.enumlabel = 'DATA_ENTRY_FULL'`,
+  },
+  {
+    // Seed data, checked for the same reason as BINDING above: a database
+    // missing these renders a stage list that is quietly three short.
+    what: "the three finishing stages",
+    since: "0041_three_finishing_stages",
+    sql: sql`select 1 from stage
+             where code in ('HYBRID_UV', 'EMBOSSING', 'EMBOSS_DIE_CUT')
+             group by 1 = 1 having count(*) = 3`,
+  },
 ];
 
 async function checkSchema() {

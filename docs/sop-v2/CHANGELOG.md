@@ -227,3 +227,40 @@ set (AA5).
 
 Dev only. 7 new tests; manual-close 29/29. One of them demonstrates the old bug live — the
 short close reads on_time true before the close and false after.
+
+## 20-Nov-2026 — W–AA promoted to production, and a way back
+
+**Database:** migrations 0047–0051 applied to the production Neon branch
+(`ep-wispy-dawn`), taking it from 47 applied to 52. Additive only: 8 new nullable columns
+(one `NOT NULL DEFAULT false`), 4 functions, 3 triggers, 1 new view, 2 views replaced in
+place, 5 new `app_setting` rows. No existing row updated or deleted; `audit_log` unchanged at
+5,325 rows.
+
+**Files:** `drizzle/down/` (5 down files + README), `scripts/migrate-down.ts`,
+`src/app/api/health/route.ts` (expectations for 0041–0051),
+`docs/DECISIONS.md` (section BB), `docs/DEPLOYMENT.md`.
+
+**Why down migrations existed first.** Rule 7 of the brief requires a reversible migration
+and there were none in the repo — drizzle-kit applies forward only. `scripts/migrate-down.ts`
+runs a down file and deletes the matching journal row in one transaction, because doing only
+the first leaves a database `db:migrate` reports as up to date while the columns are gone
+(BB1).
+
+**The promotion was rehearsed on production and rolled back.** All five ups, then all five
+downs, in one transaction against real production data. Result: ten views identical on the
+columns they already had, `v_otd` 49 of 100 before and after, no row written, and a schema
+after the downs that was byte-identical across 731 columns, 503 constraints, 148 indexes, 20
+functions, 35 triggers, 10 views, 31 enum types and 4 settings (BB5).
+
+**One thing needed explaining.** `v_wip_ageing`'s checksum had moved after the real run. Its
+definition is byte-identical; `hours_in_stage` is derived from `now()`, so the checksum moves
+every few seconds on its own (BB6).
+
+**The health endpoint had stopped checking at 0040** — eleven migrations behind, so production
+would have called itself up to date while missing all of W–AA. Fixed to 0051 (BB7).
+
+Verified before applying: `tsc` clean, `eslint src` clean, 59 test files / 776 tests passing.
+
+**Not deployed.** `origin/main` is still a commit behind; the code has not been pushed. That
+is the correct order for an additive batch and nothing in the running build reads the new
+columns (BB8).

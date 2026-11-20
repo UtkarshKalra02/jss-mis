@@ -201,6 +201,61 @@ DOTENV_CONFIG_PATH=.env.production.local npx drizzle-kit check
 Expect to see the five migrations apply: core schema, constraint triggers,
 derived views, seed reference data, and the password-policy column.
 
+### 6b. Rolling a migration back
+
+`drizzle-kit` has no down command. It applies forward only and records what it
+applied as the **SHA-256 of the migration file**, so reversing one means two
+things, and doing only the first is the trap:
+
+1. run the matching file in `drizzle/down/`, and
+2. delete that migration's row from `drizzle.__drizzle_migrations`.
+
+A database whose schema has been rolled back but whose journal still claims the
+migration is applied will never re-apply it: `db:migrate` reports nothing
+pending against a database missing the columns, and neither direction repairs
+it.
+
+`scripts/migrate-down.ts` does both in one transaction:
+
+```bash
+DOTENV_CONFIG_PATH=.env.local npx tsx scripts/migrate-down.ts 0051 0050 --dry-run
+```
+
+**Newest first.** A column cannot be dropped while a later migration's view
+still selects it.
+
+It refuses any database that is not the dev branch unless given `--yes`, and
+refuses a migration whose journal row is absent. `--dry-run` runs the whole file
+against the real data and rolls back — the cheap way to find out a down file
+does not parse, and worth doing against production before the real thing.
+
+**Not every migration has a down file, and `drizzle/down/README.md` says which
+do.** Going down is lossy wherever the migration added somewhere to put
+something: the down file is what deletes that data. Each one raises a `NOTICE`
+counting the rows it is about to strip, before it strips them.
+
+**On Neon the better rollback is usually a branch from a point in time.** It
+loses nothing and takes a minute. Use the down files when data written since the
+migration has to be kept and only the schema goes back.
+
+### 6c. Rehearsing a batch against production, without touching it
+
+`drizzle-kit` applies **every** pending migration in one transaction, and a
+database that has had them applied one at a time, days apart, has never tested
+that. The way to test it is to run the batch against production inside a
+transaction that rolls back:
+
+that is what was done for 0047–0051 on 20 Nov 2026 — all five ups, then all five
+downs, then `ROLLBACK`, which proved on real data that the batch applies, that
+the ten views return identical rows, that `v_otd` does not move, that no
+existing row is written, and that the downs restore the schema byte for byte.
+See `docs/DECISIONS.md` section BB5.
+
+It costs one short transaction and it is the only place those answers are real.
+The one thing it leaves behind is a consumed sequence value on
+`drizzle.__drizzle_migrations`, which is why that table's `id` runs ahead of the
+number of rows in it.
+
 ### 7. Confirm the database is actually there
 
 ```bash
@@ -349,8 +404,13 @@ you are asking is recent enough to know about the migration you are missing:**
 the expectation list lives in the code, so a deployment built before a migration
 existed cannot check for it. It reported `upToDate: true` against a database
 five migrations behind for exactly that reason, because the list had stopped
-being extended at 0009. It now runs to 0021, and every new migration has to add
-an entry.
+being extended at 0009.
+
+It then did it again. The list stopped at 0040 while eleven migrations shipped,
+so on 20 Nov 2026 production would have reported itself up to date while missing
+all five of 0047–0051. **It now runs to 0051, and every new migration has to add
+an entry** — which is the second time that sentence has had to be written, so
+treat it as part of writing the migration rather than a follow-up.
 `Application error: a server-side exception has occurred` with a digest and
 nothing else is what this looks like from the browser; the Vercel function log
 has the real message, which is usually `column "x" does not exist`.

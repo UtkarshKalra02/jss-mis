@@ -5439,3 +5439,107 @@ It also does not weight the shortfall. A job short by 50 pieces and one short by
 score as not on time. A "substantially delivered" threshold would be a number nobody has
 measured, and H2's objection applies: an invented figure is indistinguishable from a measured
 one once it is in a column.
+
+---
+
+# BB — going back: down migrations, and the promotion of W–AA to production
+
+Utkarsh, 20 Nov 2026: *"migrate production"*. Before that could happen, rule 7 of the SOP
+brief asked for something that did not exist: *"a reversible migration exists (up and down)"*.
+Section BB is what was built to satisfy it, and what the promotion actually proved.
+
+## BB1 — drizzle-kit has no down, so the journal row is half the job
+
+drizzle-kit applies forward only and records what it applied as the **SHA-256 of the
+migration file**. Reversing the schema without deleting that row leaves a database that is
+missing the columns and that `db:migrate` reports as **up to date** — broken in a way neither
+direction repairs.
+
+So `scripts/migrate-down.ts` does both in one transaction: run `drizzle/down/<tag>.down.sql`,
+then `DELETE FROM drizzle.__drizzle_migrations WHERE hash = $1`. It refuses a database that is
+not the dev branch unless given `--yes`, refuses a migration whose journal row is absent, and
+has `--dry-run`, which runs the whole thing against real data and rolls back.
+
+## BB2 — the down files are hand-written, because a generated one would be a lie
+
+Four of the five restore a **view or a function to the definition an earlier migration left**,
+and the only place that definition exists is that migration. 0051's down restores
+`v_po_item_status` to 0050's text and `v_otd` to 0043's; 0050's restores the view to 0038's;
+0048's restores `recompute_po_item_status` to 0043's. Each file names its source.
+
+## BB3 — CREATE OR REPLACE cannot take a column away, so going down drops the chain
+
+The move that made the forward migrations cheap — append a column, replace the view in place —
+has no mirror image. Postgres lets `CREATE OR REPLACE VIEW` change expressions and **append**
+columns; it will not remove one. The down files therefore `DROP VIEW v_po_item_status CASCADE`
+and rebuild all four: the view itself, `v_otd`, `v_wip_ageing` and `v_client_summary`. The
+last two are collateral of the cascade, rebuilt unchanged from 0002 and 0008.
+
+This is why the down files must run **newest first**. 0048 cannot drop `closed_manually_at`
+while 0051's view still selects it.
+
+## BB4 — going down is lossy, and each file says so before it does it
+
+Every down except 0051's destroys the only copy of something: confirmations (0047), manual
+closes (0048), ups figures (0049), which orders are job work (0050). Each raises a `NOTICE`
+counting the rows it is about to strip, and its header names the query to keep the list with.
+
+0048's is the one to read twice. It does not reopen the items it de-closes — `status` still
+reads `Closed` until something recomputes it, and the next recompute, no longer knowing about
+manual closes, will reopen any that are still short. Correct for the old rules, and a visible
+change on the floor.
+
+On Neon the better rollback is usually a branch from a point in time, which loses nothing.
+These files are for the case where data written since the migration has to be kept and only
+the schema goes back.
+
+## BB5 — the promotion was rehearsed on production and rolled back
+
+Before applying anything, all five up files and then all five down files were run against the
+**production database inside a single transaction that always rolls back**. That is the only
+place the batch can be proved, because drizzle applies all five in one transaction and dev had
+them applied one at a time, days apart.
+
+It proved, on real data: the batch applies (31 statements, 2.8 s); the ten views return
+identical rows on the columns they already had; `v_otd` reads 49 of 100 before and after; no
+existing row is updated or deleted and no audit row is written; and the down files restore
+the schema **exactly** — 731 columns, 503 constraints, 148 indexes, 20 functions, 35 triggers,
+10 views, 31 enum types and 4 settings all byte-identical afterwards.
+
+The acceptance checks in section 4 of the brief are answered by that run, not by argument.
+
+## BB6 — one measurement needed explaining, and it was the clock
+
+After the real migration, `v_wip_ageing`'s whole-row checksum had moved. Its **definition is
+byte-identical** before and after, and the checksum moves on its own every few seconds with
+no migration involved: `hours_in_stage` is derived from `now()` for all 102 rows. The
+in-transaction rehearsal, where `now()` is frozen at transaction start, showed it unchanged.
+
+Worth recording because a checksum over a view containing `now()` is not a fixed quantity, and
+reading one as evidence of a change is a mistake that looks exactly like a finding.
+
+## BB7 — the health endpoint's expectation list had stopped at 0040
+
+`src/app/api/health/route.ts` carries a list of things each migration should have left behind,
+so `schema.upToDate` can answer "is this database behind the code talking to it". Its own
+header warns that forgetting to extend it is worse than never having had it, having already
+happened once at 0009.
+
+It had happened again: the list stopped at 0040 while eleven migrations shipped, so production
+would have reported `upToDate: true` while missing all five of W–AA. Entries for 0041–0051 are
+now in, newest first. Two of them are shaped by what the check has to distinguish: 0046 reads
+the **text** of `material_batch_bundles_agree` for `IS NULL`, because 0045 created a
+constraint of the same name and checking that it merely exists cannot tell them apart; and
+0048 checks for the recompute **trigger** rather than the columns, because columns without the
+trigger is the dangerous half-state.
+
+## BB8 — what was promoted, and what was not
+
+Migrations 0047–0051 are on production as of 20 Nov 2026. The **code is not deployed**:
+`origin/main` is still a commit behind and nothing has been pushed. That order is deliberate
+and is what `docs/DEPLOYMENT.md` prescribes for an additive batch — migrate first, deploy
+second, so the running build finds its columns already there rather than selecting ones that
+do not exist yet.
+
+Nothing in the old build reads the new columns, and nothing parses view rows strictly, so the
+live site is unaffected until the deploy.
