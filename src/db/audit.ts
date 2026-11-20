@@ -23,12 +23,16 @@ import { auditLog } from "./schema";
  *
  *   B2. OWNER is read-only.     Checked here, at the choke point, rather than
  *      per screen — so a future page that forgets its guard still cannot let
- *      an OWNER write anything. There are exactly FOUR documented exceptions
+ *      an OWNER write anything. There are exactly FIVE documented exceptions
  *      — delegation (G2/J26), saying who chases an enquiry (K15), adding an
- *      enquiry or a client (K20), and closing a job by hand (section X) — and
- *      all four are declared below rather than in the modules that benefit
- *      from them: a rule enforced in one file and excepted in another is a
- *      rule that quietly stops being true.
+ *      enquiry or a client (K20), closing a job by hand (section X), and the
+ *      petty cash tin (section CC) — and all five are declared below rather
+ *      than in the modules that benefit from them: a rule enforced in one file
+ *      and excepted in another is a rule that quietly stops being true.
+ *
+ *      The fifth is the only one that is not field-level, and the reason it
+ *      can be that wide without being vague is that the table it names has no
+ *      update path anywhere in the application. Read CC2 before widening it.
  *
  * If you find yourself wanting to bypass this for a bulk operation, pass a
  * transaction in instead (every function takes an optional `tx`), so the whole
@@ -331,6 +335,52 @@ function isOwnerManualClose(
   return allSet && values.closedBy === actor.id;
 }
 
+/* -------------------------------------------------------------------------- */
+/* The FIFTH exception to B2 — the petty cash tin (section CC)                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * AN OWNER MAY ADD AND VOID PETTY CASH ENTRIES. ANY ENTRY, NOT ONLY HIS OWN.
+ *
+ * Utkarsh, 20 Nov 2026: *"only accountant and owner can add data or remove data
+ * from it"*. Asked how narrow to make it, he chose the wide reading knowingly.
+ *
+ * WHY IT IS NOT SELF-ONLY, which is the shape every other exception here takes.
+ * The tin is Amit's money and two people keep the book — he hands cash out,
+ * Pradeep spends it and writes it up. A carve-out limited to rows he created
+ * would leave him looking at a figure he knows is wrong and unable to touch it,
+ * and the first thing anybody does with a cash book is correct it. Self-only
+ * would have been tidier here and useless there.
+ *
+ * WHY THE WIDTH IS STILL BOUNDED, and this is the part that matters: there is
+ * nothing else on this table to grant. The module has NO update path — no
+ * action, no form, no server function edits a petty cash row — because an entry
+ * typed wrong is voided and typed again. So "an OWNER may write petty_cash"
+ * cannot mean changing an amount after the fact; it means insert, void and
+ * un-void, which is exactly what the three call sites below allow and nothing
+ * more. `auditedUpdate` is deliberately NOT given this exception, so the day
+ * somebody adds an edit form, the wrapper refuses the OWNER until this comment
+ * is read and a decision is made on purpose.
+ *
+ * WHY VOID AND UN-VOID BOTH. A void is how this system removes anything
+ * (non-negotiable 7), so refusing it would mean refusing the "remove data" half
+ * of the request outright. Un-void follows for the same reason the close has a
+ * reopen: a mis-void with no way back is a worse trap than the mis-void.
+ *
+ * WHAT THIS COSTS, written down in the same place the other four wrote theirs.
+ * B2 was "OWNER never writes, except these narrow field lists". It is now
+ * "OWNER never writes, except these narrow field lists, and one whole table".
+ * That is a real weakening and the honest thing is to say so here rather than
+ * let the list grow quietly. tests/petty-cash.test.ts pins all of it: that the
+ * insert, the void and the un-void work for an OWNER, and that an update of a
+ * petty cash row still throws for him.
+ */
+const OWNER_PETTY_CASH_TABLE = "petty_cash";
+
+function isOwnerPettyCash(table: PgTable): boolean {
+  return getTableName(table) === OWNER_PETTY_CASH_TABLE;
+}
+
 export class RecordNotFoundError extends Error {
   constructor(table: string, id: string) {
     super(`No ${table} with id ${id}.`);
@@ -440,14 +490,15 @@ export async function auditedInsert<T extends AuditableTable>(
   values: InferInsertModel<T>,
   tx?: Runner,
 ): Promise<InferSelectModel<T>> {
-  // An OWNER may raise a delegated task for somebody else (J26), or add an
-  // enquiry or a client (K20), and nothing else. Every other insert by an
-  // OWNER is still refused here.
+  // An OWNER may raise a delegated task for somebody else (J26), add an
+  // enquiry or a client (K20), or put an entry in the petty cash book (CC2),
+  // and nothing else. Every other insert by an OWNER is still refused here.
   if (
     actor.role !== "OWNER" ||
     !(
       isOwnerDelegationInsert(actor, table, values as Record<string, unknown>) ||
-      isOwnerCreate(table)
+      isOwnerCreate(table) ||
+      isOwnerPettyCash(table)
     )
   ) {
     assertCanWrite(actor);
@@ -593,7 +644,10 @@ export async function auditedSoftDelete<T extends AuditableTable>(
   id: string,
   tx?: Runner,
 ): Promise<InferSelectModel<T>> {
-  assertCanWrite(actor);
+  // An OWNER may void a petty cash entry (CC2) and remove nothing else. A
+  // delegated task he owns is cancelled by status, not deleted, so G2 needs
+  // nothing here and never did.
+  if (!isOwnerPettyCash(table)) assertCanWrite(actor);
 
   return inTransaction(tx, async (r) => {
     const [before] = await generic(r).select().from(table).where(eq(table.id, id));
@@ -626,7 +680,9 @@ export async function auditedRestore<T extends AuditableTable>(
   id: string,
   tx?: Runner,
 ): Promise<InferSelectModel<T>> {
-  assertCanWrite(actor);
+  // The other half of CC2: a mis-void with no way back is a worse trap than
+  // the mis-void itself.
+  if (!isOwnerPettyCash(table)) assertCanWrite(actor);
 
   return inTransaction(tx, async (r) => {
     const [before] = await generic(r).select().from(table).where(eq(table.id, id));

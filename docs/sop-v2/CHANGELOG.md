@@ -264,3 +264,39 @@ Verified before applying: `tsc` clean, `eslint src` clean, 59 test files / 776 t
 **Not deployed.** `origin/main` is still a commit behind; the code has not been pushed. That
 is the correct order for an additive batch and nothing in the running build reads the new
 columns (BB8).
+
+## 20-Nov-2026 — petty cash, the office tin (migration 0052, section CC)
+
+**Tables:** `petty_cash_head` (seeded with seven heads), `petty_cash`.
+**Enum:** `petty_cash_direction` (In, Out).
+**Function:** `petty_cash_balance_on(date)` — the one definition of what is in the tin.
+**Views:** `v_petty_cash_day`, `v_petty_cash_head_month`.
+**Triggers:** `touch_updated_at` on both tables, plus `petty_cash_no_future_date`.
+**Files:** `drizzle/0052_petty_cash.sql` + its down file, `_journal.json`,
+`src/db/schema/{petty-cash,enums,index}.ts`, `src/db/views.ts`, `src/db/audit.ts`,
+`src/auth/roles.ts`, `src/components/shell/nav.ts`,
+`src/modules/petty-cash/{validation,queries,actions}.ts`,
+`src/components/petty-cash/{add-entry-form,entry-actions}.tsx`,
+`src/app/(app)/petty-cash/page.tsx`, `src/app/api/health/route.ts`,
+`tests/petty-cash.test.ts`, `docs/{DECISIONS,BACKLOG}.md`.
+
+**Two standing rules had to be settled first, and both were put to him rather than decided.**
+R1 says the money stays in Busy — answered by the fact that the tin is NOT in Busy, so this
+is the first book for it rather than a second (CC1). B2 says the OWNER never writes — he
+chose the widest of three options, so B2 now has a fifth exception and the first that is not
+a field list (CC2). It is bounded only by there being no update path on the table, which is
+why `auditedUpdate` deliberately does not carry the exception.
+
+**Visibility:** ACCOUNTS and OWNER write, ADMIN reads, the other five roles have no entry for
+the resource at all — so the sidebar does not show it and the URL gives /forbidden (CC3).
+
+**Nothing stored that can be derived:** no balance column and no opening-float setting. The
+book starts empty and the first top-up is the float (CC5). "Remove" means void: the row stays
+struck through on the sheet and leaves the balance (CC6).
+
+**Refused by the database:** out with no head, in with a head, zero or negative amounts, a
+blank purpose, a future date. **Not refused:** an overdrawn tin, which is shown in red
+instead, because blocking it is impossible without being wrong in a different way (CC7).
+
+Dev only. 39 new tests. Declined and recorded in BACKLOG: a daily physical cash count, a link
+from an entry to a job, and an Admin screen for the heads.

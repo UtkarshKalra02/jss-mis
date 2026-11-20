@@ -750,3 +750,39 @@ opening a second screen will not be recorded, and an unrecorded step scores as l
   expected it to be compulsory on 18 Nov 2026. Making it required needs zero to be a real
   typed answer and an explicit reasoned "not counted" escape, or the floor will type a fake
   zero — which is worse than a blank, because a blank is honest about not knowing.
+
+---
+
+## Petty cash — what section CC did not build
+
+The tin ships on 20 Nov 2026 as a daily sheet: in, out, opening, closing, and the month by
+head. Three things were put to Utkarsh in the same conversation and are not in it.
+
+- **A physical cash count per day.** "Counted in the tin: ₹X", with the difference against
+  the book shown beside it. **This is the first thing to add if the closing balance is ever
+  argued with**, because without it the sheet is a list of claims rather than a reconciled
+  book — nothing in the system can tell a missing entry from a miscount. Declined for now;
+  the schema change is one nullable column on a new `petty_cash_count` row per day, not a
+  column on `petty_cash` (a count is a fact about a day, not about a movement).
+
+- **A link from an entry to a job card or PO item.** ₹200 auto to deliver JC-123. R1 wrote
+  down that costing here can only ever be quantity-accurate because two of its three money
+  inputs live in Busy; this would be the first money input to a job that does not. Declined.
+
+- **A screen to manage the heads.** Seven are seeded (CONVEYANCE, FOOD, LOADING, COURIER,
+  STATIONERY, REPAIRS, OTHER) and adding an eighth currently needs a migration or a
+  hand-written row. `petty_cash_head` is already shaped for it — soft delete, a sequence, a
+  unique code — so this is an Admin screen and nothing else. Worth doing the first time
+  somebody asks for a head that is not on the list, and not before.
+
+Two consequences of CC worth re-reading before changing anything near them:
+
+- **B2 now has a whole-table exception** (CC2). It is only safe because `petty_cash` has no
+  update path anywhere. Adding an edit form to petty cash is not a small change — it widens
+  the OWNER's write from "insert and void" to "rewrite an amount after the fact", and
+  `tests/petty-cash.test.ts` is written to fail if that happens silently.
+
+- **R1 is no longer "no money in this system"** (CC1). It is "no money except the tin", and
+  that holds only while petty cash stays out of Busy. If it is ever switched on there, the
+  right move is a Busy voucher reference per entry — the `invoice.busy_synced` pattern — not
+  two books.

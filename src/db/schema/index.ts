@@ -8,7 +8,7 @@
  * Order below follows the dependency graph, which is acyclic by construction:
  *   enums -> users -> _shared -> imports -> reference -> materials -> pre-order
  *         -> order -> tooling -> production -> material-movements -> dispatch
- *         -> accounts -> delegation -> audit
+ *         -> accounts -> petty-cash -> delegation -> audit
  *
  * materials sits BEFORE order and production because both point at it (a
  * design's preferred paper, a job card's paper); material-movements sits after
@@ -30,5 +30,6 @@ export * from "./fabrication";
 export * from "./material-movements";
 export * from "./dispatch";
 export * from "./accounts";
+export * from "./petty-cash";
 export * from "./delegation";
 export * from "./audit";

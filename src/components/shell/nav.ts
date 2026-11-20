@@ -19,6 +19,7 @@ import {
   Stamp,
   Target,
   Truck,
+  Wallet,
   Warehouse,
   Workflow,
   type LucideIcon,
@@ -175,8 +176,28 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    /**
+     * Three dead links and one live one.
+     *
+     * Invoices, Receipts and AR Ledger are R1's dropped Phase 5 — Busy keeps
+     * the money — and stay here dimmed because the shape of the finished system
+     * is useful to see. Petty Cash is FIRST rather than appended under them, so
+     * the one entry in this group that works is not buried beneath three that
+     * never will.
+     *
+     * It is also the narrowest nav entry in the file: three roles have the
+     * resource and five do not, so for most of the company this heading shows
+     * nothing at all.
+     */
     heading: "Accounts",
     items: [
+      {
+        resource: "petty_cash",
+        label: "Petty Cash",
+        href: "/petty-cash",
+        icon: Wallet,
+        phase: 1,
+      },
       { resource: "invoice", label: "Invoices", href: "/invoices", icon: Receipt, phase: 5 },
       { resource: "receipt", label: "Receipts", href: "/receipts", icon: Banknote, phase: 5 },
       { resource: "ar_ledger", label: "AR Ledger", href: "/ar", icon: Scale, phase: 5 },
@@ -245,4 +266,5 @@ export const BUILT: ReadonlySet<Resource> = new Set<Resource>([
   "enquiry",
   "job_planning",
   "material",
+  "petty_cash",
 ]);

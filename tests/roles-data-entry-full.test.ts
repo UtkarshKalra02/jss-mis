@@ -29,6 +29,19 @@ describe("DATA_ENTRY_FULL", () => {
         "delegation_scorecard",
         "invoice",
         "receipt",
+        /**
+         * The office tin (CC3). This one is NOT S4's reasoning — S4 withholds
+         * configuration from a role that enters everything the factory does,
+         * and petty cash is neither. It is withheld because Utkarsh named the
+         * three roles that may see it and this is not one of them, which makes
+         * it the first resource this role cannot reach for a reason that has
+         * nothing to do with being "admin but not admin".
+         *
+         * Worth keeping in this list rather than excluding it from the sweep:
+         * the test's value is that the withheld set is EXACT, and an exception
+         * carved out of the sweep is how a set stops being exact.
+         */
+        "petty_cash",
       ].sort(),
     );
   });

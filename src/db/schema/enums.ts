@@ -35,6 +35,15 @@ export const userRoleEnum = pgEnum("user_role", [
   "DATA_ENTRY_FULL",
 ]);
 
+/**
+ * Which way the cash moved (section CC).
+ *
+ * Two values and no third. A correction is not a direction: an entry typed
+ * wrong is voided and typed again, because an edited cash entry is a cash book
+ * that cannot be audited. There is no update path in the module at all.
+ */
+export const pettyCashDirectionEnum = pgEnum("petty_cash_direction", ["In", "Out"]);
+
 /** Descriptive only — see jobTypeEnum for what actually drives stage flow. */
 export const clientTypeEnum = pgEnum("client_type", ["New", "Repeat"]);
 

@@ -16,14 +16,20 @@
  * Client master access follows decision A3: ADMIN writes, the three desk roles
  * read, OWNER and FLOOR get nothing.
  *
- * OWNER is read-only EVERYWHERE (decision B2), with three documented
- * exceptions, each narrower than the grant that reaches it:
+ * OWNER is read-only EVERYWHERE (decision B2), with documented exceptions,
+ * each narrower than the grant that reaches it:
  *   - `delegation` is "write". G2 granted that so Amit could mark his own
  *     tasks done; J26 turned it round — he DELEGATES, and nobody may delegate
  *     to him.
  *   - `enquiry` and `client` are "create" (K20). He may record an enquiry and
  *     add a client, and that is all: what already exists he still cannot edit
  *     or remove.
+ *   - `petty_cash` is "write", and it is the ONLY resource on which an OWNER
+ *     write is as wide as the grant looks (CC2). The tin is his money and he
+ *     and Pradeep keep it between them, so a carve-out that stopped him fixing
+ *     Pradeep's typo would make the book useless. It is still narrower than it
+ *     reads, because there is no edit path to grant: an entry is added or
+ *     voided, never changed.
  * A grant is what lets him REACH a screen; what he may actually write is
  * decided by the audit wrapper and is narrower than the grant.
  *
@@ -82,6 +88,15 @@ export const RESOURCES = [
   "admin",
   /** The store: material master, receipts, issues, adjustments (section O). */
   "material",
+  /**
+   * The office tin (section CC). The only money resource that is BUILT — the
+   * three above it are R1's dropped Phase 5 and stay dimmed in the nav.
+   *
+   * Granted to three roles and absent for the other five, which is what makes
+   * it invisible rather than merely locked: `NAV` renders from this matrix, so
+   * a role without the key gets no sidebar entry and /forbidden on the URL.
+   */
+  "petty_cash",
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -127,6 +142,17 @@ export const ACCESS: Matrix = {
     delegation_scorecard: "read",
     admin: "write",
     material: "write",
+
+    /**
+     * READ, not write, and it is the only resource where ADMIN is held back
+     * from a screen it can see (CC3). Utkarsh, 20 Nov 2026: "only accountant
+     * and owner can add data or remove data from it". The admin is him —
+     * operations — and the tin is not operations. He audits it; he does not
+     * post to it.
+     *
+     * Not unprecedented: `delegation_scorecard` is already read for this role.
+     */
+    petty_cash: "read",
   },
 
   ORDER_DESK: {
@@ -245,6 +271,13 @@ export const ACCESS: Matrix = {
     receipt: "write",
     ar_ledger: "write",
     dispatch: "write", // B1 — section 6.8 lists ACCOUNTS
+
+    /**
+     * Pradeep keeps the tin (section CC). The three money resources above him
+     * are R1's dropped phase and will never be built; this one is, because the
+     * tin is not in Busy and had no book at all.
+     */
+    petty_cash: "write",
 
     /**
      * Pradeep may record an order and its items, at Utkarsh's direction (U1).
@@ -373,6 +406,21 @@ export const ACCESS: Matrix = {
 
     /** J26 widened this from G2's narrow self-write. See the audit wrapper. */
     delegation: "write",
+
+    /**
+     * CC2, and the widest write an OWNER has ever had here.
+     *
+     * Utkarsh, 20 Nov 2026: "only accountant and owner can add data or remove
+     * data from it". It is his cash, and he and Pradeep both put entries in, so
+     * the usual self-only carve-out would leave him unable to void a mistake he
+     * can see — which in a cash book is the one thing you need to be able to do.
+     *
+     * What keeps it honest is that there is nothing else to grant: the module
+     * has no update path at all, so "write" here means insert, void and un-void
+     * and cannot mean editing an amount. The audit wrapper's fifth B2 exception
+     * is written to match exactly that, and no wider.
+     */
+    petty_cash: "write",
     delegation_scorecard: "read",
 
     material: "read",
@@ -456,9 +504,9 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   ADMIN: "Everything, including users and configuration.",
   ORDER_DESK: "Enquiries, quotations, POs and designs.",
   PLANNER: "Job planning, stage updates, dispatch, and capturing POs.",
-  ACCOUNTS: "Invoices, receipts, AR ledger and dispatch.",
+  ACCOUNTS: "Dispatch, petty cash, and the money screens Busy has not taken over.",
   FLOOR: "Stage updates only, on a phone.",
-  OWNER: "Sees everything, edits nothing — delegates, records enquiries, adds clients.",
+  OWNER: "Sees everything; edits only petty cash — delegates, records enquiries, adds clients.",
   DATA_ENTRY: "The store only: receipts, issues and adjustments of material.",
   DATA_ENTRY_FULL: "Enters everything; configures nothing. No users, stages or settings.",
 };

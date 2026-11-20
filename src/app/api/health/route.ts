@@ -285,10 +285,19 @@ const SCHEMA_EXPECTATIONS: {
   },
 
   // ---------------------------------------------------------------------
-  // 0041 to 0051. The list stopped at 0040 while eleven more shipped — the
-  // exact failure the header above warns about, for the second time. Newest
-  // first from here down.
+  // 0041 onwards. The list stopped at 0040 while eleven migrations shipped —
+  // the exact failure the header above warns about, for the second time.
+  // Newest first from here down.
   // ---------------------------------------------------------------------
+  {
+    // The FUNCTION rather than the tables: petty_cash without
+    // petty_cash_balance_on() is the dangerous half-state, because every
+    // balance on the screen reads it and the tables alone would render a sheet
+    // with no arithmetic.
+    what: "petty_cash_balance_on(), the tin's one definition of a balance",
+    since: "0052_petty_cash",
+    sql: sql`select 1 from pg_proc where proname = 'petty_cash_balance_on'`,
+  },
   {
     what: "v_po_item_status.closed_manually_at (OTD can see a manual close)",
     since: "0051_otd_sees_manual_close",

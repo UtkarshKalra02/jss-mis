@@ -365,6 +365,13 @@
       "when": 1795074235095,
       "tag": "0051_otd_sees_manual_close",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1795164138810,
+      "tag": "0052_petty_cash",
+      "breakpoints": true
     }
   ]
 }

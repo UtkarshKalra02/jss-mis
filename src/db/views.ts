@@ -17,9 +17,9 @@ import {
 /**
  * The derived views, described to TypeScript.
  *
- * Six of them are spec section 5. The last two belong to the Delegation module
- * (BMP week 9), which is not in the v1 spec at all — see section G of
- * DECISIONS.md.
+ * Six of them are spec section 5. The rest arrived with modules the v1 spec
+ * does not describe at all — Delegation (section G), the store (O), job opening
+ * (W) and the petty cash tin (CC).
  *
  * Every one is declared `.existing()`, which tells drizzle-kit that something
  * else owns the definition — in this case the hand-written migrations 0002 and
@@ -504,4 +504,63 @@ export const vJobOpening = pgView("v_job_opening", {
   targetWorkingMinutes: integer("target_working_minutes").notNull(),
   /** Null, never false, for rows with no confirmation. */
   openedOnTime: boolean("opened_on_time"),
+}).existing();
+
+/* -------------------------------------------------------------------------- */
+/* v_petty_cash_day — the office tin, a day at a time (section CC)             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One row per day that had cash movement, with the day's opening and closing.
+ *
+ * ONLY DAYS WITH ENTRIES APPEAR. That is right for a history list and wrong for
+ * the sheet, which has to render a quiet Tuesday with Monday's closing as its
+ * opening — so the screen asks `petty_cash_balance_on()` for its own two
+ * figures rather than gap-filling here. Both read the same function, so the
+ * quiet day and the busy day cannot disagree about what was in the tin.
+ *
+ * `openingBalance` is yesterday's closing by definition, not by a second sum.
+ * Migration 0052 writes it as `petty_cash_balance_on(entry_date - 1)`, which is
+ * the one place the arithmetic lives.
+ *
+ * VOIDED ENTRIES ARE ABSENT from every figure here. A void is how this system
+ * removes anything (non-negotiable 7); the row stays for the audit trail and
+ * leaves the arithmetic, which is what makes it a removal rather than a note.
+ *
+ * `overdrawn` means the book says the tin holds less than nothing, which it
+ * cannot, so an entry is missing — nearly always a top-up nobody wrote down.
+ * Shown and never blocked, the same choice `client.credit_limit` made.
+ */
+export const vPettyCashDay = pgView("v_petty_cash_day", {
+  entryDate: date("entry_date").notNull(),
+  cashIn: numeric("cash_in", { precision: 14, scale: 2 }).notNull(),
+  cashOut: numeric("cash_out", { precision: 14, scale: 2 }).notNull(),
+  entries: integer("entries").notNull(),
+  net: numeric("net", { precision: 14, scale: 2 }).notNull(),
+  openingBalance: numeric("opening_balance", { precision: 14, scale: 2 }).notNull(),
+  closingBalance: numeric("closing_balance", { precision: 14, scale: 2 }).notNull(),
+  overdrawn: boolean("overdrawn").notNull(),
+}).existing();
+
+/* -------------------------------------------------------------------------- */
+/* v_petty_cash_head_month — where the month went (section CC)                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Spending per head per month. OUT only — a top-up has no head to group by.
+ *
+ * This view is the reason the heads are a seeded table rather than free text
+ * (CC4): "conveyance", "conveyence" and "auto" are three heads to a database
+ * and one to a person, and a typed head makes this total meaningless inside a
+ * fortnight.
+ */
+export const vPettyCashHeadMonth = pgView("v_petty_cash_head_month", {
+  /** First of the month, in IST. */
+  month: date("month").notNull(),
+  headId: uuid("head_id").notNull(),
+  headCode: text("head_code").notNull(),
+  headName: text("head_name").notNull(),
+  headSequence: integer("head_sequence").notNull(),
+  spent: numeric("spent", { precision: 14, scale: 2 }).notNull(),
+  entries: integer("entries").notNull(),
 }).existing();

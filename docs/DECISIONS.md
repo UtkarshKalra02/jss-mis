@@ -5543,3 +5543,188 @@ do not exist yet.
 
 Nothing in the old build reads the new columns, and nothing parses view rows strictly, so the
 live site is unaffected until the deploy.
+
+---
+
+# CC — petty cash: the office tin
+
+Asked for by Utkarsh on 20 Nov 2026: *"Add a daily petty cash entry record and calculation
+visible only to accountant, owner and admin(of course). No one else, and only accountant and
+owner can add data or remove data from it"*.
+
+Two standing rules had to be settled before a line was written, and both were put to him
+rather than decided: R1 says the money stays in Busy, and B2 says the OWNER never writes.
+CC1 and CC2 are his answers.
+
+## CC1 — why this does not break R1
+
+R1 dropped invoices, receipts, AR and the vendor bill, quoting him: *"I don't wanna add Busy
+features to this now, the money is tracked on Busy."* Its stated reason is that **postings
+belong where the accountant already makes them**, and its carve-outs were all "operations
+rather than accounting — quantities, not money".
+
+A petty cash book is unambiguously a cash ledger, so on its face this is the first money
+ledger in the system and R1 should refuse it. The question that decides it is not
+philosophical: **does Pradeep also post petty cash in Busy?** If he did, there would be two
+books for the same tin and no way to say which is right, which is precisely the harm R1
+exists to prevent.
+
+Asked directly, Utkarsh's answer was no. The tin was a notebook. So this is not a second
+copy of a Busy ledger, it is the first copy of something that had no ledger at all, and R1's
+reason does not reach it.
+
+**What that costs, stated rather than discovered.** R1 is no longer "no money in this
+system"; it is "no money in this system except the tin". If petty cash is ever switched on in
+Busy, this module becomes the thing R1 forbids on the day that happens, and the right move
+then is a Busy voucher reference per entry — the `invoice.busy_synced` pattern — not two
+books. That was offered and declined, correctly, since there is nothing to reconcile against
+yet.
+
+**Still not built, and still not wanted:** GST, a vendor ledger, any link to an invoice, and
+the bank side. The module answers "how much is in the tin and where did the rest go" and
+stops.
+
+## CC2 — the FIFTH exception to B2, and the first that is not field-level
+
+B2 is "OWNER is read-only everywhere", enforced in `src/db/audit.ts` at the choke point. Its
+four existing exceptions are all narrow field lists: his own delegated task's status, one
+column on `enquiry`, inserting an `enquiry` or a `client`, and the three manual-close columns
+on `po_item`.
+
+He was offered three widths and chose the widest knowingly: **an OWNER may add and void any
+petty cash entry, including Pradeep's.**
+
+**Why not self-only**, which is the shape of every other exception here. The tin is Amit's
+money and two people keep the book — he hands cash out, Pradeep spends it and writes it up. A
+carve-out limited to rows he created would leave him looking at a figure he knows is wrong
+and unable to touch it, and correcting the book is the first thing anybody does with a cash
+book. Self-only would have been tidier in the wrapper and useless in the office.
+
+**Why the width is nevertheless bounded, and this is the load-bearing part.** There is
+nothing else on this table to grant, because **the module has no update path at all** — no
+action, no form, no server function edits a petty cash row. So "an OWNER may write
+petty_cash" cannot mean changing an amount after the fact. It means insert, void and un-void,
+which is exactly what the three call sites allow.
+
+`auditedUpdate` is deliberately **not** given this exception. The day somebody adds an edit
+form, the wrapper refuses the OWNER until this entry has been read and a decision made on
+purpose. `tests/petty-cash.test.ts` pins that refusal, and it is the test that should go red.
+
+**What this costs.** B2 was "OWNER never writes, except these narrow field lists". It is now
+"OWNER never writes, except these narrow field lists, and one whole table". That is a real
+weakening of the rule and the honest thing is to write it here rather than let the list grow
+quietly.
+
+## CC3 — the admin sees the tin and cannot post to it
+
+*"visible only to accountant, owner and admin(of course). No one else, and only accountant
+and owner can add data or remove data"* — so `petty_cash` is `write` for ACCOUNTS and OWNER
+and `read` for ADMIN.
+
+That makes it the only resource where ADMIN is held back from a screen it can open. It is the
+right reading: the admin is Utkarsh, operations, and the tin is not operations. He audits it;
+he does not post to it. Not unprecedented either — `delegation_scorecard` is already `read`
+for ADMIN.
+
+The remaining five roles have no entry for the resource at all, which is what makes the
+screen **invisible** rather than merely locked: `NAV` renders from the same matrix
+`requireAccess` enforces, so a PLANNER gets no sidebar link and `/forbidden` on the URL.
+
+## CC4 — fixed heads, not free text
+
+His choice, and the reason is arithmetic rather than tidiness: **a month cannot be totalled
+by head if the head is typed.** "Conveyance", "conveyence" and "auto" are three heads to a
+database and one to a person, and `v_petty_cash_head_month` would be useless within a
+fortnight.
+
+Seven heads are seeded — Conveyance, Food & tea, Loading & labour, Courier & postage,
+Stationery, Repairs & consumables, Other. `OTHER` exists because the alternative to an escape
+hatch is somebody filing a courier under conveyance, and a head that is wrong is worse than
+one that is vague.
+
+**A table, not a `pgEnum`**, for the same reason stages are a table: this list grows when the
+factory's spending changes, and growing an enum needs a migration while growing a table needs
+a row. Heads are deactivated by soft delete, so an old entry's head still reads.
+
+## CC5 — no balance column, and no opening float either
+
+`petty_cash_balance_on(date)` is the single definition of what is in the tin;
+`v_petty_cash_day` builds the sheet from it, and the screen's own two figures call it
+directly. Non-negotiable 2's reasoning applied to money: a stored closing balance is right
+the day it is written and wrong the first time somebody voids an entry or backdates one, and
+it looks equally authoritative on both days.
+
+**There is also no opening-float setting**, which was the obvious second place for the
+starting figure to be wrong. The book starts empty and **the first top-up IS the float**. One
+fewer thing to configure, and the first row of the book explains itself.
+
+The function is O(n) per call and the view calls it twice per day with entries, so a month's
+history is sixty scans of a table that will hold a few thousand rows in its lifetime. That
+trade was taken on purpose: one definition over a faster one, on a table whose size is
+bounded by how often somebody opens a cash tin.
+
+## CC6 — "remove" means void, and the sheet shows it
+
+He asked for the ability to *remove* data. Non-negotiable 7 is soft-delete-only, and in a
+cash book that is more than a convention: a deleted entry would make "the closing balance
+changed and nobody knows why" a thing that can happen.
+
+So a voided entry stays on the sheet, struck through, with who voided it, and leaves the
+balance. Voided entries are listed under the day's entries rather than hidden — a cash book
+that conceals its corrections is the thing a cash book exists not to be.
+
+Un-void exists for the same reason the manual close has a reopen: a mis-void with no way back
+is a worse trap than the mis-void. Both actions refuse the no-op case — voiding something
+already voided would move `deleted_at` to now and quietly rewrite when the void happened.
+
+## CC7 — what the database refuses, and the one thing it will not
+
+Refused, with an explicit `IS NULL` / `IS NOT NULL` on every term of the pairing CHECK (the
+0046 lesson — a CHECK passes when its expression is NULL):
+
+| | why |
+|---|---|
+| money out with no head | it would vanish from the by-head total, the one figure this exists to produce |
+| money in **with** a head | a top-up is not a spend, and would pollute that total |
+| zero or a negative amount | zero is not a movement; a negative is a direction typed in the wrong box |
+| a blank or whitespace purpose | a row nobody can account for in a month is the thing this table is for |
+| an entry dated tomorrow | a typo that lands in a day nobody looks at until it is wrong |
+
+The future-date rule is a **trigger, not a CHECK**: `today_ist()` is not immutable and
+Postgres refuses a CHECK that calls a non-immutable function. It belongs in the database
+anyway — the form says it too, and the form is not the only way in.
+
+**What is NOT refused is an overdrawn tin.** Blocking a negative closing balance would mean
+computing the running balance on every insert, and it would still be wrong the moment
+somebody backdated an entry behind one already saved. So it is **shown**, in red, as "the
+book says the tin is overdrawn — an entry is missing, usually a top-up nobody wrote down".
+The same choice `client.credit_limit` made: warn, never block.
+
+A per-entry cap of ₹1,00,000 is a limit on what a **typo** can do, not on what the factory
+may spend. Petty cash is tea, autos and loading; an entry two orders of magnitude out is a
+stray keypress. A genuinely large payment is not petty cash and belongs in Busy.
+
+## CC8 — the day the cash moved, not the day it was typed
+
+`entry_date` is a date the person types, and the sheet is keyed on it. `created_at` answers a
+different question and must never be used for a balance.
+
+This is the same fact the dashboard's stage panel was corrected for on 12 Oct 2026: entries
+in this factory are written up the next morning. So the form defaults to **the date of the
+sheet being looked at**, not to today — somebody writing up Monday on Tuesday opens Monday's
+sheet and types, and making them correct the date on every row is how entries end up on the
+wrong day.
+
+## CC9 — offered and not taken
+
+Both were put to him and declined, so they are recorded here rather than built:
+
+- **A physical cash count per day** — "counted in the tin: ₹X", with the difference against
+  the book. This is the thing that makes a cash book honest rather than a list of claims, and
+  it is the first thing to add if the closing balance ever starts being argued with.
+- **A link from an entry to a job card or PO item** — ₹200 auto to deliver JC-123. R1 noted
+  that costing in this system can only be quantity-accurate; this would have been the first
+  money input to a job. Not wanted yet.
+
+Also not built: a screen to manage the heads. The seven are seeded and a new one needs a
+migration or a hand-written row for now. Added to `docs/BACKLOG.md`.
