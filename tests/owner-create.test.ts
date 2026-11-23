@@ -53,8 +53,17 @@ describe("the matrix offers exactly what the wrapper permits", () => {
   it("keeps the ordering read < create < write for everybody else", () => {
     expect(can("ADMIN", "client", "create")).toBe(true);
     expect(can("ORDER_DESK", "client", "create")).toBe(true);
-    expect(can("PLANNER", "client", "create")).toBe(false);
-    expect(can("PLANNER", "client", "read")).toBe(true);
+
+    // PLANNER joined the create list on 23 Nov 2026 (Preeti, raising job work
+    // for a party who is not on the master yet). Pinned at "create" and NOT
+    // "write", which is the distinction worth keeping: she may bring a client
+    // into being and may not edit or remove one.
+    expect(can("PLANNER", "client", "create")).toBe(true);
+    expect(can("PLANNER", "client", "write")).toBe(false);
+
+    // ACCOUNTS is now the role that proves the ordering still bites.
+    expect(can("ACCOUNTS", "client", "create")).toBe(false);
+    expect(can("ACCOUNTS", "client", "read")).toBe(true);
     expect(can("FLOOR", "client", "read")).toBe(false);
   });
 });

@@ -71,9 +71,18 @@ describe("resolving a typed client name", () => {
 
   it("refuses to create one for a role that may only read clients", async () => {
     await inRollback(async (tx) => {
-      // PLANNER has enquiry write and client read. Before K19 this succeeded,
-      // because the check keyed off the document rather than the resource.
-      const result = await resolveClientId(tx, actorOf("PLANNER"), {
+      /*
+       * ACCOUNTS, not PLANNER. This case was PLANNER until 23 Nov 2026, when
+       * Utkarsh gave Preeti `client: "create"` so she could raise job work for
+       * a party who is not on the master yet — job work being the kind of order
+       * most likely to be a new name.
+       *
+       * The case itself still matters and is why it was re-pointed rather than
+       * deleted: the gate reads the `client` RESOURCE, not whichever document
+       * is being filled in (K19). ACCOUNTS has `enquiry: "write"` and
+       * `client: "read"`, which is exactly the shape that used to slip through.
+       */
+      const result = await resolveClientId(tx, actorOf("ACCOUNTS"), {
         clientName: uniq("Should Not Exist "),
       });
 
@@ -94,8 +103,9 @@ describe("resolving a typed client name", () => {
         )
       ).rows as { id: string }[];
 
-      // Choosing is not creating, so the gate must not catch this.
-      const result = await resolveClientId(tx, actorOf("PLANNER"), {
+      // Choosing is not creating, so the gate must not catch this. ACCOUNTS
+      // for the same reason as above — it is now the read-only-on-clients role.
+      const result = await resolveClientId(tx, actorOf("ACCOUNTS"), {
         clientId: existing!.id,
         clientName: name,
       });

@@ -253,7 +253,29 @@ export const ACCESS: Matrix = {
     dispatch: "write",
     item_tracker: "read",
     tooling: "read",
-    client: "read",
+    /**
+     * CREATE, raised from "read" on 23 Nov 2026 — Utkarsh: *"preeti can create
+     * clients while making jobwork job cards"*.
+     *
+     * JOB WORK IS WHY. A client PO brings a client with it; job work does not.
+     * A party walks in with their own board and a job number has to exist for
+     * them today, so the alternative to this grant was Preeti stopping to ask
+     * somebody else to type a name — on the one kind of order that is most
+     * likely to be a new name, because job work is how a new customer tries
+     * the factory out.
+     *
+     * "create", the same level K20 gave the OWNER and for the same reason: she
+     * may bring a client into being and may not edit or remove one. The client
+     * master's history stays with the desk that owns it.
+     *
+     * `resolveClientId` reads this, so it takes effect on every screen with a
+     * client picker at once rather than per form. Note what that means in
+     * practice today: the PO/item capture form still offers a DROPDOWN of
+     * existing clients, not the picker, so this grant does not by itself put
+     * an "add a client" path on the screen she raises job work from. See
+     * docs/BACKLOG.md.
+     */
+    client: "create",
     delegation: "write",
 
     /** O5: the planner picks paper for a card and can record its issue. */
@@ -503,7 +525,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   ADMIN: "Everything, including users and configuration.",
   ORDER_DESK: "Enquiries, quotations, POs and designs.",
-  PLANNER: "Job planning, stage updates, dispatch, and capturing POs.",
+  PLANNER: "Job planning, stage updates, dispatch, capturing POs, and adding a client.",
   ACCOUNTS: "Dispatch, petty cash, and the money screens Busy has not taken over.",
   FLOOR: "Stage updates only, on a phone.",
   OWNER: "Sees everything; edits only petty cash — delegates, records enquiries, adds clients.",
