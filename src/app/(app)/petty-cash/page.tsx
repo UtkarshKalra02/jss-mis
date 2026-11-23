@@ -7,7 +7,12 @@ import { AddEntryForm } from "@/components/petty-cash/add-entry-form";
 import { RestoreEntry, VoidEntry } from "@/components/petty-cash/entry-actions";
 import { formatDate, formatINRPrecise } from "@/lib/format";
 import { addDaysISO, todayIST } from "@/lib/dates";
-import { activeHeads, daySheet, monthByHead } from "@/modules/petty-cash/queries";
+import {
+  activeHeads,
+  daySheet,
+  monthByHead,
+  monthTopUps,
+} from "@/modules/petty-cash/queries";
 import { sheetDateSchema } from "@/modules/petty-cash/validation";
 
 export const metadata: Metadata = { title: "Petty cash · JSS MIS" };
@@ -54,14 +59,24 @@ export default async function PettyCashPage({
 
   const monthStart = `${date.slice(0, 7)}-01`;
 
-  const [sheet, heads, byHead] = await Promise.all([
+  const [sheet, heads, byHead, topUps] = await Promise.all([
     daySheet(date),
     activeHeads(),
     monthByHead(monthStart),
+    monthTopUps(monthStart),
   ]);
 
   const mayWrite = can(user.role, "petty_cash", "write");
-  const monthTotal = byHead.reduce((sum, h) => sum + Number(h.spent), 0);
+
+  /*
+   * Both sides of the month, each summed from the rows shown beside it. Out
+   * comes from the by-head view; In from the top-up list, because a top-up has
+   * no head and so no row in that view — which is exactly why the month block
+   * showed only spending until 23 Nov 2026.
+   */
+  const monthOut = byHead.reduce((sum, h) => sum + Number(h.spent), 0);
+  const monthIn = topUps.reduce((sum, t) => sum + Number(t.amount), 0);
+  const monthNet = monthIn - monthOut;
 
   const prev = addDaysISO(date, -1);
   const next = addDaysISO(date, 1);
@@ -245,7 +260,8 @@ export default async function PettyCashPage({
       ) : null}
 
       {/* ------------------------------------------------------------------ */}
-      {/* Where the month went. The reason the heads are a fixed list         */}
+      {/* The month, both ways round. Out by head — the reason the heads are   */}
+      {/* a fixed list — and In as the handovers it actually was.              */}
       {/* ------------------------------------------------------------------ */}
       <section className="mt-8">
         <h2 className="text-sm font-medium">
@@ -255,39 +271,109 @@ export default async function PettyCashPage({
           })}{" "}
           so far
         </h2>
-        {byHead.length === 0 ? (
-          <p className="text-muted-foreground mt-1 text-[13px]">
-            Nothing spent out of the tin this month.
-          </p>
-        ) : (
-          <>
-            <table className="mt-3 w-full max-w-md text-[13px]">
-              <tbody>
-                {byHead.map((h) => (
-                  <tr key={h.headId} className="border-b last:border-0">
-                    <td className="py-2 pr-3">{h.headName}</td>
-                    <td className="text-muted-foreground py-2 pr-3 text-right text-xs tabular-nums">
-                      {h.entries}
+
+        <div className="mt-3 grid gap-x-10 gap-y-6 sm:grid-cols-2">
+          {/*
+            Money in. Listed rather than totalled: a top-up is a specific
+            handover from a specific person, and a bare figure cannot be checked
+            against anything. The date links to that day's sheet, which is where
+            the rest of the entry is.
+          */}
+          <div>
+            <h3 className="text-muted-foreground text-xs">Cash in — top-ups</h3>
+            {topUps.length === 0 ? (
+              <p className="text-muted-foreground mt-2 text-[13px]">
+                Nothing has gone into the tin this month.
+              </p>
+            ) : (
+              <table className="mt-2 w-full text-[13px]">
+                <tbody>
+                  {topUps.map((t) => (
+                    <tr key={t.id} className="border-b last:border-0">
+                      <td className="text-muted-foreground py-2 pr-3 text-xs whitespace-nowrap">
+                        <Link href={`/petty-cash?d=${t.entryDate}`} className="hover:underline">
+                          {formatDate(t.entryDate)}
+                        </Link>
+                      </td>
+                      <td className="py-2 pr-3">{t.party ?? t.purpose}</td>
+                      <td className="text-on-time py-2 text-right tabular-nums">
+                        {formatINRPrecise(t.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="font-medium">
+                    <td className="py-2 pr-3" colSpan={2}>
+                      Total in
                     </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {formatINRPrecise(h.spent)}
+                    <td className="text-on-time py-2 text-right tabular-nums">
+                      {formatINRPrecise(monthIn)}
                     </td>
                   </tr>
-                ))}
-                <tr className="font-medium">
-                  <td className="py-2 pr-3">Total spent</td>
-                  <td />
-                  <td className="py-2 text-right tabular-nums">
-                    {formatINRPrecise(monthTotal)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <p className="text-muted-foreground mt-2 text-[12px]">
-              Money out only. A top-up has no head — it is not spending.
-            </p>
-          </>
-        )}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Money out, by head. */}
+          <div>
+            <h3 className="text-muted-foreground text-xs">Cash out — by head</h3>
+            {byHead.length === 0 ? (
+              <p className="text-muted-foreground mt-2 text-[13px]">
+                Nothing spent out of the tin this month.
+              </p>
+            ) : (
+              <table className="mt-2 w-full text-[13px]">
+                <tbody>
+                  {byHead.map((h) => (
+                    <tr key={h.headId} className="border-b last:border-0">
+                      <td className="py-2 pr-3">{h.headName}</td>
+                      <td className="text-muted-foreground py-2 pr-3 text-right text-xs tabular-nums">
+                        {h.entries}
+                      </td>
+                      <td className="text-overdue py-2 text-right tabular-nums">
+                        {formatINRPrecise(h.spent)}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="font-medium">
+                    <td className="py-2 pr-3">Total out</td>
+                    <td />
+                    <td className="text-overdue py-2 text-right tabular-nums">
+                      {formatINRPrecise(monthOut)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/*
+          In minus out for the month. NOT a balance: the tin carried something
+          over from last month, and what is in it now is the closing figure at
+          the top of this page, which comes from petty_cash_balance_on(). This
+          line answers a narrower question — did the month put more in than it
+          took out.
+        */}
+        <p className="text-muted-foreground mt-4 text-[13px]">
+          This month the tin took in{" "}
+          <span className="text-foreground tabular-nums">{formatINRPrecise(monthIn)}</span>{" "}
+          and paid out{" "}
+          <span className="text-foreground tabular-nums">{formatINRPrecise(monthOut)}</span>,
+          {monthNet === 0 ? (
+            "leaving it exactly where it started"
+          ) : (
+            <>
+              leaving it{" "}
+              <span className="text-foreground tabular-nums">
+                {formatINRPrecise(Math.abs(monthNet))}
+              </span>{" "}
+              {monthNet < 0 ? "lower" : "higher"} than it started
+            </>
+          )}
+          . A top-up has no head, so it is listed on the left rather than counted as
+          spending.
+        </p>
       </section>
     </div>
   );

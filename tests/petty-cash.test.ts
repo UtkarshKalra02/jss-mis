@@ -13,6 +13,7 @@ import {
 } from "@/db/audit";
 import { client, pettyCash } from "@/db/schema";
 import { addDaysISO, todayIST } from "@/lib/dates";
+import { monthTopUps } from "@/modules/petty-cash/queries";
 import { addEntrySchema, parseAddEntry, MAX_ENTRY_AMOUNT } from "@/modules/petty-cash/validation";
 
 import { expectFailure, inRollback, uniq } from "./helpers";
@@ -380,6 +381,83 @@ describe("v_petty_cash_head_month", () => {
 
       await auditedSoftDelete(a, pettyCash, row.id, tx);
       expect(await spentNow()).toBeCloseTo(base, 2);
+    });
+  });
+});
+
+describe("monthTopUps — the In side of the month", () => {
+  /**
+   * The month block on the screen reads v_petty_cash_head_month, which is
+   * Out-only by construction, so until 23 Nov 2026 an `In` entry showed on its
+   * own day's sheet and then disappeared: the month claimed money had left a
+   * tin nothing had gone into. This is the query that fixed it.
+   */
+
+  const MONTH = `${TODAY.slice(0, 7)}-01`;
+
+  it("lists this month's top-ups and not its spending", async () => {
+    await inRollback(async (tx) => {
+      const a = await makeUser(tx, "ACCOUNTS");
+
+      const before = await monthTopUps(MONTH, tx);
+      const top = await topUp(tx, a, "5000");
+      await spend(tx, a, "120", "STATIONERY");
+
+      const after = await monthTopUps(MONTH, tx);
+      expect(after.length).toBe(before.length + 1);
+
+      const row = after.find((r) => r.id === top.id);
+      expect(row).toBeTruthy();
+      expect(Number(row!.amount)).toBeCloseTo(5000, 2);
+      expect(row!.party).toBe("Amit Sir");
+
+      // The spend is on the other side of the screen and must not be here.
+      expect(after.every((r) => Number(r.amount) !== 120)).toBe(true);
+    });
+  });
+
+  it("stops at the month boundary", async () => {
+    await inRollback(async (tx) => {
+      const a = await makeUser(tx, "ACCOUNTS");
+
+      /*
+       * The last day of the month before this one. Computed, not written: a
+       * literal would be in the past by next month and the half-open range
+       * would stop being tested at its edge.
+       */
+      const lastMonthEnd = addDaysISO(MONTH, -1);
+      const lastMonthStart = `${lastMonthEnd.slice(0, 7)}-01`;
+
+      const old = await topUp(tx, a, "1500", lastMonthEnd);
+      const now = await topUp(tx, a, "2500", TODAY);
+
+      const thisMonth = await monthTopUps(MONTH, tx);
+      expect(thisMonth.some((r) => r.id === now.id)).toBe(true);
+      expect(thisMonth.some((r) => r.id === old.id)).toBe(false);
+
+      // And it is found where it belongs, rather than nowhere.
+      const previous = await monthTopUps(lastMonthStart, tx);
+      expect(previous.some((r) => r.id === old.id)).toBe(true);
+      expect(previous.some((r) => r.id === now.id)).toBe(false);
+    });
+  });
+
+  it("drops a voided top-up, so the list and the balance agree", async () => {
+    await inRollback(async (tx) => {
+      const a = await makeUser(tx, "ACCOUNTS");
+
+      const before = await balanceOn(tx, TODAY);
+      const top = await topUp(tx, a, "800");
+      expect(await balanceOn(tx, TODAY)).toBeCloseTo(before + 800, 2);
+      expect((await monthTopUps(MONTH, tx)).some((r) => r.id === top.id)).toBe(true);
+
+      await auditedSoftDelete(a, pettyCash, top.id, tx);
+
+      // Out of the arithmetic AND out of the list. The page sums the rows it
+      // shows, so a void that left one behind would print a total nobody could
+      // reconcile against the closing balance.
+      expect(await balanceOn(tx, TODAY)).toBeCloseTo(before, 2);
+      expect((await monthTopUps(MONTH, tx)).some((r) => r.id === top.id)).toBe(false);
     });
   });
 });

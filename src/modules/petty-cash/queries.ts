@@ -1,7 +1,8 @@
-import { asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
+import type { Tx } from "@/db/audit";
 import { appUser, pettyCash, pettyCashHead } from "@/db/schema";
 import { vPettyCashDay, vPettyCashHeadMonth } from "@/db/views";
 
@@ -175,6 +176,63 @@ export async function monthByHead(monthStart: string): Promise<HeadMonthRow[]> {
     .from(vPettyCashHeadMonth)
     .where(eq(vPettyCashHeadMonth.month, monthStart))
     .orderBy(desc(vPettyCashHeadMonth.spent));
+}
+
+export type MonthTopUpRow = {
+  id: string;
+  entryDate: string;
+  amount: string;
+  party: string | null;
+  purpose: string;
+};
+
+/**
+ * The top-ups in a month: every `In` entry, oldest first.
+ *
+ * WHY A LIST AND NOT A TOTAL. The by-head table answers "what is eating the
+ * cash"; this answers "where did the cash come from", and for that the rows
+ * matter more than the figure. A month holds a handful of top-ups — Amit Sir
+ * handing over 5,000, twice — and each one is a specific handover somebody may
+ * need to confirm. A single number cannot be checked against anything; four
+ * dated rows can.
+ *
+ * It also fills the hole this screen had until 23 Nov 2026: an `In` entry showed
+ * on its own day's sheet and then vanished, because the month block reads
+ * v_petty_cash_head_month, which is Out-only by construction — a top-up has no
+ * head to group by. So the month's arithmetic showed money leaving a tin that
+ * nothing had ever gone into.
+ *
+ * The total is summed from these rows by the page, not queried again: the same
+ * property `daySheet` keeps, so what is listed is what is added up.
+ *
+ * Takes a runner, like `listClientsForMatching` does, so the test can call this
+ * function itself inside a rolled-back transaction rather than a copy of its
+ * WHERE clause — the month boundary being the part worth actually testing.
+ */
+export async function monthTopUps(
+  monthStart: string,
+  runner: typeof db | Tx = db,
+): Promise<MonthTopUpRow[]> {
+  return runner
+    .select({
+      id: pettyCash.id,
+      entryDate: pettyCash.entryDate,
+      amount: pettyCash.amount,
+      party: pettyCash.party,
+      purpose: pettyCash.purpose,
+    })
+    .from(pettyCash)
+    .where(
+      and(
+        isNull(pettyCash.deletedAt),
+        eq(pettyCash.direction, "In"),
+        gte(pettyCash.entryDate, monthStart),
+        // Half-open on purpose: no month-length arithmetic to get wrong, and
+        // February needs no special case.
+        sql`${pettyCash.entryDate} < (${monthStart}::date + interval '1 month')`,
+      ),
+    )
+    .orderBy(asc(pettyCash.entryDate), asc(pettyCash.createdAt));
 }
 
 export type DayRow = typeof vPettyCashDay.$inferSelect;

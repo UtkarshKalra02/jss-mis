@@ -5728,3 +5728,34 @@ Both were put to him and declined, so they are recorded here rather than built:
 
 Also not built: a screen to manage the heads. The seven are seeded and a new one needs a
 migration or a hand-written row for now. Added to `docs/BACKLOG.md`.
+
+## CC10 — the month shows both sides of the tin
+
+*23 Nov 2026 — Utkarsh: "In the petty cash, there was an input as well, paid for right? I
+want that also to be visible."*
+
+He was right, and it was a hole rather than a design choice. The day's sheet always showed
+both directions — opening, in, out, closing, and an `In` row in the table. The **month**
+block did not: it reads `v_petty_cash_head_month`, which is `Out`-only **by construction**,
+because a top-up has no head to group by (CC2's fixed-head list is what makes that view
+possible at all). So a top-up was visible on its own day and then vanished, and November
+read as money leaving a tin nothing had ever gone into.
+
+Fixed without a migration. `monthTopUps()` lists the month's `In` entries and the month
+block now has two columns — **cash in** on the left, **cash out by head** on the right —
+with a sentence under them giving in, out, and the difference.
+
+Two choices inside that:
+
+- **The top-ups are listed, not totalled.** A month holds a handful of them, each a specific
+  handover from a specific person on a specific day. A single figure cannot be checked
+  against anything; four dated rows can, and each date links to that day's sheet. The by-head
+  table answers "what is eating the cash"; this answers "where did the cash come from", and
+  that question wants the rows.
+- **The difference is not called a balance.** In minus out for the month is not what is in
+  the tin — the tin carried something over from last month. What is in it now is the closing
+  figure at the top of the page, which comes from `petty_cash_balance_on()` and remains the
+  only definition of a balance anywhere in this module (CC4).
+
+The totals are summed from the rows shown beside them, the same property `daySheet` keeps:
+what the screen lists is what the screen adds up.
