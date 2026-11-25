@@ -3266,6 +3266,34 @@ supposed to be able to roll it back.
 
 ---
 
+## K20b — the item is added on the job card page, not on the way to it
+
+*24 Nov 2026 — Utkarsh, after K20a shipped: "I wanted it while making Job Card."*
+
+U1 had already put a LINK on `/job-cards/new` — "No PO yet? Add the item here" — pointing at
+`/items/new?returnTo=job-card`, which saves the item and redirects back with it selected. That
+answered the routing and not the request. A detour you have to come back from is not the same
+as a form on the page, and job work is the case where it bites: the party is standing there
+with their own board, and the person raising the card is being sent to the order desk's screen
+to invent a customer first.
+
+**The capture form is now embedded on the page**, in a collapsed panel under the item picker.
+Open it, type the client — a name nobody has entered is the point — tick job work, fill the
+item and its committed date, save, and the action's existing `returnTo=job-card` brings the
+single new item straight back to the same page, selected.
+
+- **It is `PoForm` in item mode, not a smaller copy.** That form's own header makes the
+  argument this follows: the moment there are two forms that create an item, one of them stops
+  requiring the committed date. Same validation, same job-work tick, same typed client (K20a).
+- **It is a separate async component inside `Suspense`,** so the item picker is not waiting on
+  four more queries to resolve. The picker is what the page is for, and the common case is that
+  the panel is never opened.
+- **It renders only for somebody who may create an order.** The link it replaces was shown to
+  everybody who can raise a card, including roles that would have been refused on arrival —
+  which is the small bug U1 left behind and this removes.
+
+---
+
 ## K21 — a purchase order entered by mistake is removed, not cancelled
 
 Asked for by Utkarsh on 12 Sep 2026, pointing at PO-2026-0015 (NAT, cancelled, ₹19,700,

@@ -3,7 +3,9 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { requireAccess } from "@/auth/guard";
+import { can, type Role } from "@/auth/roles";
 import { JobCardForm } from "@/components/job-cards/job-card-form";
+import { PoForm } from "@/components/purchase-orders/po-form";
 import { JobCardSearch } from "@/components/job-cards/job-card-filters";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatQty } from "@/lib/format";
@@ -20,6 +22,12 @@ import {
 import { getGsmTolerancePct, listPaperOptions } from "@/modules/materials/queries";
 import { recentRuns } from "@/modules/press-runs/queries";
 import { getItemDetail } from "@/modules/items/queries";
+import { listClientOptions } from "@/modules/designs/queries";
+import {
+  listConfirmationTakers,
+  listDesignOptions,
+  listRepeatableItemOptions,
+} from "@/modules/purchase-orders/queries";
 
 export const metadata: Metadata = { title: "New job card · JSS MIS" };
 
@@ -41,7 +49,7 @@ export default async function NewJobCardPage({
 }: {
   searchParams: Promise<{ q?: string; item?: string; items?: string }>;
 }) {
-  await requireAccess("job_card", "write");
+  const actor = await requireAccess("job_card", "write");
 
   const { q = "", item, items } = await searchParams;
 
@@ -79,23 +87,46 @@ export default async function NewJobCardPage({
           </p>
 
           {/*
-            The manual card (U1). Work often starts before the client's PO
-            arrives, and the item it needs can be made from here rather than on
-            the order desk's screen — N1 has allowed an item without a PO since
-            September, but reaching it meant leaving this page and the two
-            people who raise cards could not open it at all.
+            The manual card (U1), ON THIS PAGE since 24 Nov 2026 (K20b).
+
+            Work often starts before the client's PO arrives — job work always
+            does, because the party walks in with their own board. N1 has
+            allowed an item without a PO since September and U1 put a link to
+            it here, but a link is still another screen: Utkarsh asked for it
+            "while making Job Card", and he is right that a detour you have to
+            come back from is not the same as a form on the page.
+
+            It is the capture form in item mode, not a smaller copy of it. The
+            moment there are two forms that create an item, one of them stops
+            requiring the committed date — the argument PoForm's own header
+            makes about `mode`. So the client is typed here exactly as it is
+            there (K20a), job work is the same tick, and saving redirects back
+            to this page with the new item selected and ready to release.
+
+            Shown only to somebody who may create an order. The link it
+            replaces was rendered for everybody who can raise a card, including
+            roles that would have been refused on arrival.
           */}
-          <p className="text-muted-foreground mt-2 text-[13px]">
-            No PO yet?{" "}
-            <Link
-              href="/items/new?returnTo=job-card"
-              className="underline underline-offset-2 hover:no-underline"
-            >
-              Add the item here
-            </Link>{" "}
-            and it comes straight back, ready to release. Record the PO number on the
-            order when it arrives.
-          </p>
+          {can(actor.role, "purchase_order", "create") ? (
+            <details className="group mt-4 rounded-lg border">
+              <summary className="cursor-pointer px-4 py-3 text-[13px] font-medium">
+                No PO yet? Add the item here
+                <span className="text-muted-foreground ml-2 font-normal">
+                  — it comes straight back, ready to release
+                </span>
+              </summary>
+              <div className="border-t px-4 py-4">
+                <p className="text-muted-foreground mb-6 text-[13px]">
+                  The item is saved under an order marked PO awaited; record the client&rsquo;s
+                  PO number on that order when it arrives. For job work there will never be
+                  one — tick it below and the client box takes a name nobody has entered yet.
+                </p>
+                <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+                  <InlineItemCapture actorId={actor.id} role={actor.role} />
+                </Suspense>
+              </div>
+            </details>
+          ) : null}
 
           <div className="mt-6">
             <Suspense fallback={<Skeleton className="h-9 w-full max-w-lg" />}>
@@ -111,6 +142,39 @@ export default async function NewJobCardPage({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The capture form, in item mode, inside the job card page (K20b).
+ *
+ * Its own async component so the item picker below is not waiting on four
+ * more queries to resolve — the picker is what the page is for, and the
+ * common case is that this block is never opened at all.
+ *
+ * `returnTo="job-card"` is what makes it worth embedding: the action sends a
+ * single new item straight back to this page with it selected, so the whole
+ * thing is one screen rather than a visit to the order desk's.
+ */
+async function InlineItemCapture({ actorId, role }: { actorId: string; role: Role }) {
+  const [clients, designs, repeatableItems, confirmationTakers] = await Promise.all([
+    listClientOptions(),
+    listDesignOptions(),
+    listRepeatableItemOptions(),
+    listConfirmationTakers(),
+  ]);
+
+  return (
+    <PoForm
+      mode="item"
+      clients={clients}
+      canCreateClient={can(role, "client", "create")}
+      designs={designs}
+      repeatableItems={repeatableItems}
+      confirmationTakers={confirmationTakers}
+      defaultConfirmedBy={actorId}
+      returnTo="job-card"
+    />
   );
 }
 
