@@ -5193,6 +5193,51 @@ T1 residual rule, the audit row and the write lock all intact. The importer does
 these columns, so every imported row has them null, which is correct: nobody has closed
 those jobs.
 
+## X9 — closing a job from the tracker, and from the item's own page
+
+*25 Nov 2026 — Utkarsh: "I need close job option in item tracker as well and item menu."*
+
+X put the control on one screen: an item's page **under its purchase order**. That is two
+clicks from either screen anybody actually looks at an item on, and it is the wrong two
+clicks — the Item Tracker is where somebody sees forty rows and recognises the three that
+are never going to be finished. The decision was reachable only from the place you would
+already have had to know to go.
+
+It is now in both places:
+
+- **The tracker** has a row menu for the three roles that may close a job, opening a dialog
+  with the write-off stated in pieces and the reason box.
+- **The item's own page** (`/items/[id]`) renders the same `PoItemCloseControl` the order's
+  copy does, beside the PO controls.
+
+**No bulk close**, and the reason is not caution about the write. `close_reason` is per item
+and required. A bulk close would either take one sentence to cover several jobs — a sentence
+that explains none of them — or ask for several in one dialog, which is the dialog nobody
+finishes. Each one is its own decision, typed once, read back at review.
+
+**The fence is now SQL, shared, instead of a query.** Three places ask whether a job is old
+enough (X4): the item page, the tracker row, and the action. Two of them ask it over
+different relations — `purchase_order.po_date` and `v_po_item_status`'s copy of it — so
+`manualCloseFence()` returns the expressions and both call sites embed them. It is
+deliberately not computed in TypeScript: `today_ist()` and
+`manual_close_min_days_after_po` both live in the database, and a JS copy of "PO date plus
+thirty days" is the second definition C10 exists to prevent. `tests/manual-close.test.ts`
+pins that the two relations give the same answer for the same item, **including after the
+setting is changed**, which is the case a hand-written copy would quietly fail.
+
+**What the menu will not offer.** A fully delivered item has no balance to write off; a
+cancelled one was never delivered at all; one inside the waiting period is told the date
+instead of given a box. All three are read off the row the table already has — which is why
+`v_po_item_status.closed_manually_at` matters here: `status` says "Closed" for both a
+person's close and a full delivery, and only the first can be reopened. The action and the
+0048 trigger check every one of these again.
+
+The close action now also revalidates `/items` and `/items/[id]`. It revalidated only the
+order's page, which was right when the order's page was the only way in — and would have
+left a row reading Closed on the screen you had just reopened it from.
+
+---
+
 ---
 
 # Y — ups on the job card (migration 0049)

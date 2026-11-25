@@ -3,6 +3,7 @@
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import Link from "next/link";
 
+import { ItemCloseControl } from "@/components/items/item-close-control";
 import { PoAwaited } from "@/components/purchase-orders/po-awaited";
 import { StagePill } from "@/components/stages/stage-pill";
 import { formatCommittedDate, formatDaysToCommitted, formatQty } from "@/lib/format";
@@ -17,7 +18,10 @@ import type { ItemSearchRow } from "./queries";
  * overdue, amber for at risk. Everything else is neutral, so the two rows that
  * need attention on a screen of forty are the ones that stand out.
  */
-export const itemColumns: LegacyColumnDef<ItemSearchRow>[] = [
+export function itemColumns({
+  canCloseJobs = false,
+}: { canCloseJobs?: boolean } = {}): LegacyColumnDef<ItemSearchRow>[] {
+  return [
   {
     accessorKey: "itemCode",
     header: "Item",
@@ -128,4 +132,34 @@ export const itemColumns: LegacyColumnDef<ItemSearchRow>[] = [
       </span>
     ),
   },
-];
+
+  /*
+   * The row menu (X9), present only for the three roles that may close a job
+   * — the page decides, from the same list the action enforces, so a menu is
+   * never offered to somebody the wrapper will refuse. Omitted entirely rather
+   * than rendered empty: a column of dead buttons on every row of a
+   * forty-row grid is worse than no column.
+   */
+  ...(canCloseJobs
+    ? [
+        {
+          id: "actions",
+          header: "",
+          meta: { width: "3rem" },
+          cell: ({ row }: { row: { original: ItemSearchRow } }) => (
+            <ItemCloseControl
+              itemId={row.original.poItemId}
+              itemCode={row.original.itemCode}
+              pendingQty={row.original.pendingQty}
+              status={row.original.status}
+              closedByHand={row.original.closedManuallyAt !== null}
+              minDays={row.original.manualCloseMinDays}
+              earliest={row.original.manualCloseEarliest}
+              eligible={row.original.manualCloseEligible}
+            />
+          ),
+        } satisfies LegacyColumnDef<ItemSearchRow>,
+      ]
+    : []),
+  ];
+}

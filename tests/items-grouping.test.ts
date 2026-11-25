@@ -45,6 +45,12 @@ function row(over: Partial<ItemSearchRow> = {}): ItemSearchRow {
     isAtRisk: false,
     status: "Open",
     priority: "Normal",
+    // Manual close (X9). The ordinary case for a grouping fixture: nobody
+    // closed it by hand, and the fence has long since passed.
+    closedManuallyAt: null,
+    manualCloseMinDays: 30,
+    manualCloseEarliest: "2026-08-31",
+    manualCloseEligible: true,
     ...over,
   };
 }

@@ -3,10 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
-import { can } from "@/auth/roles";
+import { JOB_CLOSE_ROLES, can } from "@/auth/roles";
 import { StageTimeline } from "@/components/items/stage-timeline";
 import { PoAwaited } from "@/components/purchase-orders/po-awaited";
-import { ItemPoControls } from "@/components/purchase-orders/po-controls";
+import { ItemPoControls, PoItemCloseControl } from "@/components/purchase-orders/po-controls";
 import { StagePill } from "@/components/stages/stage-pill";
 import {
   formatCommittedDate,
@@ -24,7 +24,12 @@ import {
 } from "@/modules/items/queries";
 import { jobCardsForItem, machineOptions } from "@/modules/job-cards/queries";
 import { getGsmTolerancePct, listPaperOptions } from "@/modules/materials/queries";
-import { listLinkablePurchaseOrders } from "@/modules/purchase-orders/queries";
+import {
+  getPoItem,
+  listLinkablePurchaseOrders,
+  manualCloseEligibility,
+  userName,
+} from "@/modules/purchase-orders/queries";
 import { designSelections, fabricationVocabulary } from "@/modules/fabrication/queries";
 import { JobCardForm } from "@/components/job-cards/job-card-form";
 import { AddToRunControl } from "@/components/press-runs/run-controls";
@@ -97,12 +102,29 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
   const canWritePo = can(user.role, "purchase_order", "write");
   const canGang = can(user.role, "press_run", "write");
   const canReleaseCard = can(user.role, "job_card", "write");
+  /*
+   * X9. The control already existed on this item's page UNDER ITS ORDER,
+   * which is two clicks from the tracker and from here — the two screens
+   * somebody actually looks at an item on. Same role list the action enforces.
+   */
+  const canCloseJobs = JOB_CLOSE_ROLES.has(user.role);
 
   // N1: the orders this item could move onto. Read only for someone who can
   // move it; everyone else sees the marker and nothing to click.
   const linkableOrders = canWritePo
     ? await listLinkablePurchaseOrders(item.clientId, item.purchaseOrderId)
     : [];
+
+  /*
+   * The close decision's own three facts: the reason and who typed it live on
+   * the po_item row rather than the status view, and the fence is the same
+   * read the order's copy of this control makes.
+   */
+  const [closeRow, fence] = await Promise.all([
+    canCloseJobs ? getPoItem(id) : Promise.resolve(null),
+    canCloseJobs ? manualCloseEligibility(id) : Promise.resolve(null),
+  ]);
+  const closedByName = closeRow?.closedBy ? await userName(closeRow.closedBy) : null;
 
   /**
    * Ganging (H4). Two extra reads, and both are skipped entirely when this item
@@ -213,6 +235,19 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
               poInternalNo={item.poInternalNo}
               poAwaited={item.poAwaited}
               orders={linkableOrders}
+            />
+          ) : null}
+
+          {canCloseJobs && closeRow ? (
+            <PoItemCloseControl
+              itemId={item.poItemId}
+              itemCode={item.itemCode}
+              pendingQty={Math.max(0, item.orderedQty - item.dispatchedQty)}
+              cancelled={item.status === "Cancelled"}
+              closedManuallyAt={closeRow.closedManuallyAt}
+              closeReason={closeRow.closeReason}
+              closedByName={closedByName}
+              fence={fence}
             />
           ) : null}
 

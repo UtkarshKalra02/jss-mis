@@ -824,7 +824,14 @@ export async function setPoItemManuallyClosedAction(
         );
       });
 
+      /*
+       * The TRACKER too, since X9 — it is now a place this decision is taken
+       * from, and a row that still says Closed after you reopened it is the
+       * kind of thing that makes somebody do it twice.
+       */
       revalidatePath(`/purchase-orders/${existing.purchaseOrderId}`);
+      revalidatePath("/items");
+      revalidatePath(`/items/${id}`);
       return ok({ message: `${existing.itemCode} reopened.` });
     }
 
@@ -874,6 +881,8 @@ export async function setPoItemManuallyClosedAction(
     });
 
     revalidatePath(`/purchase-orders/${existing.purchaseOrderId}`);
+    revalidatePath("/items");
+    revalidatePath(`/items/${id}`);
     return ok({ message: `${existing.itemCode} closed.` });
   } catch (error) {
     unstable_rethrow(error);

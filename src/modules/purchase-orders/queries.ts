@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, ne, sql, type SQL } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
 import { SYSTEM_USER_ID, type Tx } from "@/db/audit";
@@ -498,6 +499,28 @@ export const MANUAL_CLOSE_MIN_DAYS_KEY = "manual_close_min_days_after_po";
 /** Mirrors the default in migration 0048 and in the trigger. */
 export const MANUAL_CLOSE_MIN_DAYS_DEFAULT = 30;
 
+/**
+ * The fence as SQL, over whichever relation carries the PO date.
+ *
+ * ONE TEXT OF THE RULE, because there are now three places that ask it: the
+ * item's own page, the Item Tracker's row menu (X9), and the action. All of
+ * them read `manual_close_min_days_after_po` through this, so changing the
+ * waiting period — or changing it from calendar days to anything else — cannot
+ * leave one screen offering a button the trigger in 0048 will refuse.
+ *
+ * Deliberately NOT computed in TypeScript. `today_ist()` and the setting both
+ * live in the database, and a JS copy of "PO date plus thirty days" is exactly
+ * the second definition C10 and the note above exist to prevent.
+ */
+export function manualCloseFence(poDate: PgColumn | SQL) {
+  const days = sql`app_setting_int(${MANUAL_CLOSE_MIN_DAYS_KEY}, ${MANUAL_CLOSE_MIN_DAYS_DEFAULT})`;
+  return {
+    minDays: sql<number>`${days}`,
+    earliest: sql<string>`(${poDate} + ${days})::text`,
+    eligible: sql<boolean>`today_ist() >= (${poDate} + ${days})`,
+  };
+}
+
 export type ManualCloseEligibility = {
   poDate: string;
   minDays: number;
@@ -527,18 +550,14 @@ export type ManualCloseEligibility = {
 export async function manualCloseEligibility(
   poItemId: string,
 ): Promise<ManualCloseEligibility | null> {
+  const fence = manualCloseFence(purchaseOrder.poDate);
+
   const [row] = await db
     .select({
       poDate: purchaseOrder.poDate,
-      minDays: sql<number>`app_setting_int(${MANUAL_CLOSE_MIN_DAYS_KEY}, ${MANUAL_CLOSE_MIN_DAYS_DEFAULT})`,
-      earliest: sql<string>`(
-        ${purchaseOrder.poDate}
-        + app_setting_int(${MANUAL_CLOSE_MIN_DAYS_KEY}, ${MANUAL_CLOSE_MIN_DAYS_DEFAULT})
-      )::text`,
-      eligible: sql<boolean>`today_ist() >= (
-        ${purchaseOrder.poDate}
-        + app_setting_int(${MANUAL_CLOSE_MIN_DAYS_KEY}, ${MANUAL_CLOSE_MIN_DAYS_DEFAULT})
-      )`,
+      minDays: fence.minDays,
+      earliest: fence.earliest,
+      eligible: fence.eligible,
     })
     .from(poItem)
     .innerJoin(purchaseOrder, eq(purchaseOrder.id, poItem.purchaseOrderId))

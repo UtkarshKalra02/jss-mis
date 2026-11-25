@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { requireAccess } from "@/auth/guard";
-import { can } from "@/auth/roles";
+import { JOB_CLOSE_ROLES, can } from "@/auth/roles";
 import { DataTable } from "@/components/data-table/data-table";
 import { ItemSearch } from "@/components/items/item-search";
 import { OpenOnlyToggle } from "@/components/items/open-only-toggle";
@@ -29,6 +29,12 @@ export default async function ItemsPage({
   const user = await requireAccess("item_tracker");
   // N1: adding an item is order-desk work, whichever screen it starts from.
   const canAddItem = can(user.role, "purchase_order", "write");
+  /*
+   * X9: the row menu that closes a job. The same role list the action
+   * enforces, read here so the column is absent rather than dead for the five
+   * roles that may see the tracker and not close anything on it.
+   */
+  const canCloseJobs = JOB_CLOSE_ROLES.has(user.role);
 
   const { q = "", all, risk } = await searchParams;
   const openOnly = all !== "1";
@@ -95,7 +101,7 @@ export default async function ItemsPage({
           key={`${q}:${openOnly}:${riskFilter ?? ""}`}
           fallback={<Skeleton className="h-96 w-full" />}
         >
-          <Results query={q} openOnly={openOnly} risk={riskFilter} />
+          <Results query={q} openOnly={openOnly} risk={riskFilter} canCloseJobs={canCloseJobs} />
         </Suspense>
       </div>
     </div>
@@ -110,10 +116,12 @@ async function Results({
   query,
   openOnly,
   risk,
+  canCloseJobs,
 }: {
   query: string;
   openOnly: boolean;
   risk?: RiskFilter;
+  canCloseJobs: boolean;
 }) {
   const items = await searchItems(query, { openOnly, risk });
 
@@ -124,7 +132,7 @@ async function Results({
       {risk ? <RiskBanner risk={risk} count={items.length} /> : null}
 
       <DataTable
-        columns={itemColumns}
+        columns={itemColumns({ canCloseJobs })}
         data={items}
         emptyMessage={
           risk === "overdue"

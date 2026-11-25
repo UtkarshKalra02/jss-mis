@@ -14,6 +14,7 @@ import {
   stageEvent,
 } from "@/db/schema";
 import { vPoItemStatus } from "@/db/views";
+import { manualCloseFence } from "@/modules/purchase-orders/queries";
 
 import { NO_STAGE, type ItemSortKey } from "./report-options";
 
@@ -52,6 +53,20 @@ export type ItemSearchRow = {
   isAtRisk: boolean;
   status: string;
   priority: string;
+
+  /**
+   * Manual close (section X), for the tracker's row menu (X9).
+   *
+   * `closedManuallyAt` is what separates a job somebody closed from one that
+   * closed itself on full delivery — both read "Closed" in `status`, and only
+   * the first can be reopened. The fence fields come from `manualCloseFence`,
+   * the same SQL the item's page and the action's check read, so the menu
+   * cannot offer what the trigger in 0048 will refuse.
+   */
+  closedManuallyAt: Date | null;
+  manualCloseMinDays: number;
+  manualCloseEarliest: string;
+  manualCloseEligible: boolean;
 };
 
 /**
@@ -198,6 +213,14 @@ export async function searchItems(
               ]
             : byUrgency;
 
+  /*
+   * Asked of the view's own po_date rather than joined back to the order, and
+   * shared with the item page and the close action rather than re-derived
+   * (X9). It adds no join: both terms are expressions over a column the row
+   * already carries.
+   */
+  const fence = manualCloseFence(vPoItemStatus.poDate);
+
   return db
     .select({
       poItemId: vPoItemStatus.poItemId,
@@ -224,6 +247,10 @@ export async function searchItems(
       isAtRisk: vPoItemStatus.isAtRisk,
       status: vPoItemStatus.status,
       priority: vPoItemStatus.priority,
+      closedManuallyAt: vPoItemStatus.closedManuallyAt,
+      manualCloseMinDays: fence.minDays,
+      manualCloseEarliest: fence.earliest,
+      manualCloseEligible: fence.eligible,
     })
     .from(vPoItemStatus)
     .where(and(matches, openOnly, risk, clients, stages, poFrom, poTo))

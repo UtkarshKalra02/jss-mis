@@ -1,10 +1,12 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { SYSTEM_ACTOR, auditedInsert, auditedSoftDelete, auditedUpdate, type Actor, type Tx } from "@/db/audit";
 import { poItem, purchaseOrder } from "@/db/schema";
+import { vPoItemStatus } from "@/db/views";
 import { addDaysISO, todayIST } from "@/lib/dates";
 import { allocateNumber } from "@/lib/numbering";
+import { manualCloseFence } from "@/modules/purchase-orders/queries";
 import { closeReasonSchema } from "@/modules/purchase-orders/validation";
 
 import { expectFailure, inRollback, uniq } from "./helpers";
@@ -591,6 +593,139 @@ describe("OTD counts a job closed by hand", () => {
       // Unchanged: scored against the last dispatch, which beat the promise.
       expect(row!.on_time).toBe(true);
       expect(row!.fulfilment_date).toBe(early.d);
+    });
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* The fence, asked from two screens — X9                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `manualCloseFence` is the fence as SQL, and section X said what matters
+ * about it: the key must not drift from the lock. Since X9 three places ask
+ * the question — the item's page, the tracker's row menu, and the action — and
+ * two of them ask it over DIFFERENT relations: the order's `po_date` column and
+ * `v_po_item_status`'s copy of it.
+ *
+ * So the invariant worth a test is not "is thirty days thirty days". It is
+ * that the same item gets the same answer whichever relation the question was
+ * asked over, including after somebody edits the setting — which is the case a
+ * hand-written copy of the arithmetic on one screen would quietly fail.
+ */
+describe("the manual-close fence, over both relations it is asked over", () => {
+  async function viaOrder(tx: Tx, itemId: string) {
+    const f = manualCloseFence(purchaseOrder.poDate);
+    const [row] = await tx
+      .select({ minDays: f.minDays, earliest: f.earliest, eligible: f.eligible })
+      .from(poItem)
+      .innerJoin(purchaseOrder, eq(purchaseOrder.id, poItem.purchaseOrderId))
+      .where(eq(poItem.id, itemId));
+    return row!;
+  }
+
+  async function viaTracker(tx: Tx, itemId: string) {
+    const f = manualCloseFence(vPoItemStatus.poDate);
+    const [row] = await tx
+      .select({ minDays: f.minDays, earliest: f.earliest, eligible: f.eligible })
+      .from(vPoItemStatus)
+      .where(eq(vPoItemStatus.poItemId, itemId));
+    return row!;
+  }
+
+  it("agrees on a job too young to close", async () => {
+    await inRollback(async (tx) => {
+      const { item } = await makeItem(tx, 3);
+
+      const order = await viaOrder(tx, item.id);
+      expect(order.eligible).toBe(false);
+      expect(await viaTracker(tx, item.id)).toEqual(order);
+    });
+  });
+
+  it("agrees on a job old enough to close", async () => {
+    await inRollback(async (tx) => {
+      const { item, poDate } = await makeItem(tx, 60);
+
+      const order = await viaOrder(tx, item.id);
+      expect(order.eligible).toBe(true);
+      // The date it names is the PO date plus the setting, not today.
+      expect(order.earliest).toBe(addDaysISO(poDate, order.minDays));
+      expect(await viaTracker(tx, item.id)).toEqual(order);
+    });
+  });
+
+  it("still agrees after the waiting period is changed in Admin", async () => {
+    await inRollback(async (tx) => {
+      const { item } = await makeItem(tx, 45);
+
+      // Eligible under the default thirty days.
+      expect((await viaOrder(tx, item.id)).eligible).toBe(true);
+
+      await setMinDays(tx, 90);
+
+      const order = await viaOrder(tx, item.id);
+      expect(order.minDays).toBe(90);
+      expect(order.eligible).toBe(false);
+      // Both read the setting, so neither can be left offering the button.
+      expect(await viaTracker(tx, item.id)).toEqual(order);
+    });
+  });
+});
+
+/**
+ * What the tracker's row menu reads to decide what to offer (X9).
+ *
+ * `status` says "Closed" for two different events, and only one of them can be
+ * reopened: a person wrote off the balance, or the whole order went out.
+ * `closed_manually_at` is the only thing that tells them apart, and the view
+ * carries it for exactly this reason.
+ */
+describe("a person's close is distinguishable from a delivered one", () => {
+  async function trackerRow(tx: Tx, itemId: string) {
+    const [row] = await tx
+      .select({
+        status: vPoItemStatus.status,
+        closedManuallyAt: vPoItemStatus.closedManuallyAt,
+        pendingQty: vPoItemStatus.pendingQty,
+      })
+      .from(vPoItemStatus)
+      .where(eq(vPoItemStatus.poItemId, itemId));
+    return row!;
+  }
+
+  it("marks a job closed by hand, with the balance still owed", async () => {
+    await inRollback(async (tx) => {
+      const { item } = await makeItem(tx, 60, 1000);
+      const actor = await makeUser(tx, "ADMIN");
+
+      await auditedUpdate(actor, poItem, item.id, closeValues(actor.id), tx);
+
+      const row = await trackerRow(tx, item.id);
+      expect(row.status).toBe("Closed");
+      expect(row.closedManuallyAt).not.toBeNull();
+      // The write-off is still visible as quantity owed — the number the
+      // dialog shows before anybody types a reason.
+      expect(Number(row.pendingQty)).toBe(1000);
+    });
+  });
+
+  it("leaves a fully delivered job unmarked, so the menu offers no reopen", async () => {
+    await inRollback(async (tx) => {
+      const { item } = await makeItem(tx, 60, 1000);
+
+      const on = (await tx.execute(sql`select (today_ist() - 5)::text as d`)).rows[0] as {
+        d: string;
+      };
+      await dispatchSome(tx, item.id, 1000, on.d);
+      await recompute(tx, item.id);
+
+      const row = await trackerRow(tx, item.id);
+      expect(row.status).toBe("Closed");
+      // Closed by delivery. Nothing to reopen and nothing to write off.
+      expect(row.closedManuallyAt).toBeNull();
+      expect(Number(row.pendingQty)).toBe(0);
     });
   });
 });
