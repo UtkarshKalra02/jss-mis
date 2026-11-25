@@ -4,13 +4,12 @@ import { Suspense } from "react";
 
 import { requireAccess } from "@/auth/guard";
 import { JOB_CLOSE_ROLES, can } from "@/auth/roles";
-import { DataTable } from "@/components/data-table/data-table";
+import { ItemsTable } from "@/components/items/items-table";
 import { ItemSearch } from "@/components/items/item-search";
 import { OpenOnlyToggle } from "@/components/items/open-only-toggle";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBanner } from "@/components/items/risk-filter";
-import { itemColumns } from "@/modules/items/columns";
 import { searchItems, type RiskFilter } from "@/modules/items/queries";
 
 export const metadata: Metadata = { title: "Item tracker · JSS MIS" };
@@ -131,9 +130,15 @@ async function Results({
           quietly showing a subset is the one thing a tracker must not do. */}
       {risk ? <RiskBanner risk={risk} count={items.length} /> : null}
 
-      <DataTable
-        columns={itemColumns({ canCloseJobs })}
-        data={items}
+      {/*
+        The columns are built inside ItemsTable, which is a client component,
+        because `itemColumns` lives in a "use client" module and a function
+        there CANNOT be called from the server — it type-checks, builds, and
+        throws on the request. See that component's header.
+      */}
+      <ItemsTable
+        items={items}
+        canCloseJobs={canCloseJobs}
         emptyMessage={
           risk === "overdue"
             ? "Nothing is overdue. Every committed date still ahead of it, or already met."
