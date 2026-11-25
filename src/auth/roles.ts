@@ -269,11 +269,11 @@ export const ACCESS: Matrix = {
      * master's history stays with the desk that owns it.
      *
      * `resolveClientId` reads this, so it takes effect on every screen with a
-     * client picker at once rather than per form. Note what that means in
-     * practice today: the PO/item capture form still offers a DROPDOWN of
-     * existing clients, not the picker, so this grant does not by itself put
-     * an "add a client" path on the screen she raises job work from. See
-     * docs/BACKLOG.md.
+     * client picker at once rather than per form. The grant alone was not
+     * enough to be usable, though: the PO/item capture form offered a DROPDOWN
+     * of existing clients, so the one screen she raises job work from had no
+     * way to express a new name. That form types the client as of 24 Nov 2026
+     * (K20a) — the grant and the box now agree.
      */
     client: "create",
     delegation: "write",

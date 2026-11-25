@@ -166,7 +166,31 @@ export const poItemConfirmationSchema = z.object({
 /** Everything a NEW item needs: the item, plus how it was confirmed. */
 export const poItemCreateSchema = poItemSchema.extend(poItemConfirmationSchema.shape);
 
+/**
+ * Capture — the header, with the client TYPED rather than chosen (K20a).
+ *
+ * `poHeaderSchema` keeps `clientId` required and is still what the EDIT form
+ * posts: re-assigning an existing purchase order to a different customer is a
+ * choice among customers who exist, and typing a name there would let a
+ * misspelling invent a client and move an order onto it in one action.
+ *
+ * Capture is the opposite case. Job work arrives as a party nobody has entered
+ * yet — that is the whole of why PLANNER was given `client: "create"` — so the
+ * form sends `clientName` always and `clientId` only when the browser's copy of
+ * the client list already resolved one. The action re-matches the name against
+ * live rows regardless, because that copy was loaded when the page was.
+ */
 export const createPoSchema = poHeaderSchema.extend({
+  clientId: z.preprocess(
+    (v) => (v === null || v === "" ? undefined : v),
+    z.uuid().optional(),
+  ),
+  clientName: z
+    .string()
+    .trim()
+    .min(2, "Say which client this order is for.")
+    .max(200, "That is too long for a client name."),
+
   items: z.array(poItemCreateSchema).min(1, "A purchase order needs at least one item."),
 });
 

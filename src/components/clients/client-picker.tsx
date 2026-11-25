@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { buildClientIndex, matchClient, type ClientMatch } from "@/modules/imports/match";
@@ -44,6 +44,7 @@ export function ClientPicker({
   defaultName,
   canCreate,
   label = "Client",
+  onResolve,
 }: {
   clients: ClientOption[];
   /** Set when editing a record that already points at a client. */
@@ -60,6 +61,20 @@ export function ClientPicker({
    */
   canCreate: boolean;
   label?: string;
+  /**
+   * Told whenever the resolved client changes — for a form that has to react to
+   * WHICH client, not only post it (K20a).
+   *
+   * The PO capture form needs it: a design belongs to one client and the repeat
+   * list is one client's history, so both are filtered on the id this panel
+   * works out. `willCreate` is the other half of that answer — a brand-new
+   * client has no id yet and no designs either, and a form that only knew
+   * "nothing resolved" could not tell that apart from "nothing typed".
+   *
+   * Posting is unchanged and does not depend on this: the hidden `clientId`
+   * field below is what the server reads, and it re-matches the name anyway.
+   */
+  onResolve?: (resolved: { clientId: string | null; willCreate: boolean }) => void;
 }) {
   const index = useMemo(
     () => buildClientIndex(clients.map((c) => ({ id: c.id, code: c.code, name: c.name }))),
@@ -88,6 +103,20 @@ export function ClientPicker({
         : null;
 
   const willCreate = Boolean(typed.trim()) && resolvedId === null && match?.kind === "create";
+
+  /*
+   * Reported through a ref so a parent can pass an inline arrow without this
+   * effect re-firing on every keystroke of its own re-render. The ref is
+   * refreshed first, in declaration order, so the callback invoked below is
+   * always the current one.
+   */
+  const onResolveRef = useRef(onResolve);
+  useEffect(() => {
+    onResolveRef.current = onResolve;
+  });
+  useEffect(() => {
+    onResolveRef.current?.({ clientId: resolvedId, willCreate });
+  }, [resolvedId, willCreate]);
 
   return (
     <div className="block">

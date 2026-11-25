@@ -3212,6 +3212,60 @@ one more field list beside the other two, not a rethink.
 
 ---
 
+## K20a — the capture form types the client, so the grant is usable
+
+*23 Nov 2026 — Utkarsh: "preeti can create clients while making jobwork job cards". Then,
+on seeing it: "I hope Preeti could now create inline clients and job work."*
+
+**The grant alone did nothing on the screen it was for.** PLANNER went from `client: "read"`
+to `client: "create"`, and `resolveClientId` reads the matrix rather than the form, so it
+took effect on the enquiry and design screens at once. The PO/item capture form was not one
+of those screens: it offered a `<select>` of existing clients, and a dropdown cannot express
+a customer who is not in it. Preeti could create a client everywhere except the one place
+job work is raised.
+
+**What changed.** That select is now `ClientPicker` — the same panel the enquiry and design
+screens use, with the importer's matcher behind it, so "NATUREEXPERT AYURVEDIC PVT LTD" and
+"Natureexpert Ayurvedic" stay one customer however they are typed on the day. The create
+action resolves the name inside its transaction, before the order, so a client created for
+an order that then fails to insert rolls back with it instead of being left in the master.
+
+Four things had to be decided along the way:
+
+- **Capture types the client; EDITING still chooses one.** `createPoSchema` takes a name with
+  an optional id. `poHeaderSchema`, which the edit form posts, still demands a uuid. Moving an
+  existing order to a different customer is a choice among customers who exist, and a typed
+  name there would let one misspelling invent a client and re-assign an order to it in a
+  single action. A test pins both halves.
+- **The duplicate-PO-number check needed a client that exists.** It asks whether this client
+  has sent a PO numbered this before, which is unanswerable for a name nobody has entered —
+  and a brand-new client has no POs to collide with. So it runs against
+  `findExistingClientId()`, which matches live rows and **creates nothing**. Only an exact
+  normalised match counts: a near match has no single customer to name, and a warning naming
+  the wrong one is worse than no warning.
+- **The form has to know WHICH client, not just post it.** A design belongs to one client and
+  the repeat list is one client's history, so both are filtered on the resolved id. The picker
+  reports it upward through an `onResolve` callback, along with `willCreate` — because a form
+  that only knew "nothing resolved" could not tell a half-typed name from a genuinely new
+  customer, who has no designs and no history and whose empty design list is correct rather
+  than broken.
+- **"There are no clients yet" now blocks only somebody who cannot fix it.** Both capture
+  pages used to refuse unconditionally and send you to `/clients/new`. Whoever may create a
+  client types the first one into the form itself.
+
+`ClientResolutionError` moved into `src/modules/clients/resolve.ts`. It had been declared
+privately in the enquiry and design actions, and the purchase order would have been a third
+copy of a class whose whole job is to carry one sentence out of a transaction.
+
+**What this does not do.** It does not make a design available for a client who does not
+exist yet — the design select and its create button stay disabled until an id resolves, and
+say why. A new client's first design is added after the order is saved. That is a real
+sequence, not an oversight: a design row needs a `client_id` foreign key, and inventing one
+before the order commits would mean creating the client outside the transaction that is
+supposed to be able to roll it back.
+
+---
+
 ## K21 — a purchase order entered by mistake is removed, not cancelled
 
 Asked for by Utkarsh on 12 Sep 2026, pointing at PO-2026-0015 (NAT, cancelled, ₹19,700,

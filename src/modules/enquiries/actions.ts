@@ -9,7 +9,7 @@ import { auditedInsert, auditedSoftDelete, auditedUpdate, type Actor } from "@/d
 import { enquiry, purchaseOrder } from "@/db/schema";
 import { actionError } from "@/lib/action-error";
 import { allocateNumber } from "@/lib/numbering";
-import { resolveClientId } from "@/modules/clients/resolve";
+import { ClientResolutionError, resolveClientId } from "@/modules/clients/resolve";
 
 import { canAssignEnquiryOwner, resolveEnquiryOwner } from "./permissions";
 import { getEnquiryRecord } from "./queries";
@@ -46,7 +46,6 @@ export type FormState = {
  * enquiry's transaction: returning would leave the caller to unwind, and a
  * throw rolls back the allocated enquiry number with it so nothing is burnt.
  */
-class ClientResolutionError extends Error {}
 
 const ok = (message?: string, redirectTo?: string): FormState => ({
   ok: true,

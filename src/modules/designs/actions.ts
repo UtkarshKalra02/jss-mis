@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAccess } from "@/auth/guard";
-import { resolveClientId } from "@/modules/clients/resolve";
+import { ClientResolutionError, resolveClientId } from "@/modules/clients/resolve";
 import { db } from "@/db";
 import {
   auditedInsert,
@@ -72,7 +72,6 @@ function removedTo(path: string, message: string): never {
  * design's transaction: a throw rolls back the allocated design code with it,
  * so a refused save does not burn a number.
  */
-class ClientResolutionError extends Error {}
 
 /** Spec 6.5: the Design Master belongs to ORDER_DESK (and ADMIN). */
 async function requireDesignWriter(): Promise<Actor> {

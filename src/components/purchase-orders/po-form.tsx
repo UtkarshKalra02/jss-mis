@@ -13,6 +13,7 @@ import { confirmationSourceEnum, jobTypeEnum, priorityEnum } from "@/db/schema/e
 import { nowISTLocalInput, todayIST } from "@/lib/dates";
 import { formatCommittedDate, formatQty } from "@/lib/format";
 import { createPurchaseOrderAction, type FormState } from "@/modules/purchase-orders/actions";
+import { ClientPicker } from "@/components/clients/client-picker";
 import type { ClientOption } from "@/modules/designs/queries";
 import type {
   ConfirmationTaker,
@@ -112,6 +113,7 @@ function repeatOf(source: RepeatItemOption): ItemDraft {
 export function PoForm({
   mode = "po",
   clients,
+  canCreateClient,
   designs,
   repeatableItems,
   confirmationTakers,
@@ -120,6 +122,15 @@ export function PoForm({
 }: {
   mode?: "po" | "item";
   clients: ClientOption[];
+  /**
+   * Whether this person may bring a new client into being (K20a).
+   *
+   * Read off the `client` resource by the page, not assumed from whoever can
+   * capture an order: ACCOUNTS may do neither, PLANNER may do both since
+   * 23 Nov 2026, and the panel says which it is before the save rather than
+   * after. The action checks again regardless.
+   */
+  canCreateClient: boolean;
   designs: DesignOption[];
   /** Who can be named as having taken the confirmation (W). */
   confirmationTakers: ConfirmationTaker[];
@@ -139,7 +150,16 @@ export function PoForm({
   const [state, formAction] = useActionState(createPurchaseOrderAction, initialState);
   const formId = useId();
 
+  /*
+   * The client the picker has RESOLVED, which is not the same as what is typed.
+   * Blank while a name is half-entered, while it resembles two existing clients
+   * and nobody has chosen, and while it is somebody genuinely new — the last of
+   * those is what `newClient` distinguishes, because a new client has no
+   * designs and no order history and the form has to say so rather than look
+   * broken.
+   */
   const [clientId, setClientId] = useState("");
+  const [newClient, setNewClient] = useState(false);
   const [repeatQuery, setRepeatQuery] = useState("");
   const [poNo, setPoNo] = useState("");
   const [isJobWork, setIsJobWork] = useState(false);
@@ -224,26 +244,24 @@ export function PoForm({
       <section className="space-y-4">
         <h2 className="text-sm font-medium">{withoutPo ? "Order" : "Purchase order"}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
+          {/*
+            TYPED, not chosen from a list (K20a). Job work arrives as a party
+            nobody has entered yet — "Preeti can create clients while making
+            jobwork job cards" — and a dropdown of existing clients cannot
+            express that at all. The same panel the enquiry and design screens
+            use, so one customer stays one row however the name was typed on
+            the day, and so a role that may not create one is told here rather
+            than by a refusal after the tenth item was entered.
+          */}
           <div className="space-y-2">
-            <Label htmlFor={`${formId}-client`}>Client</Label>
-            <select
-              id={`${formId}-client`}
-              name="clientId"
-              required
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              className={inputClass}
-            >
-              <option value="" disabled>
-                Choose a client…
-              </option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.code} — {c.name}
-                  {c.isActive ? "" : " (inactive)"}
-                </option>
-              ))}
-            </select>
+            <ClientPicker
+              clients={clients}
+              canCreate={canCreateClient}
+              onResolve={({ clientId: resolved, willCreate }) => {
+                setClientId(resolved ?? "");
+                setNewClient(willCreate);
+              }}
+            />
           </div>
 
           {/* Both fields are POSTED in item mode too, empty and hidden, so
@@ -604,7 +622,11 @@ export function PoForm({
                         className="text-muted-foreground hover:text-primary shrink-0 disabled:opacity-30"
                         aria-label={`Create a design for row ${index + 1}`}
                         title={
-                          clientId ? "Create a design" : "Choose the client first"
+                          clientId
+                            ? "Create a design"
+                            : newClient
+                              ? "A new client has no designs yet — save the order, then add one from the design master"
+                              : "Choose the client first"
                         }
                       >
                         <Plus className="size-4" />

@@ -20,6 +20,11 @@ import { poItem, purchaseOrder, stageEvent } from "@/db/schema";
 import { actionError } from "@/lib/action-error";
 import { startOfDayIST, wallClockIST } from "@/lib/dates";
 import { allocateNumber } from "@/lib/numbering";
+import {
+  ClientResolutionError,
+  findExistingClientId,
+  resolveClientId,
+} from "@/modules/clients/resolve";
 
 import {
   countLiveItems,
@@ -202,6 +207,7 @@ export async function createPurchaseOrderAction(
 
     const parsed = createPoSchema.safeParse({
       clientId: formData.get("clientId"),
+      clientName: formData.get("clientName"),
       poNo: formData.get("poNo"),
       poDate: formData.get("poDate"),
       fileUrl: formData.get("fileUrl"),
@@ -228,8 +234,20 @@ export async function createPurchaseOrderAction(
      */
     const withoutPo = formData.get("withoutPo") === "true";
 
-    if (v.poNo && formData.get("confirmDuplicate") !== "true") {
-      const duplicate = await findDuplicatePoNo(v.clientId, v.poNo);
+    /*
+     * The duplicate-PO-number question needs a client that EXISTS (K20a).
+     *
+     * It asks "has this client sent a PO numbered this before", and a name
+     * nobody has entered yet has no history to collide with. So the check runs
+     * against an already-resolved id, or against a live name match — not
+     * against the client this action is about to create, which by definition
+     * has no POs. Nothing is written here; `findExistingClientId` creates
+     * nothing.
+     */
+    const existingClientId = v.clientId ?? (await findExistingClientId(db, v.clientName));
+
+    if (v.poNo && existingClientId && formData.get("confirmDuplicate") !== "true") {
+      const duplicate = await findDuplicatePoNo(existingClientId, v.poNo);
       if (duplicate) {
         return warn(
           `This client already has a PO numbered "${v.poNo}" — ${duplicate.internalNo}, dated ${duplicate.poDate}. Save anyway if it is genuinely a second one.`,
@@ -238,6 +256,19 @@ export async function createPurchaseOrderAction(
     }
 
     const created = await db.transaction(async (tx) => {
+      /*
+       * INSIDE the transaction, and before the order (K19/K20a): a client
+       * created for an order that then fails to insert rolls back with it
+       * rather than being left behind in the master. The gate is the `client`
+       * resource, so ORDER_DESK and PLANNER create one here and ACCOUNTS is
+       * told to pick an existing name — one rule, not this screen's opinion.
+       */
+      const resolved = await resolveClientId(tx, actor, {
+        clientId: v.clientId,
+        clientName: v.clientName,
+      });
+      if (!resolved.ok) throw new ClientResolutionError(resolved.error);
+
       const internalNo = await allocateNumber(tx, "PO", v.poDate);
 
       const po = await auditedInsert(
@@ -246,7 +277,7 @@ export async function createPurchaseOrderAction(
         {
           internalNo,
           poNo: orNull(v.poNo),
-          clientId: v.clientId,
+          clientId: resolved.clientId,
           poDate: v.poDate,
           fileUrl: orNull(v.fileUrl),
           // A native checkbox posts "on" or nothing; absent is false, never
@@ -302,6 +333,10 @@ export async function createPurchaseOrderAction(
     });
   } catch (error) {
     unstable_rethrow(error);
+    // The client refusal carries a sentence written for the person — a near
+    // match to choose between, or a role that may not create one. Showing
+    // "could not save" instead would hide the only actionable part.
+    if (error instanceof ClientResolutionError) return fail(error.message);
     return fail(actionError(error, "Could not save the purchase order."));
   }
 }

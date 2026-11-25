@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { requireAccess } from "@/auth/guard";
+import { can } from "@/auth/roles";
 import { PoForm } from "@/components/purchase-orders/po-form";
 import { Button } from "@/components/ui/button";
 import { listClientOptions } from "@/modules/designs/queries";
@@ -49,6 +50,9 @@ export default async function NewItemPage({
   const { returnTo } = await searchParams;
   const fromJobCard = returnTo === "job-card";
 
+  // K20a: whether the client box may invent a client, or only find one.
+  const canCreateClient = can(actor.role, "client", "create");
+
   const [clients, designs, repeatableItems, confirmationTakers] = await Promise.all([
     listClientOptions(),
     listDesignOptions(),
@@ -77,20 +81,26 @@ export default async function NewItemPage({
       </p>
 
       <div className="mt-8">
-        {clients.length === 0 ? (
+        {/*
+          The empty client master only blocks somebody who cannot fix it
+          (K20a). Whoever may create a client types the first one into the
+          capture form itself; sending them to /clients/new to come back and
+          start again is a detour that exists only because this branch used to
+          be unconditional.
+        */}
+        {clients.length === 0 && !canCreateClient ? (
           <div className="rounded-lg border border-dashed p-6">
-            <h2 className="text-sm font-medium">Add a client first</h2>
+            <h2 className="text-sm font-medium">There are no clients yet</h2>
             <p className="text-muted-foreground mt-1 text-[13px]">
-              An item belongs to a client, and there are none yet.
+              An item belongs to a client, and there are none yet. Your role can choose a client but not create one, so somebody with
+              client access has to add the first.
             </p>
-            <Button asChild size="sm" className="mt-3">
-              <Link href="/clients/new">Add a client</Link>
-            </Button>
           </div>
         ) : (
           <PoForm
             mode="item"
             clients={clients}
+            canCreateClient={canCreateClient}
             designs={designs}
             repeatableItems={repeatableItems}
             confirmationTakers={confirmationTakers}

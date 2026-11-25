@@ -24,6 +24,40 @@ export type ClientResolution =
   | { ok: true; clientId: string; created: boolean }
   | { ok: false; error: string };
 
+/**
+ * A refusal from `resolveClientId`, thrown so it can escape a transaction.
+ *
+ * Declared here because three actions had their own copy of this class — the
+ * enquiry, the design and now the purchase order. They all meant the same
+ * thing: the client could not be resolved, roll the transaction back, and show
+ * the sentence to the person rather than "something went wrong".
+ */
+export class ClientResolutionError extends Error {}
+
+/**
+ * The id of an EXISTING client matching this name, or null. Creates nothing.
+ *
+ * For the questions that need a client id before anything is written — the
+ * duplicate-PO-number check being the one that forced it. That check asks "has
+ * this client sent a PO with this number before", which is only answerable
+ * against a client that already exists; a name nobody has entered yet has no
+ * history to collide with.
+ *
+ * Only `matched` counts. A `review` or `ambiguous` name has no single client to
+ * ask about, and guessing one here would produce a duplicate warning naming the
+ * wrong customer — worse than no warning at all. `resolveClientId` refuses those
+ * cases a moment later anyway.
+ */
+export async function findExistingClientId(
+  runner: typeof db | Tx,
+  clientName: string,
+): Promise<string | null> {
+  if (!clientName.trim()) return null;
+  const clients = await listClientsForMatching(runner);
+  const match = matchClient(clientName, buildClientIndex(clients));
+  return match.kind === "matched" ? match.client.id : null;
+}
+
 /** Every live client, in the shape the importer's matcher expects. */
 export async function listClientsForMatching(
   runner: typeof db | Tx = db,
